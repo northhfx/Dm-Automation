@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+/* สีทั้งหมดของระบบ กำหนดเป็นตัวแปร เพื่อสลับโหมดสว่าง/มืดได้ในที่เดียว */
+:root {
+  color-scheme: light;
+  --bg: #f4f4f1;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --line: #e4e3de;
+  --fg: #0b0b0b;
+  --fg-2: #52514e;
+  --fg-3: #75746f;
+  --accent: #2a78d6;
+  --accent-hover: #256abf;
+  --accent-fg: #ffffff;
+  --accent-soft: #e6f0fc;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --good-soft: #e5f5e5;
+  --critical: #d03b3b;
+  --critical-text: #b42f2f;
+  --critical-soft: #fbeaea;
+  --warning: #fab219;
+  --warning-soft: #fef4dc;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121211;
+    --surface: #1a1a19;
+    --surface-2: #252523;
+    --line: #33332f;
+    --fg: #ffffff;
+    --fg-2: #c3c2b7;
+    --fg-3: #94938a;
+    --accent: #3987e5;
+    --accent-hover: #5598e7;
+    --accent-fg: #ffffff;
+    --accent-soft: #17263a;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --good: #0ca30c;
+    --good-text: #5fd35f;
+    --good-soft: #142914;
+    --critical: #e66767;
+    --critical-text: #f08a8a;
+    --critical-soft: #3a1b1b;
+    --warning: #fab219;
+    --warning-soft: #3a2e10;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-good: var(--good);
+  --color-good-text: var(--good-text);
+  --color-good-soft: var(--good-soft);
+  --color-critical: var(--critical);
+  --color-critical-text: var(--critical-text);
+  --color-critical-soft: var(--critical-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --font-sans: var(--font-anuphan), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
