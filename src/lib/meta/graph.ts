@@ -1,3 +1,5 @@
+import { getDb } from "@/db/client";
+import { getMetaConfig } from "@/lib/config";
 import { appSecretProof } from "@/lib/crypto";
 import { env } from "@/lib/env";
 
@@ -41,7 +43,8 @@ export async function graphRequest<T = Record<string, unknown>>(path: string, op
   const headers: Record<string, string> = {};
   if (opts.token) {
     headers.Authorization = `Bearer ${opts.token}`;
-    url.searchParams.set("appsecret_proof", appSecretProof(opts.token, env.metaAppSecret));
+    const { appSecret } = await getMetaConfig(getDb());
+    if (appSecret) url.searchParams.set("appsecret_proof", appSecretProof(opts.token, appSecret));
   }
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -122,11 +125,13 @@ export async function fetchProfile(
 // ---------- การเชื่อมต่อเพจ ----------
 
 export async function exchangeForLongLivedUserToken(shortLivedToken: string): Promise<string> {
+  const { appId, appSecret } = await getMetaConfig(getDb());
+  if (!appId || !appSecret) throw new Error("ยังไม่ได้ใส่ App ID / App Secret ของ Meta App");
   const data = await graphRequest<{ access_token: string }>("/oauth/access_token", {
     query: {
       grant_type: "fb_exchange_token",
-      client_id: env.metaAppId,
-      client_secret: env.metaAppSecret,
+      client_id: appId,
+      client_secret: appSecret,
       fb_exchange_token: shortLivedToken,
     },
   });

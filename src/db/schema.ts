@@ -172,6 +172,13 @@ export const webhookLogs = pgTable(
   (t) => [index("webhook_logs_received_idx").on(t.receivedAt)],
 );
 
+/** ค่าตั้งค่าที่ผู้ใช้กรอกผ่านหน้าเว็บ (App ID, รหัสผ่าน ฯลฯ) — ค่าลับถูกเข้ารหัสก่อนเก็บ */
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Page = typeof pages.$inferSelect;
 export type Rule = typeof rules.$inferSelect;
 export type NewRule = typeof rules.$inferInsert;

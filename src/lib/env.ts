@@ -1,15 +1,9 @@
-/**
- * อ่านค่า environment variables แบบ lazy (อ่านตอนใช้งานจริง ไม่ใช่ตอน build)
- * เพื่อให้ `next build` ผ่านได้แม้ยังไม่ได้ตั้งค่า
- */
+import { createHash } from "node:crypto";
 
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`ยังไม่ได้ตั้งค่า environment variable: ${name} (ดูวิธีตั้งค่าใน README.md)`);
-  }
-  return value;
-}
+/**
+ * ค่าที่อ่านจาก environment variables แบบ lazy (อ่านตอนใช้งานจริง ไม่ใช่ตอน build)
+ * ตัวที่ต้องตั้งจริงๆ มีแค่ DATABASE_URL — ค่าอื่นของ Meta ตั้งผ่านหน้าเว็บ (ดู lib/config.ts)
+ */
 
 function numberOr(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -18,30 +12,29 @@ function numberOr(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * กุญแจลับของระบบ (ใช้เข้ารหัส token และลงลายเซ็น session)
+ * ใช้ AUTH_SECRET ถ้าตั้งไว้ ไม่งั้นสร้างจาก DATABASE_URL ซึ่งเป็นความลับอยู่แล้ว ผู้ใช้จึงไม่ต้องตั้งเอง
+ * (ถ้าเปลี่ยนรหัสฐานข้อมูล ระบบจะให้ล็อกอินและเชื่อมเพจใหม่)
+ */
+export function getAuthSecret(): string | null {
+  const explicit = process.env.AUTH_SECRET;
+  if (explicit && explicit.length >= 32) return explicit;
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return null;
+  return createHash("sha256").update(`dm-automation:auth:${databaseUrl}`).digest("hex");
+}
+
 export const env = {
   get databaseUrl() {
-    return required("DATABASE_URL");
-  },
-  get metaAppId() {
-    return required("META_APP_ID");
-  },
-  get metaAppSecret() {
-    return required("META_APP_SECRET");
-  },
-  get metaVerifyToken() {
-    return required("META_VERIFY_TOKEN");
-  },
-  get adminPassword() {
-    return required("ADMIN_PASSWORD");
-  },
-  get authSecret() {
-    const value = required("AUTH_SECRET");
-    if (value.length < 32) throw new Error("AUTH_SECRET ต้องยาวอย่างน้อย 32 ตัวอักษร");
+    const value = process.env.DATABASE_URL;
+    if (!value) throw new Error("ยังไม่ได้ตั้งค่า DATABASE_URL (ดูวิธีตั้งค่าใน README.md)");
     return value;
   },
-  /** URL สาธารณะของระบบ เช่น https://dm.example.com ใช้สร้างลิงก์ติดตามการคลิก */
-  get publicBaseUrl() {
-    return required("PUBLIC_BASE_URL").replace(/\/+$/, "");
+  get authSecret() {
+    const value = getAuthSecret();
+    if (!value) throw new Error("ยังไม่ได้ตั้งค่า DATABASE_URL (ดูวิธีตั้งค่าใน README.md)");
+    return value;
   },
   get graphApiBase() {
     return (process.env.GRAPH_API_BASE || "https://graph.facebook.com").replace(/\/+$/, "");
@@ -64,14 +57,3 @@ export const env = {
     return process.env.DISABLE_WORKER === "1";
   },
 };
-
-/** รายการตัวแปรที่จำเป็น ใช้แสดงสถานะในหน้า Settings */
-export const REQUIRED_ENV = [
-  "DATABASE_URL",
-  "META_APP_ID",
-  "META_APP_SECRET",
-  "META_VERIFY_TOKEN",
-  "ADMIN_PASSWORD",
-  "AUTH_SECRET",
-  "PUBLIC_BASE_URL",
-] as const;

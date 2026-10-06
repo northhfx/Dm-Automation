@@ -5,11 +5,16 @@ import { decrypt, encrypt } from "@/lib/crypto";
 import { env } from "@/lib/env";
 
 export interface ConnectedPage extends Page {
-  token: string;
+  /** null = ถอดรหัสไม่ได้ (เช่น เปลี่ยนรหัสฐานข้อมูล/AUTH_SECRET) ต้องเชื่อมต่อเพจใหม่ */
+  token: string | null;
 }
 
 function withToken(page: Page): ConnectedPage {
-  return { ...page, token: decrypt(page.accessToken, env.authSecret) };
+  try {
+    return { ...page, token: decrypt(page.accessToken, env.authSecret) };
+  } catch {
+    return { ...page, token: null };
+  }
 }
 
 /** หาเพจจาก id ที่ได้รับใน webhook (Facebook = Page ID, Instagram = IG User ID) */

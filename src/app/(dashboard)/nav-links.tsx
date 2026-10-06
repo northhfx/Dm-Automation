@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/contacts", label: "รายชื่อลูกค้า" },
   { href: "/activity", label: "กิจกรรม" },
   { href: "/settings", label: "ตั้งค่า" },
+  { href: "/guide", label: "คู่มือตั้งค่า" },
 ];
 
 export function NavLinks() {

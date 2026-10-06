@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
 import { getDb } from "@/db/client";
 import { ingestWebhook } from "@/lib/automation/ingest";
+import { getMetaConfig, markWebhookVerified } from "@/lib/config";
 import { safeEqual, verifyMetaSignature } from "@/lib/crypto";
-import { env } from "@/lib/env";
 import { wakeWorker } from "@/lib/queue/worker";
 
 /** Meta เรียก GET ครั้งแรกตอนตั้งค่า Webhook เพื่อยืนยันว่า URL นี้เป็นของเรา */
@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
   const mode = params.get("hub.mode");
   const token = params.get("hub.verify_token") ?? "";
   const challenge = params.get("hub.challenge") ?? "";
-  if (mode === "subscribe" && safeEqual(token, env.metaVerifyToken)) {
+  const db = getDb();
+  const { verifyToken } = await getMetaConfig(db);
+  if (mode === "subscribe" && safeEqual(token, verifyToken)) {
+    await markWebhookVerified(db);
     return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
   }
   return new Response("Forbidden", { status: 403 });
@@ -20,8 +23,14 @@ export async function GET(request: NextRequest) {
 /** ทุกครั้งที่มีคอมเมนต์ / ข้อความใหม่ Meta จะ POST มาที่นี่ */
 export async function POST(request: NextRequest) {
   const raw = await request.text();
-  if (!verifyMetaSignature(raw, request.headers.get("x-hub-signature-256"), env.metaAppSecret)) {
-    console.warn("[webhook] ลายเซ็นไม่ถูกต้อง — ตรวจสอบ META_APP_SECRET");
+  const db = getDb();
+  const { appSecret } = await getMetaConfig(db);
+  if (!appSecret) {
+    console.warn("[webhook] ยังไม่ได้ใส่ App Secret — ไปที่หน้าคู่มือตั้งค่า");
+    return new Response("App secret not configured", { status: 503 });
+  }
+  if (!verifyMetaSignature(raw, request.headers.get("x-hub-signature-256"), appSecret)) {
+    console.warn("[webhook] ลายเซ็นไม่ถูกต้อง — ตรวจสอบ App Secret ในหน้าตั้งค่า");
     return new Response("Invalid signature", { status: 401 });
   }
 
@@ -33,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 
   // บันทึกลงคิวแล้วตอบกลับทันที (Meta ต้องการคำตอบภายในไม่กี่วินาที) งานจริงให้ worker ทำ
-  await ingestWebhook(getDb(), body);
+  await ingestWebhook(db, body);
   wakeWorker();
   return new Response("EVENT_RECEIVED", { status: 200 });
 }

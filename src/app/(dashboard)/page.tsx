@@ -13,13 +13,14 @@ import {
   PageHeader,
   StatTile,
 } from "@/components/ui";
-import { listConnectedPages } from "@/lib/pages";
+import { getSetupStatus, setupProgress } from "@/lib/config";
 import { getOverview, parseRange, RANGE_OPTIONS, rate, sum } from "@/lib/stats";
 
 export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const days = parseRange((await searchParams).range);
   const db = getDb();
-  const [overview, pages] = await Promise.all([getOverview(db, days), listConnectedPages(db)]);
+  const [overview, setup] = await Promise.all([getOverview(db, days), getSetupStatus(db)]);
+  const progress = setupProgress(setup);
   const t = overview.totals;
   const sent = sum(t.dmsSent);
 
@@ -46,14 +47,14 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
         }
       />
 
-      {pages.length === 0 && (
+      {progress.done < progress.total && (
         <div className="mb-6">
           <Notice tone="warning">
-            ยังไม่ได้เชื่อมต่อ Facebook Page —{" "}
-            <Link href="/settings" className="font-medium underline">
-              ไปที่หน้าตั้งค่า
+            ตั้งค่าเสร็จแล้ว {progress.done} จาก {progress.total} ขั้น —{" "}
+            <Link href="/guide" className="font-medium underline">
+              ไปที่คู่มือตั้งค่า
             </Link>{" "}
-            เพื่อเริ่มใช้งาน
+            เพื่อทำต่อ
           </Notice>
         </div>
       )}

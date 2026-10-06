@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "@/db/client";
 import { pages } from "@/db/schema";
 import { requireAuth } from "@/lib/auth";
+import { saveMetaApp, savePublicBaseUrl, setAppReviewDone, setPassword, verifyPassword } from "@/lib/config";
 import { exchangeForLongLivedUserToken, listManagedPages, subscribePageToApp } from "@/lib/meta/graph";
 import { getPageById, savePage } from "@/lib/pages";
 
@@ -61,6 +62,7 @@ export async function connectAction(prev: ConnectState, formData: FormData): Pro
         problems.push(...(await subscribe(p.id)));
       }
       revalidatePath("/settings");
+      revalidatePath("/guide");
       return {
         step: "done",
         message: `เชื่อมต่อ ${managed.length} เพจเรียบร้อย`,
@@ -79,6 +81,7 @@ async function subscribe(pageId: string): Promise<string[]> {
   const db = getDb();
   const page = await getPageById(db, pageId);
   if (!page) return [];
+  if (!page.token) return [`${page.name}: token ใช้ไม่ได้ กรุณาเชื่อมต่อเพจใหม่`];
   try {
     await subscribePageToApp(page.id, page.token);
     await db.update(pages).set({ subscribed: true, lastError: null }).where(eq(pages.id, page.id));
@@ -94,10 +97,60 @@ export async function resubscribePage(formData: FormData): Promise<void> {
   await requireAuth();
   await subscribe(String(formData.get("pageId")));
   revalidatePath("/settings");
+  revalidatePath("/guide");
 }
 
 export async function disconnectPage(formData: FormData): Promise<void> {
   await requireAuth();
   await getDb().delete(pages).where(eq(pages.id, String(formData.get("pageId"))));
   revalidatePath("/settings");
+  revalidatePath("/guide");
+}
+
+export interface FormResult {
+  ok?: boolean;
+  error?: string;
+}
+
+/** บันทึก App ID / App Secret จาก Meta App Dashboard → App settings → Basic */
+export async function saveMetaAppAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
+  await requireAuth();
+  const appId = String(formData.get("appId") ?? "").trim();
+  const appSecret = String(formData.get("appSecret") ?? "").trim();
+  if (!/^\d{5,20}$/.test(appId)) return { error: "App ID ต้องเป็นตัวเลขล้วน (คัดลอกจากหน้า App settings → Basic)" };
+  if (appSecret && !/^[a-f0-9]{32}$/i.test(appSecret)) {
+    return { error: "App Secret ไม่ถูกต้อง (ควรเป็นตัวอักษร a-f และตัวเลข 32 ตัว — กด Show ก่อนคัดลอก)" };
+  }
+  await saveMetaApp(getDb(), appId, appSecret);
+  revalidatePath("/guide");
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+export async function saveBaseUrlAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
+  await requireAuth();
+  const url = String(formData.get("baseUrl") ?? "").trim();
+  if (!/^https?:\/\/[^\s/]+/.test(url)) return { error: "ใส่ URL ให้ครบ เช่น https://dm-automation-production.up.railway.app" };
+  await savePublicBaseUrl(getDb(), url);
+  revalidatePath("/guide");
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+export async function setAppReviewAction(formData: FormData): Promise<void> {
+  await requireAuth();
+  await setAppReviewDone(getDb(), formData.get("done") === "1");
+  revalidatePath("/guide");
+}
+
+export async function changePasswordAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
+  await requireAuth();
+  if (process.env.ADMIN_PASSWORD) return { error: "รหัสผ่านถูกตั้งผ่าน ADMIN_PASSWORD ใน Railway — เปลี่ยนที่นั่นแทน" };
+  const db = getDb();
+  const current = String(formData.get("current") ?? "");
+  const next = String(formData.get("next") ?? "");
+  if (!(await verifyPassword(db, current))) return { error: "รหัสผ่านปัจจุบันไม่ถูกต้อง" };
+  if (next.length < 8) return { error: "รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร" };
+  await setPassword(db, next);
+  return { ok: true };
 }

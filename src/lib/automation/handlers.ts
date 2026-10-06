@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { contacts, dedupKeys, events, links, messages, rules, type Job, type Platform, type TriggerType } from "@/db/schema";
+import { getPublicBaseUrl } from "@/lib/config";
 import { randomCode } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { fetchProfile, GraphApiError, replyToComment, sendTextMessage, type Recipient, type SendResult } from "@/lib/meta/graph";
@@ -79,6 +80,7 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
   const page = await findPageByAccount(db, job.platform, job.accountId);
   if (!page) return; // webhook ของเพจที่ยังไม่ได้เชื่อมต่อ
   if (!(await claimOnce(db, `comment:${job.commentId}`))) return;
+  const token = page.token;
 
   await logEvent(db, {
     type: "comment_received",
@@ -97,6 +99,10 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
     postId: job.postId,
   });
   if (!rule) return;
+  if (!token) {
+    await logTokenProblem(db, job.platform, page.id, rule.id, job.fromId);
+    return;
+  }
 
   if (rule.oncePerUser) {
     const already = await db.query.events.findFirst({
@@ -151,7 +157,7 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
   if (publicReply) {
     const message = renderTemplate(publicReply, { name: sendJob.actorName });
     try {
-      const res = await replyToComment(job.platform, job.commentId, page.token, message);
+      const res = await replyToComment(job.platform, job.commentId, token, message);
       await logEvent(db, {
         type: "public_reply_sent",
         platform: job.platform,
@@ -195,7 +201,7 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
 
   let name = contact.name;
   let username = contact.username;
-  if (!name && !username) {
+  if (!name && !username && page.token) {
     try {
       const profile = await fetchProfile(job.platform, job.senderId, page.token);
       name = profile.name;
@@ -222,6 +228,10 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
     text: job.text || job.payload || "",
   });
   if (!rule) return;
+  if (!page.token) {
+    await logTokenProblem(db, job.platform, page.id, rule.id, job.senderId);
+    return;
+  }
 
   await logEvent(db, {
     type: "rule_triggered",
@@ -311,6 +321,11 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
   const page = await getPageById(db, data.pageId);
   const rule = await db.query.rules.findFirst({ where: eq(rules.id, data.ruleId) });
   if (!page || !rule) return;
+  const token = page.token;
+  if (!token) {
+    await logTokenProblem(db, data.platform, page.id, rule.id, data.actorId);
+    return;
+  }
 
   const waitUntil = await nextAllowedSendTime(db, page.id, data.platform);
   if (waitUntil) {
@@ -318,8 +333,10 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
     throw new RescheduledError();
   }
 
+  // ลิงก์ติดตามต้องรู้ URL ของระบบ ถ้ายังไม่รู้ให้ส่งลิงก์ปลายทางตรงๆ (ไม่นับคลิก) ดีกว่าไม่ส่งเลย
+  const baseUrl = rule.linkUrl ? await getPublicBaseUrl(db) : null;
   let linkCode: string | null = null;
-  if (rule.linkUrl) {
+  if (rule.linkUrl && baseUrl) {
     linkCode = data.linkCode ?? null;
     if (!linkCode) {
       linkCode = randomCode();
@@ -327,13 +344,13 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
       await updateJobPayload(db, job.id, { ...data, linkCode });
     }
   }
-  const linkUrl = linkCode ? `${env.publicBaseUrl}/r/${linkCode}` : null;
+  const linkUrl = linkCode ? `${baseUrl}/r/${linkCode}` : rule.linkUrl;
 
   const text = renderTemplate(rule.dmText, { name: data.actorName, link: linkUrl });
 
   let res: SendResult;
   try {
-    res = await sendTextMessage(page.id, page.token, data.recipient, text);
+    res = await sendTextMessage(page.id, token, data.recipient, text);
   } catch (err) {
     if (err instanceof GraphApiError && err.retryable && job.attempts < job.maxAttempts) throw err;
     // ส่งไม่สำเร็จแน่แล้ว → ลบลิงก์ทิ้ง เพื่อไม่ให้ไปถ่วงสถิติ % คลิก
@@ -416,6 +433,18 @@ export class RescheduledError extends Error {
     super("rescheduled");
     this.name = "RescheduledError";
   }
+}
+
+/** token ของเพจใช้ไม่ได้ → บันทึกให้เห็นในหน้ากิจกรรม พร้อมบอกวิธีแก้ */
+async function logTokenProblem(db: Db, platform: Platform, pageId: string, ruleId: number, actorId: string): Promise<void> {
+  await logEvent(db, {
+    type: "dm_failed",
+    platform,
+    pageId,
+    ruleId,
+    actorId,
+    meta: { error: { message: "token ของเพจใช้ไม่ได้ — ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่" } },
+  });
 }
 
 function errorInfo(err: unknown): Record<string, unknown> {

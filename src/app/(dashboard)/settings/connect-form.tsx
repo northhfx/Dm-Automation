@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { buttonClass, Field, inputClass, Notice } from "@/components/ui";
 import { connectAction, type ConnectState } from "./actions";
 
 export function ConnectForm() {
   const [state, action, pending] = useActionState<ConnectState, FormData>(connectAction, { step: "token" });
+  const [token, setToken] = useState("");
 
   if (state.step === "pick" && state.pages) {
     return (
@@ -45,10 +46,19 @@ export function ConnectForm() {
       {state.error && <Notice tone={state.step === "done" ? "warning" : "critical"}>{state.error}</Notice>}
       <Field
         label="User Access Token"
-        hint="สร้างได้จาก Graph API Explorer (ดูขั้นตอนใน README หัวข้อ 'เชื่อมต่อเพจ') — ระบบจะแลกเป็น token ระยะยาวให้อัตโนมัติ และไม่เก็บ token นี้ไว้"
+        hint="สร้างได้จาก Graph API Explorer (ดูขั้นตอนในหน้าคู่มือตั้งค่า ขั้นที่ 4) — ระบบจะแลกเป็น token ระยะยาวให้อัตโนมัติ และไม่เก็บ token นี้ไว้"
         htmlFor="token"
       >
-        <textarea id="token" name="token" rows={3} required placeholder="EAAG..." className={`${inputClass} font-mono text-xs`} />
+        <textarea
+          id="token"
+          name="token"
+          rows={3}
+          required
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="EAAG..."
+          className={`${inputClass} font-mono text-xs`}
+        />
       </Field>
       <button className={buttonClass.primary} disabled={pending}>
         {pending ? "กำลังตรวจสอบ…" : "ดึงรายชื่อเพจ"}

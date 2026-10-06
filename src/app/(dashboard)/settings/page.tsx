@@ -1,97 +1,88 @@
+import Link from "next/link";
 import { getDb } from "@/db/client";
-import { Badge, buttonClass, Card, formatDateTime, PageHeader } from "@/components/ui";
-import { env, REQUIRED_ENV } from "@/lib/env";
-import { PAGE_WEBHOOK_FIELDS } from "@/lib/meta/graph";
+import { CopyField } from "@/components/copy-field";
+import { Badge, Card, formatDateTime, Notice, PageHeader } from "@/components/ui";
+import { getSetupStatus } from "@/lib/config";
+import { env } from "@/lib/env";
+import { INSTAGRAM_WEBHOOK_FIELDS, PAGE_WEBHOOK_FIELDS } from "@/lib/meta/setup-info";
 import { listConnectedPages } from "@/lib/pages";
-import { disconnectPage, resubscribePage } from "./actions";
 import { ConnectForm } from "./connect-form";
-
-const INSTAGRAM_WEBHOOK_FIELDS = ["comments", "messages", "messaging_postbacks", "messaging_seen"];
-
-function Code({ children }: { children: string }) {
-  return <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs break-all">{children}</code>;
-}
+import { BaseUrlForm, ChangePasswordForm, MetaAppForm } from "./forms";
+import { PagesList } from "./pages-list";
 
 export default async function SettingsPage() {
-  const pages = await listConnectedPages(getDb());
-  const missing = REQUIRED_ENV.filter((name) => !process.env[name]);
-  const webhookUrl = process.env.PUBLIC_BASE_URL ? `${env.publicBaseUrl}/api/webhooks/meta` : null;
+  const db = getDb();
+  const [pages, status] = await Promise.all([listConnectedPages(db), getSetupStatus(db)]);
+  const urlFromHost = Boolean(process.env.PUBLIC_BASE_URL || process.env.RAILWAY_PUBLIC_DOMAIN);
 
   return (
     <>
-      <PageHeader title="ตั้งค่า" description="เชื่อมต่อ Facebook Page / Instagram และตรวจสอบการตั้งค่า Webhook" />
+      <PageHeader
+        title="ตั้งค่า"
+        description={
+          <>
+            ตั้งค่าครั้งแรก? ทำตาม{" "}
+            <Link href="/guide" className="font-medium text-accent underline">
+              คู่มือตั้งค่า
+            </Link>{" "}
+            จะง่ายกว่า
+          </>
+        }
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="เพจที่เชื่อมต่อแล้ว" className="lg:col-span-2">
-          {pages.length === 0 ? (
-            <p className="text-sm text-fg-2">ยังไม่มี — เชื่อมต่อด้านล่าง</p>
-          ) : (
-            <ul className="space-y-3">
-              {pages.map((p) => (
-                <li key={p.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium">{p.name}</div>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      <Badge>Facebook ID {p.id}</Badge>
-                      {p.igUsername ? <Badge>Instagram @{p.igUsername}</Badge> : <Badge tone="warning">ไม่มี Instagram</Badge>}
-                      {p.subscribed ? <Badge tone="good">✓ รับ webhook แล้ว</Badge> : <Badge tone="critical">✕ ยังไม่รับ webhook</Badge>}
-                    </div>
-                    {p.lastError && <p className="mt-1 text-xs text-critical-text">{p.lastError}</p>}
-                    <p className="mt-1 text-xs text-fg-3">เชื่อมต่อเมื่อ {formatDateTime(p.connectedAt)}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <form action={resubscribePage}>
-                      <input type="hidden" name="pageId" value={p.id} />
-                      <button className={buttonClass.secondary}>Subscribe ใหม่</button>
-                    </form>
-                    <form action={disconnectPage}>
-                      <input type="hidden" name="pageId" value={p.id} />
-                      <button className={buttonClass.danger}>ยกเลิกการเชื่อมต่อ</button>
-                    </form>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+        <Card title="เพจที่เชื่อมต่อ" className="lg:col-span-2">
+          <PagesList pages={pages} />
         </Card>
 
-        <Card title="เชื่อมต่อเพจ" description="ใช้ได้ทั้งเพจใหม่และเชื่อมเพจเดิมซ้ำ (เช่น เมื่อ token หมดอายุ)">
+        <Card title="เชื่อมต่อเพจ" description="ใช้ได้ทั้งเพจใหม่และเชื่อมเพจเดิมซ้ำ (เช่น เมื่อ token ใช้ไม่ได้)">
           <ConnectForm />
         </Card>
 
-        <Card title="ค่าที่ต้องใส่ใน Meta App Dashboard" description="เมนู Webhooks ของแอปใน developers.facebook.com">
-          <dl className="space-y-3 text-sm">
-            <div>
-              <dt className="text-fg-2">Callback URL</dt>
-              <dd className="mt-1">{webhookUrl ? <Code>{webhookUrl}</Code> : <span className="text-critical-text">ตั้งค่า PUBLIC_BASE_URL ก่อน</span>}</dd>
-            </div>
-            <div>
-              <dt className="text-fg-2">Verify Token</dt>
-              <dd className="mt-1">ค่าเดียวกับ <Code>META_VERIFY_TOKEN</Code></dd>
-            </div>
-            <div>
-              <dt className="text-fg-2">Fields ของ Page</dt>
-              <dd className="mt-1 flex flex-wrap gap-1">{PAGE_WEBHOOK_FIELDS.map((f) => <Code key={f}>{f}</Code>)}</dd>
-            </div>
-            <div>
-              <dt className="text-fg-2">Fields ของ Instagram</dt>
-              <dd className="mt-1 flex flex-wrap gap-1">{INSTAGRAM_WEBHOOK_FIELDS.map((f) => <Code key={f}>{f}</Code>)}</dd>
-            </div>
-          </dl>
+        <Card title="Meta App" description="จาก developers.facebook.com → แอปของคุณ → App settings → Basic">
+          <MetaAppForm appId={status.meta.appId} hasSecret={Boolean(status.meta.appSecret)} fromEnv={status.meta.fromEnv} />
         </Card>
 
-        <Card title="สถานะระบบ" className="lg:col-span-2">
-          <ul className="grid gap-2 text-sm sm:grid-cols-2">
-            {REQUIRED_ENV.map((name) => (
-              <li key={name} className="flex items-center gap-2">
-                {missing.includes(name) ? <Badge tone="critical">✕ ยังไม่ตั้ง</Badge> : <Badge tone="good">✓ ตั้งแล้ว</Badge>}
-                <Code>{name}</Code>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 text-sm text-fg-2">
-            จำกัด DM อัตโนมัติ: Instagram {env.instagramDmPerHour || "ไม่จำกัด"} ข้อความ/ชม. · Facebook{" "}
-            {env.facebookDmPerHour || "ไม่จำกัด"} ข้อความ/ชม. — ข้อความที่เกินจะรอคิวส่งในชั่วโมงถัดไป ไม่หาย
+        <Card title="Webhook" description="ค่าที่ใส่ในเมนู Webhooks ของแอปใน Meta">
+          <div className="space-y-4">
+            {status.baseUrl ? (
+              <CopyField label="Callback URL" value={`${status.baseUrl}/api/webhooks/meta`} />
+            ) : (
+              <Notice tone="warning">ใส่ URL ของระบบก่อน</Notice>
+            )}
+            <CopyField label="Verify token" value={status.meta.verifyToken} />
+            <div className="text-sm">
+              <div className="text-xs font-medium text-fg-2">Fields ที่ต้อง Subscribe</div>
+              <p className="mt-1">Page: {PAGE_WEBHOOK_FIELDS.join(", ")}</p>
+              <p>Instagram: {INSTAGRAM_WEBHOOK_FIELDS.join(", ")}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-sm">
+              {status.webhookVerifiedAt ? (
+                <Badge tone="good">✓ Meta ยืนยัน URL แล้ว</Badge>
+              ) : (
+                <Badge tone="warning">ยังไม่ได้รับการยืนยันจาก Meta</Badge>
+              )}
+              {status.lastWebhookAt && <Badge>webhook ล่าสุด {formatDateTime(status.lastWebhookAt)}</Badge>}
+            </div>
+          </div>
+        </Card>
+
+        <Card title="URL ของระบบ" description="ใช้สร้าง Callback URL และลิงก์ติดตามการคลิก">
+          {urlFromHost && status.baseUrl ? (
+            <CopyField value={status.baseUrl} />
+          ) : (
+            <BaseUrlForm baseUrl={status.baseUrl} />
+          )}
+        </Card>
+
+        <Card title="เปลี่ยนรหัสผ่าน">
+          <ChangePasswordForm />
+        </Card>
+
+        <Card title="ลิมิตการส่ง">
+          <p className="text-sm text-fg-2">
+            Instagram {env.instagramDmPerHour || "ไม่จำกัด"} ข้อความ/ชม. · Facebook {env.facebookDmPerHour || "ไม่จำกัด"}{" "}
+            ข้อความ/ชม. — ข้อความที่เกินจะรอคิวส่งในชั่วโมงถัดไป ไม่หาย
           </p>
         </Card>
       </div>
