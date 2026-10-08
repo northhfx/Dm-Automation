@@ -89,15 +89,29 @@ export interface SendResult {
   message_id: string;
 }
 
+export type GraphButton =
+  | { type: "postback"; title: string; payload: string }
+  | { type: "web_url"; title: string; url: string };
+
+/** ข้อความธรรมดา หรือข้อความที่มีปุ่มอยู่ด้านล่าง (button template) */
+export type OutgoingMessage =
+  | { text: string }
+  | { attachment: { type: "template"; payload: { template_type: "button"; text: string; buttons: GraphButton[] } } };
+
+export function buildMessage(text: string, buttons: GraphButton[]): OutgoingMessage {
+  if (buttons.length === 0) return { text };
+  return { attachment: { type: "template", payload: { template_type: "button", text, buttons } } };
+}
+
 /**
  * ส่ง DM ผ่าน Page (ใช้ได้ทั้ง Messenger และ Instagram ที่ผูกกับเพจ)
  * recipient = { comment_id } คือ "Private Reply" ตอบคอมเมนต์ทาง DM (ส่งได้ 1 ครั้งต่อคอมเมนต์ ภายใน 7 วัน)
  */
-export function sendTextMessage(pageId: string, token: string, recipient: Recipient, text: string) {
+export function sendMessage(pageId: string, token: string, recipient: Recipient, message: OutgoingMessage) {
   return graphRequest<SendResult>(`/${pageId}/messages`, {
     method: "POST",
     token,
-    body: { recipient, messaging_type: "RESPONSE", message: { text } },
+    body: { recipient, messaging_type: "RESPONSE", message },
   });
 }
 

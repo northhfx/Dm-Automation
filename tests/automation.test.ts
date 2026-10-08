@@ -3,13 +3,14 @@ import { createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { contacts, events, jobs, links, messages } from "@/db/schema";
+import { contacts, events, jobs, links, messages, rules } from "@/db/schema";
 import { ingestWebhook } from "@/lib/automation/ingest";
+import { flowPayload } from "@/lib/flows/types";
 import { drainQueue } from "@/lib/queue/worker";
 import { GET as clickLink } from "@/app/r/[code]/route";
 import { GET as verifyWebhook, POST as receiveWebhook } from "@/app/api/webhooks/meta/route";
-import { createRule, resetDatabase, startMockGraph } from "./helpers";
-import { fbComment, fbDm, fbRead, igComment, igDm, igRead } from "./fixtures";
+import { createRule, resetDatabase, singleStep, startMockGraph, TWO_STEP_FLOW, type GraphCall } from "./helpers";
+import { fbComment, fbDm, fbRead, igComment, igDm, igRead, postback } from "./fixtures";
 
 let graph: Awaited<ReturnType<typeof startMockGraph>>;
 let db: Db;
@@ -36,37 +37,109 @@ async function eventTypes() {
   return rows.map((r) => r.type);
 }
 
-describe("คอมเมนต์ → ตอบคอมเมนต์ + ส่ง DM", () => {
-  it("Facebook: ตอบคอมเมนต์สาธารณะและส่ง Private Reply พร้อมลิงก์ติดตาม", async () => {
+function sentMessages(): GraphCall[] {
+  return graph.calls.filter((c) => c.path === "/PAGE1/messages");
+}
+
+type ButtonTemplate = { template_type: string; text: string; buttons: { type: string; title: string; payload?: string; url?: string }[] };
+function templateOf(call: GraphCall): ButtonTemplate {
+  return (call.body!.message as { attachment: { payload: ButtonTemplate } }).attachment.payload;
+}
+
+describe("คอมเมนต์ → ตอบคอมเมนต์ + ส่ง DM ที่มีปุ่ม", () => {
+  it("Facebook: ตอบคอมเมนต์ และส่ง Private Reply พร้อมปุ่ม 'ส่งข้อความถัดไป'", async () => {
     const rule = await createRule();
     await deliver(fbComment({ text: "สนใจค่ะ ขอราคา" }));
 
-    const dm = graph.calls.find((c) => c.path === "/PAGE1/messages")!;
+    const [dm] = sentMessages();
     expect(dm.body).toMatchObject({ recipient: { comment_id: "POST1_C1" }, messaging_type: "RESPONSE" });
-    const text = (dm.body!.message as { text: string }).text;
-    expect(text).toMatch(/^สวัสดีค่ะ Somchai รายละเอียดอยู่ที่ https:\/\/dm\.example\.com\/r\/[A-Za-z0-9]{8}$/);
+    expect(templateOf(dm)).toEqual({
+      template_type: "button",
+      text: "สวัสดีค่ะ Somchai สนใจรับรายละเอียดไหมคะ",
+      buttons: [{ type: "postback", title: "ใช่ ฉันสนใจ", payload: flowPayload(rule.id, "s1", "b1") }],
+    });
     expect(dm.query.appsecret_proof).toBeTruthy();
 
     const reply = graph.calls.find((c) => c.path === "/POST1_C1/comments")!;
     expect(reply.body).toEqual({ message: "ส่งรายละเอียดให้ทาง DM แล้วนะคะ Somchai" });
 
     expect(await eventTypes()).toEqual(["comment_received", "rule_triggered", "public_reply_sent", "dm_sent"]);
-
     const [contact] = await db.select().from(contacts);
     expect(contact).toMatchObject({ platform: "facebook", platformUserId: "PSID_FROM_POST1_C1", name: "Somchai" });
     const [msg] = await db.select().from(messages);
-    expect(msg).toMatchObject({ status: "sent", ruleId: rule.id, contactId: contact.id, mid: expect.stringMatching(/^m_/), source: "comment" });
-    const [link] = await db.select().from(links);
-    expect(link).toMatchObject({ ruleId: rule.id, contactId: contact.id, targetUrl: "https://shop.example.com/product" });
+    expect(msg).toMatchObject({ status: "sent", ruleId: rule.id, stepId: "s1", contactId: contact.id, source: "comment" });
+    // ข้อความแรกไม่มีปุ่มลิงก์ จึงยังไม่มีลิงก์ติดตาม
+    expect(await db.select().from(links)).toHaveLength(0);
   });
 
-  it("Instagram: ใช้ /replies สำหรับตอบคอมเมนต์ และใช้ username แทนชื่อ", async () => {
-    await createRule({ linkUrl: null, dmText: "หวัดดี @{name}" });
-    await deliver(igComment({ text: "สนใจ" }));
+  it("ลูกค้ากดปุ่ม → ส่งข้อความถัดไปพร้อมปุ่มลิงก์ที่นับคลิกได้", async () => {
+    const rule = await createRule();
+    await deliver(fbComment());
+    graph.reset();
 
+    await deliver(postback("facebook", flowPayload(rule.id, "s1", "b1"), { senderId: "PSID_FROM_POST1_C1" }));
+
+    const [dm] = sentMessages();
+    expect(dm.body).toMatchObject({ recipient: { id: "PSID_FROM_POST1_C1" } });
+    const tpl = templateOf(dm);
+    expect(tpl.text).toBe("ขอบคุณค่ะ Somchai รายละเอียดอยู่ด้านล่าง");
+    expect(tpl.buttons).toHaveLength(1);
+    expect(tpl.buttons[0]).toMatchObject({ type: "web_url", title: "ดูรายละเอียด" });
+    expect(tpl.buttons[0].url).toMatch(/^https:\/\/dm\.example\.com\/r\/[A-Za-z0-9]{8}$/);
+
+    const [contact] = await db.select().from(contacts);
+    const [link] = await db.select().from(links);
+    expect(link).toMatchObject({
+      ruleId: rule.id,
+      stepId: "s2",
+      buttonId: "b2",
+      contactId: contact.id,
+      targetUrl: "https://shop.example.com/product",
+    });
+    const tap = (await db.select().from(events).where(eq(events.type, "button_clicked")))[0];
+    expect(tap).toMatchObject({ ruleId: rule.id, contactId: contact.id });
+    expect(tap.meta).toMatchObject({ stepId: "s1", buttonId: "b1" });
+    const second = (await db.select().from(messages).where(eq(messages.stepId, "s2")))[0];
+    expect(second).toMatchObject({ source: "button", status: "sent" });
+  });
+
+  it("การกดปุ่มไม่ถูกนำไปจับ keyword ของกฎ DM (ไม่ส่งข้อความซ้อน)", async () => {
+    const commentRule = await createRule();
+    await createRule({ name: "DM", trigger: "dm", keywords: ["สนใจ"], steps: singleStep("ตอบจากกฎ DM") });
+    await deliver(fbComment());
+    graph.reset();
+    await deliver(postback("facebook", flowPayload(commentRule.id, "s1", "b1"), { senderId: "PSID_FROM_POST1_C1", title: "ใช่ ฉันสนใจ" }));
+    expect(sentMessages()).toHaveLength(1);
+    expect(templateOf(sentMessages()[0]).text).toContain("รายละเอียดอยู่ด้านล่าง");
+    expect(await eventTypes()).not.toContain("dm_received");
+  });
+
+  it("ปุ่มจากข้อความเก่าที่ถูกลบไปแล้ว → บันทึกการกดแต่ไม่ส่งอะไร", async () => {
+    const rule = await createRule();
+    await db.update(rules).set({ steps: singleStep("ข้อความใหม่") }).where(eq(rules.id, rule.id));
+    await deliver(postback("facebook", flowPayload(rule.id, "s1", "b1")));
+    expect(sentMessages()).toHaveLength(0);
+    expect(await eventTypes()).toEqual(["button_clicked"]);
+  });
+
+  it("กฎที่ปิดอยู่ไม่ส่งข้อความถัดไป", async () => {
+    const rule = await createRule({ active: false });
+    await deliver(postback("instagram", flowPayload(rule.id, "s1", "b1")));
+    expect(sentMessages()).toHaveLength(0);
+    expect(await eventTypes()).toEqual(["button_clicked", "skipped"]);
+  });
+
+  it("ข้อความที่ไม่มีปุ่มส่งเป็นข้อความธรรมดา", async () => {
+    await createRule({ steps: singleStep("หวัดดี @{name}"), publicReplies: [] });
+    await deliver(igComment({ text: "สนใจ" }));
+    expect(sentMessages()[0].body).toMatchObject({ recipient: { comment_id: "IGC1" }, message: { text: "หวัดดี @mint.shop" } });
+  });
+
+  it("Instagram: ใช้ /replies สำหรับตอบคอมเมนต์", async () => {
+    await createRule();
+    await deliver(igComment({ text: "สนใจ" }));
     expect(graph.calls.find((c) => c.path === "/IGC1/replies")).toBeTruthy();
-    const dm = graph.calls.find((c) => c.path === "/PAGE1/messages")!;
-    expect(dm.body).toMatchObject({ recipient: { comment_id: "IGC1" }, message: { text: "หวัดดี @mint.shop" } });
+    expect(templateOf(sentMessages()[0]).text).toBe("สวัสดีค่ะ mint.shop สนใจรับรายละเอียดไหมคะ");
   });
 
   it("ไม่ทำอะไรถ้าไม่ตรง keyword หรือไม่ใช่โพสต์ที่เลือกไว้", async () => {
@@ -81,14 +154,14 @@ describe("คอมเมนต์ → ตอบคอมเมนต์ + ส�
     await createRule();
     await deliver(fbComment());
     await deliver(fbComment());
-    expect(graph.calls.filter((c) => c.path === "/PAGE1/messages")).toHaveLength(1);
+    expect(sentMessages()).toHaveLength(1);
   });
 
   it("คนเดิมคอมเมนต์ซ้ำในโพสต์เดิม → ส่งแค่ครั้งแรก (oncePerUser)", async () => {
     await createRule();
     await deliver(fbComment({ commentId: "C1" }));
     await deliver(fbComment({ commentId: "C2" }));
-    expect(graph.calls.filter((c) => c.path === "/PAGE1/messages")).toHaveLength(1);
+    expect(sentMessages()).toHaveLength(1);
     expect((await eventTypes()).at(-1)).toBe("skipped");
   });
 
@@ -96,16 +169,16 @@ describe("คอมเมนต์ → ตอบคอมเมนต์ + ส�
     await createRule({ oncePerUser: false, publicReplies: [] });
     await deliver(fbComment({ commentId: "C1" }));
     await deliver(fbComment({ commentId: "C2" }));
-    expect(graph.calls.filter((c) => c.path === "/PAGE1/messages")).toHaveLength(2);
+    expect(sentMessages()).toHaveLength(2);
   });
 });
 
 describe("DM keyword → ตอบกลับอัตโนมัติ", () => {
   it("ตอบตาม keyword และดึงชื่อโปรไฟล์มาใช้", async () => {
-    await createRule({ trigger: "dm", keywords: ["ราคา"], dmText: "สวัสดี {name} ราคา 990 บาท", linkUrl: null });
+    await createRule({ trigger: "dm", keywords: ["ราคา"], steps: singleStep("สวัสดี {name} ราคา 990 บาท") });
     await deliver(fbDm({ text: "ขอราคาหน่อย" }));
 
-    const dm = graph.calls.find((c) => c.path === "/PAGE1/messages")!;
+    const [dm] = sentMessages();
     expect(dm.body).toMatchObject({ recipient: { id: "PSID1" }, message: { text: "สวัสดี Mint ราคา 990 บาท" } });
     const [contact] = await db.select().from(contacts);
     expect(contact.name).toBe("Mint Chan");
@@ -123,7 +196,7 @@ describe("DM keyword → ตอบกลับอัตโนมัติ", () =
 
 describe("สถิติ: อ่านแล้ว / คลิกลิงก์", () => {
   it("read receipt ของ Facebook (watermark) และ Instagram (mid)", async () => {
-    await createRule({ trigger: "dm", keywords: ["ราคา"], linkUrl: null });
+    await createRule({ trigger: "dm", keywords: ["ราคา"], steps: singleStep("ราคา 990") });
     await deliver(fbDm({ text: "ราคา" }));
     await deliver(fbRead(Date.now() + 1000));
     await deliver(igDm({ text: "ราคา" }));
@@ -136,9 +209,10 @@ describe("สถิติ: อ่านแล้ว / คลิกลิงก�
   });
 
   it("กดลิงก์ → นับคลิกแล้ว redirect แต่ไม่นับ bot ที่ทำ link preview", async () => {
-    await createRule();
+    await createRule({ steps: singleStep("ดูได้ที่ปุ่มด้านล่าง", [{ id: "b9", title: "ดูสินค้า", type: "link", url: "https://shop.example.com/product" }]) });
     await deliver(fbComment());
     const [link] = await db.select().from(links);
+    expect(link).toMatchObject({ stepId: "s1", buttonId: "b9" });
     const url = `https://dm.example.com/r/${link.code}`;
     const ctx = { params: Promise.resolve({ code: link.code }) };
 
@@ -155,25 +229,47 @@ describe("สถิติ: อ่านแล้ว / คลิกลิงก�
 });
 
 describe("ข้อผิดพลาดและลิมิต", () => {
-  it("error ถาวร → บันทึกว่าส่งไม่สำเร็จ ไม่ลองใหม่", async () => {
-    await createRule({ dmText: "FAIL_PERMANENT", publicReplies: [] });
+  it("error ถาวร → บันทึกว่าส่งไม่สำเร็จ ไม่ลองใหม่ และลบลิงก์ที่สร้างไว้", async () => {
+    await createRule({
+      steps: singleStep("FAIL_PERMANENT", [{ id: "b1", title: "ลิงก์", type: "link", url: "https://shop.example.com" }]),
+      publicReplies: [],
+    });
     await deliver(fbComment());
     const [msg] = await db.select().from(messages);
     expect(msg.status).toBe("failed");
     expect(msg.error).toContain("isn't available");
     expect((await eventTypes()).at(-1)).toBe("dm_failed");
-    const pending = await db.select().from(jobs).where(eq(jobs.status, "pending"));
-    expect(pending).toHaveLength(0);
+    expect(await db.select().from(jobs).where(eq(jobs.status, "pending"))).toHaveLength(0);
+    expect(await db.select().from(links)).toHaveLength(0);
   });
 
-  it("error ชั่วคราว → เก็บไว้ลองใหม่ภายหลัง", async () => {
-    await createRule({ dmText: "FAIL_TRANSIENT", publicReplies: [] });
+  it("error ชั่วคราว → เก็บไว้ลองใหม่ภายหลัง โดยใช้ลิงก์เดิม", async () => {
+    await createRule({
+      steps: singleStep("FAIL_TRANSIENT", [{ id: "b1", title: "ลิงก์", type: "link", url: "https://shop.example.com" }]),
+      publicReplies: [],
+    });
     await deliver(fbComment());
     const [job] = await db.select().from(jobs).where(eq(jobs.type, "send_dm"));
     expect(job.status).toBe("pending");
     expect(job.attempts).toBe(1);
     expect(job.runAt.getTime()).toBeGreaterThan(Date.now());
     expect(await db.select().from(messages)).toHaveLength(0);
+    const [link] = await db.select().from(links);
+    expect((job.payload as { linkCodes: Record<string, string> }).linkCodes).toEqual({ b1: link.code });
+  });
+
+  it("ข้อความถูกลบออกจากกฎระหว่างรอส่ง → บันทึกว่าส่งไม่สำเร็จ", async () => {
+    const rule = await createRule({ publicReplies: [] });
+    await ingestWebhook(db, fbComment());
+    // ประมวลผลคอมเมนต์ (สร้างงานส่ง DM) แต่แก้กฎก่อนที่งานส่งจะถูกทำ
+    const { claimJobs } = await import("@/lib/queue/queue");
+    const { processJob } = await import("@/lib/queue/worker");
+    const [commentJob] = await claimJobs(db, 1);
+    await processJob(db, commentJob);
+    await db.update(rules).set({ steps: [{ ...TWO_STEP_FLOW[1], id: "other" }] }).where(eq(rules.id, rule.id));
+    await drainQueue(db);
+    expect(sentMessages()).toHaveLength(0);
+    expect((await eventTypes()).at(-1)).toBe("dm_failed");
   });
 
   it("Instagram ครบลิมิตต่อชั่วโมง → เลื่อนเวลาส่ง ไม่ทิ้งข้อความ", async () => {
@@ -181,7 +277,7 @@ describe("ข้อผิดพลาดและลิมิต", () => {
     await createRule({ oncePerUser: false, publicReplies: [] });
     await deliver(igComment({ commentId: "A" }));
     await deliver(igComment({ commentId: "B" }));
-    expect(graph.calls.filter((c) => c.path === "/PAGE1/messages")).toHaveLength(1);
+    expect(sentMessages()).toHaveLength(1);
     const [job] = await db.select().from(jobs).where(eq(jobs.status, "pending"));
     expect(job.type).toBe("send_dm");
     expect(job.attempts).toBe(0);

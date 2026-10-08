@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findMatchingRule, postIdMatches, textMatches, type MatchableRule } from "@/lib/rules/match";
 import { renderTemplate } from "@/lib/rules/template";
+import { flowPayload, parseFlowPayload } from "@/lib/flows/types";
 
 function rule(overrides: Partial<MatchableRule>): MatchableRule {
   return {
@@ -69,15 +70,23 @@ describe("findMatchingRule", () => {
 });
 
 describe("renderTemplate", () => {
-  it("แทนชื่อและลิงก์", () => {
-    expect(renderTemplate("สวัสดี {name} ดูได้ที่ {link}", { name: "Mint", link: "https://x/r/a" })).toBe(
-      "สวัสดี Mint ดูได้ที่ https://x/r/a",
-    );
+  it("แทนชื่อ และใช้ชื่อสำรองถ้าไม่รู้ชื่อ", () => {
+    expect(renderTemplate("สวัสดี {name}", { name: "Mint" })).toBe("สวัสดี Mint");
+    expect(renderTemplate("สวัสดี {name}", { name: null })).toBe("สวัสดี คุณลูกค้า");
   });
 
-  it("ต่อท้ายลิงก์ให้ถ้าไม่มี {link} และใช้ชื่อสำรองถ้าไม่รู้ชื่อ", () => {
-    expect(renderTemplate("สวัสดี {name}", { name: null, link: "https://x/r/a" })).toBe(
-      "สวัสดี คุณลูกค้า\n\nhttps://x/r/a",
-    );
+  it("ลบ {link} แบบเก่าทิ้ง (ลิงก์ใส่เป็นปุ่มแทน)", () => {
+    expect(renderTemplate("ดูที่นี่ {link}", { name: "Mint" })).toBe("ดูที่นี่");
+  });
+});
+
+describe("flow payload", () => {
+  it("เข้ารหัส/ถอดรหัสปุ่มได้ และไม่รับ payload แปลกๆ", () => {
+    const payload = flowPayload(12, "step_a", "btn-1");
+    expect(payload).toBe("flow:12:step_a:btn-1");
+    expect(parseFlowPayload(payload)).toEqual({ ruleId: 12, stepId: "step_a", buttonId: "btn-1" });
+    expect(parseFlowPayload("flow:12:step_a")).toBeNull();
+    expect(parseFlowPayload("GET_STARTED")).toBeNull();
+    expect(parseFlowPayload(null)).toBeNull();
   });
 });

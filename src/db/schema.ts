@@ -1,3 +1,4 @@
+import type { FlowStep } from "@/lib/flows/types";
 import {
   bigserial,
   boolean,
@@ -14,6 +15,8 @@ import {
 export type Platform = "facebook" | "instagram";
 export type TriggerType = "comment" | "dm";
 export type MatchType = "contains" | "exact" | "any";
+/** ข้อความถูกส่งเพราะ: คอมเมนต์, ทัก DM, หรือลูกค้ากดปุ่มในข้อความก่อนหน้า */
+export type MessageSource = TriggerType | "button";
 
 /** Facebook Page ที่เชื่อมต่อแล้ว (และบัญชี Instagram ที่ผูกกับเพจนั้น ถ้ามี) */
 export const pages = pgTable("pages", {
@@ -38,8 +41,8 @@ export const rules = pgTable("rules", {
   keywords: text("keywords").array().notNull().default([]),
   postIds: text("post_ids").array().notNull().default([]), // ว่าง = ทุกโพสต์
   publicReplies: text("public_replies").array().notNull().default([]),
-  dmText: text("dm_text").notNull(),
-  linkUrl: text("link_url"),
+  /** ข้อความที่จะส่ง ข้อความแรกคือข้อความเริ่มต้น ข้อความถัดไปส่งเมื่อลูกค้ากดปุ่ม */
+  steps: jsonb("steps").$type<FlowStep[]>().notNull().default([]),
   oncePerUser: boolean("once_per_user").notNull().default(true),
   priority: integer("priority").notNull().default(100),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -74,7 +77,8 @@ export const messages = pgTable(
     pageId: text("page_id").notNull(),
     contactId: integer("contact_id"),
     ruleId: integer("rule_id"),
-    source: text("source").$type<TriggerType>().notNull(),
+    source: text("source").$type<MessageSource>().notNull(),
+    stepId: text("step_id"),
     mid: text("mid"),
     status: text("status").$type<"sent" | "failed">().notNull(),
     error: text("error"),
@@ -97,6 +101,8 @@ export const links = pgTable(
     code: text("code").notNull(),
     targetUrl: text("target_url").notNull(),
     ruleId: integer("rule_id"),
+    stepId: text("step_id"),
+    buttonId: text("button_id"),
     contactId: integer("contact_id"),
     platform: text("platform").$type<Platform>(),
     clicks: integer("clicks").notNull().default(0),
@@ -112,7 +118,7 @@ export const links = pgTable(
 /**
  * บันทึกเหตุการณ์ทั้งหมด ใช้ทำสถิติและหน้า Activity
  * type: comment_received | dm_received | rule_triggered | public_reply_sent |
- *       public_reply_failed | dm_sent | dm_failed | link_clicked | skipped
+ *       public_reply_failed | dm_sent | dm_failed | button_clicked | link_clicked | skipped
  */
 export const events = pgTable(
   "events",

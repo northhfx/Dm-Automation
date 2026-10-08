@@ -4,20 +4,34 @@ import { useActionState, useState } from "react";
 import Link from "next/link";
 import { buttonClass, Card, cx, Field, inputClass, Notice } from "@/components/ui";
 import type { RecentPost } from "@/lib/meta/graph";
+import type { StepStats } from "@/lib/stats";
 import { saveRule } from "./actions";
 import type { RuleFormState, RuleFormValues } from "./form-values";
+import { StepsEditor } from "./steps-editor";
 
 interface Props {
   initial: RuleFormValues;
   recentPosts: RecentPost[];
   postsError: string | null;
+  stepStats?: Record<string, StepStats>;
 }
 
-export function RuleForm({ initial, recentPosts, postsError }: Props) {
+export function RuleForm({ initial, recentPosts, postsError, stepStats }: Props) {
   const [state, action, pending] = useActionState<RuleFormState, FormData>(saveRule, {});
   const values = state.values ?? initial;
   // key เปลี่ยนเมื่อ server ส่งค่ากลับมา → ฟอร์มโหลดค่าที่ผู้ใช้กรอกไว้ใหม่ (ไม่หายเมื่อกรอกผิด)
-  return <RuleFormFields key={state.attempt ?? 0} values={values} state={state} action={action} pending={pending} recentPosts={recentPosts} postsError={postsError} />;
+  return (
+    <RuleFormFields
+      key={state.attempt ?? 0}
+      values={values}
+      state={state}
+      action={action}
+      pending={pending}
+      recentPosts={recentPosts}
+      postsError={postsError}
+      stepStats={stepStats}
+    />
+  );
 }
 
 function RuleFormFields({
@@ -27,6 +41,7 @@ function RuleFormFields({
   pending,
   recentPosts,
   postsError,
+  stepStats,
 }: {
   values: RuleFormValues;
   state: RuleFormState;
@@ -34,6 +49,7 @@ function RuleFormFields({
   pending: boolean;
   recentPosts: RecentPost[];
   postsError: string | null;
+  stepStats?: Record<string, StepStats>;
 }) {
   const [trigger, setTrigger] = useState(values.trigger);
   const [matchType, setMatchType] = useState(values.matchType);
@@ -169,39 +185,26 @@ function RuleFormFields({
         </div>
       </Card>
 
-      <Card title="2. ระบบจะตอบว่าอะไร">
-        <div className="space-y-5">
-          {trigger === "comment" && (
-            <Field
-              label="ตอบคอมเมนต์ (สาธารณะ)"
-              hint="บรรทัดละ 1 แบบ ระบบจะสุ่มใช้ เพื่อไม่ให้ดูเป็นสแปม เว้นว่างไว้ถ้าไม่ต้องการตอบคอมเมนต์"
-              htmlFor="publicReplies"
-            >
-              <textarea id="publicReplies" name="publicReplies" rows={3} defaultValue={values.publicReplies} className={inputClass} />
-            </Field>
-          )}
-
+      {trigger === "comment" && (
+        <Card title="2. ตอบใต้คอมเมนต์ (ทุกคนเห็น)">
           <Field
-            label="ข้อความ DM"
-            hint={
-              <>
-                ใช้ <code className="rounded bg-surface-2 px-1">{"{name}"}</code> แทนชื่อลูกค้า และ{" "}
-                <code className="rounded bg-surface-2 px-1">{"{link}"}</code> แทนลิงก์ (ถ้าไม่ใส่ {"{link}"} ระบบจะต่อท้ายให้)
-                {trigger === "comment" && " · DM จากคอมเมนต์ส่งได้ 1 ข้อความต่อคอมเมนต์ จึงควรใส่ทุกอย่างไว้ในข้อความเดียว"}
-              </>
-            }
-            htmlFor="dmText"
+            label="ข้อความตอบคอมเมนต์"
+            hint="บรรทัดละ 1 แบบ ระบบจะสุ่มใช้ เพื่อไม่ให้ดูเป็นสแปม เว้นว่างไว้ถ้าไม่ต้องการตอบใต้คอมเมนต์"
+            htmlFor="publicReplies"
           >
-            <textarea id="dmText" name="dmText" rows={5} required maxLength={1000} defaultValue={values.dmText} className={inputClass} />
+            <textarea id="publicReplies" name="publicReplies" rows={3} defaultValue={values.publicReplies} className={inputClass} />
           </Field>
+        </Card>
+      )}
 
-          <Field label="ลิงก์ (ไม่บังคับ)" hint="ระบบจะแปลงเป็นลิงก์ติดตาม เพื่อนับว่ามีคนกดกี่คน" htmlFor="linkUrl">
-            <input id="linkUrl" name="linkUrl" type="url" placeholder="https://" defaultValue={values.linkUrl} className={inputClass} />
-          </Field>
-        </div>
+      <Card
+        title={`${trigger === "comment" ? 3 : 2}. ข้อความที่ส่งทาง DM`}
+        description="ข้อความแรกส่งทันที ข้อความถัดไปส่งเมื่อลูกค้ากดปุ่ม — ถามก่อนแล้วให้กดปุ่ม มักได้คนกดลิงก์มากกว่าส่งลิงก์ทันที"
+      >
+        <StepsEditor initial={values.steps} trigger={trigger} stats={stepStats} />
       </Card>
 
-      <Card title="3. ตัวเลือกเพิ่มเติม">
+      <Card title={`${trigger === "comment" ? 4 : 3}. ตัวเลือกเพิ่มเติม`}>
         <div className="space-y-4">
           {trigger === "comment" && (
             <label className="flex items-start gap-3 text-sm">

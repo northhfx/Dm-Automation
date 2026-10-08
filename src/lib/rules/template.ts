@@ -1,18 +1,11 @@
 /**
  * แทนค่าตัวแปรในข้อความ:
  *   {name} → ชื่อของคนที่คอมเมนต์/ทักมา (ถ้าไม่รู้ชื่อจะเป็น "คุณลูกค้า")
- *   {link} → ลิงก์ติดตามการคลิก
- * ถ้ากฎมีลิงก์แต่ข้อความไม่มี {link} ระบบจะต่อท้ายลิงก์ให้อัตโนมัติ
+ * ลิงก์ใส่เป็นปุ่ม "เปิดลิงก์" ในข้อความแทน ({link} แบบเก่าจะถูกลบออก)
  */
-export function renderTemplate(template: string, vars: { name?: string | null; link?: string | null }): string {
+export function renderTemplate(template: string, vars: { name?: string | null }): string {
   const name = vars.name?.trim() || "คุณลูกค้า";
-  let out = template.replaceAll("{name}", name);
-  if (vars.link) {
-    out = out.includes("{link}") ? out.replaceAll("{link}", vars.link) : `${out.trimEnd()}\n\n${vars.link}`;
-  } else {
-    out = out.replaceAll("{link}", "");
-  }
-  return out.trim();
+  return template.replaceAll("{name}", name).replaceAll("{link}", "").trim();
 }
 
 export function pickRandom<T>(items: T[], random: () => number = Math.random): T | undefined {

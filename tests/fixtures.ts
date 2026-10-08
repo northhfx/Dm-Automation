@@ -117,3 +117,29 @@ export function igRead(mid: string, senderId = "IGSID1") {
     ],
   };
 }
+
+/** ลูกค้ากดปุ่มในข้อความของเรา (postback) */
+export function postback(
+  platform: "facebook" | "instagram",
+  payload: string,
+  o: { title?: string; senderId?: string; mid?: string } = {},
+) {
+  const account = platform === "facebook" ? "PAGE1" : "IG1";
+  return {
+    object: platform === "facebook" ? "page" : "instagram",
+    entry: [
+      {
+        id: account,
+        time: 1700000000,
+        messaging: [
+          {
+            sender: { id: o.senderId ?? (platform === "facebook" ? "PSID1" : "IGSID1") },
+            recipient: { id: account },
+            timestamp: Date.now(),
+            postback: { mid: o.mid ?? "pb.1", title: o.title ?? "ใช่ ฉันสนใจ", payload },
+          },
+        ],
+      },
+    ],
+  };
+}

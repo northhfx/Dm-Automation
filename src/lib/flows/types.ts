@@ -1,0 +1,51 @@
+/**
+ * ข้อความแบบเป็นขั้นตอน (flow): แต่ละกฎมีข้อความได้หลายข้อความ
+ * แต่ละข้อความมีปุ่มได้สูงสุด 3 ปุ่ม — ปุ่ม "ส่งข้อความถัดไป" หรือปุ่ม "เปิดลิงก์"
+ */
+
+export type ButtonType = "next" | "link";
+
+export interface FlowButton {
+  id: string;
+  title: string;
+  type: ButtonType;
+  /** สำหรับปุ่ม next: id ของข้อความที่จะส่งเมื่อกด */
+  nextStepId?: string;
+  /** สำหรับปุ่ม link: ลิงก์ปลายทาง (ระบบแปลงเป็นลิงก์ติดตามการคลิกให้) */
+  url?: string;
+}
+
+export interface FlowStep {
+  id: string;
+  text: string;
+  buttons: FlowButton[];
+}
+
+/** ลิมิตของ Messenger / Instagram */
+export const FLOW_LIMITS = {
+  maxSteps: 10,
+  maxButtons: 3,
+  buttonTitle: 20,
+  textWithButtons: 640,
+  textPlain: 1000,
+} as const;
+
+export const ID_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+
+/** payload ที่ฝังในปุ่ม เพื่อให้รู้ว่าลูกค้ากดปุ่มไหนของกฎไหน */
+export function flowPayload(ruleId: number, stepId: string, buttonId: string): string {
+  return `flow:${ruleId}:${stepId}:${buttonId}`;
+}
+
+export function parseFlowPayload(payload: string | null | undefined): { ruleId: number; stepId: string; buttonId: string } | null {
+  if (!payload) return null;
+  const match = /^flow:(\d+):([A-Za-z0-9_-]{1,32}):([A-Za-z0-9_-]{1,32})$/.exec(payload);
+  if (!match) return null;
+  return { ruleId: Number(match[1]), stepId: match[2], buttonId: match[3] };
+}
+
+/** ลำดับเลขของข้อความ (เริ่มที่ 1) ใช้แสดงผล เช่น "ข้อความที่ 2" */
+export function stepNumber(steps: FlowStep[], stepId: string | undefined): number | null {
+  const index = steps.findIndex((s) => s.id === stepId);
+  return index === -1 ? null : index + 1;
+}

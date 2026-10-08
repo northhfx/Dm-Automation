@@ -3,11 +3,12 @@ import { NextRequest } from "next/server";
 import type { Db } from "@/db/client";
 import { links } from "@/db/schema";
 import { ingestWebhook } from "@/lib/automation/ingest";
+import { flowPayload } from "@/lib/flows/types";
 import { drainQueue } from "@/lib/queue/worker";
-import { getOverview, parseRange, rate } from "@/lib/stats";
+import { getAllTimeRuleStats, getOverview, getStepStats, parseRange, rate } from "@/lib/stats";
 import { GET as clickLink } from "@/app/r/[code]/route";
-import { createRule, resetDatabase, startMockGraph } from "./helpers";
-import { fbComment, fbDm, fbRead, igComment } from "./fixtures";
+import { createRule, resetDatabase, singleStep, startMockGraph } from "./helpers";
+import { fbComment, fbDm, fbRead, igComment, postback } from "./fixtures";
 
 let graph: Awaited<ReturnType<typeof startMockGraph>>;
 let db: Db;
@@ -30,8 +31,8 @@ async function deliver(payload: unknown) {
 describe("getOverview", () => {
   it("สรุปตัวเลขตรงกับกิจกรรมที่เกิดขึ้น", async () => {
     const commentRule = await createRule({ name: "คอมเมนต์ขอลิงก์" });
-    const dmRule = await createRule({ name: "ถามราคา", trigger: "dm", keywords: ["ราคา"], linkUrl: null });
-    const failRule = await createRule({ name: "พัง", keywords: ["พัง"], dmText: "FAIL_PERMANENT", publicReplies: [] });
+    const dmRule = await createRule({ name: "ถามราคา", trigger: "dm", keywords: ["ราคา"], steps: singleStep("ราคา 990 บาท") });
+    const failRule = await createRule({ name: "พัง", keywords: ["พัง"], steps: singleStep("FAIL_PERMANENT"), publicReplies: [] });
 
     await deliver(fbComment({ commentId: "C1", text: "สนใจ" }));
     await deliver(igComment({ commentId: "C2", text: "สนใจมาก" }));
@@ -39,34 +40,42 @@ describe("getOverview", () => {
     await deliver(fbComment({ commentId: "C4", text: "พัง", fromId: "U9" }));
     await deliver(fbDm({ text: "ราคาเท่าไหร่", mid: "x1" }));
     await deliver(fbRead(Date.now() + 1000));
-
-    const [firstLink] = await db.select().from(links).orderBy(links.id);
-    await clickLink(new NextRequest(`https://dm.example.com/r/${firstLink.code}`), {
-      params: Promise.resolve({ code: firstLink.code }),
-    });
+    // คนแรกกดปุ่ม "ใช่ ฉันสนใจ" แล้วกดลิงก์ในข้อความที่ 2
+    await deliver(postback("facebook", flowPayload(commentRule.id, "s1", "b1"), { senderId: "PSID_FROM_C1" }));
+    const [link] = await db.select().from(links);
+    await clickLink(new NextRequest(`https://dm.example.com/r/${link.code}`), { params: Promise.resolve({ code: link.code }) });
 
     const o = await getOverview(db, 7);
     expect(o.totals.commentsReceived).toEqual({ facebook: 2, instagram: 2 });
     expect(o.totals.dmsReceived).toEqual({ facebook: 1, instagram: 0 });
     expect(o.totals.triggers).toEqual({ facebook: 3, instagram: 1 });
-    expect(o.totals.dmsSent).toEqual({ facebook: 2, instagram: 1 });
+    expect(o.totals.dmsSent).toEqual({ facebook: 3, instagram: 1 });
     expect(o.totals.dmsFailed).toBe(1);
     expect(o.totals.publicReplies).toBe(2);
-    expect(o.totals.linksSent).toBe(2);
+    expect(o.totals.buttonTaps).toBe(1);
+    expect(o.totals.linksSent).toBe(1);
     expect(o.totals.linksClicked).toBe(1);
     expect(o.totals.totalClicks).toBe(1);
+    expect(o.totals.reachedContacts).toBe(3);
+    expect(o.totals.engagedContacts).toBe(1);
     expect(o.totals.newContacts).toBe(3);
-    // read receipt ของ PSID1 นับเฉพาะข้อความที่ส่งให้ PSID1
     expect(o.totals.dmsRead).toBe(1);
 
     expect(o.daily).toHaveLength(7);
-    const today = o.daily.at(-1)!;
-    expect(today).toEqual({ date: expect.any(String), sent: 3, clicks: 1, triggers: 4 });
+    expect(o.daily.at(-1)).toEqual({ date: expect.any(String), sent: 4, clicks: 2, triggers: 4 });
 
     const byId = Object.fromEntries(o.rules.map((r) => [r.id, r]));
-    expect(byId[commentRule.id]).toMatchObject({ triggers: 2, sent: 2, failed: 0, linksSent: 2, linksClicked: 1 });
-    expect(byId[dmRule.id]).toMatchObject({ triggers: 1, sent: 1, read: 1, linksSent: 0 });
+    expect(byId[commentRule.id]).toMatchObject({ triggers: 2, sent: 3, failed: 0, reached: 2, engaged: 1 });
+    expect(byId[dmRule.id]).toMatchObject({ triggers: 1, sent: 1, read: 1, reached: 1, engaged: 0 });
     expect(byId[failRule.id]).toMatchObject({ triggers: 1, sent: 0, failed: 1 });
+
+    const allTime = await getAllTimeRuleStats(db);
+    expect(allTime.get(commentRule.id)).toMatchObject({ triggers: 2, reached: 2, engaged: 1 });
+
+    expect(await getStepStats(db, commentRule.id)).toEqual({
+      s1: { sent: 2, reached: 2, engaged: 1 },
+      s2: { sent: 1, reached: 1, engaged: 1 },
+    });
   });
 
   it("ฐานข้อมูลว่างก็แสดงผลได้", async () => {
@@ -74,6 +83,7 @@ describe("getOverview", () => {
     expect(o.daily).toHaveLength(30);
     expect(o.rules).toEqual([]);
     expect(o.totals.newContacts).toBe(0);
+    expect(await getStepStats(db, 1)).toEqual({});
   });
 });
 

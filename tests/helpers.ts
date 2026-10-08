@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { runMigrations } from "@/db/migrate";
 import { rules, type NewRule } from "@/db/schema";
+import type { FlowStep } from "@/lib/flows/types";
 import { savePage } from "@/lib/pages";
 
 export interface GraphCall {
@@ -35,7 +36,7 @@ export async function startMockGraph() {
         res.end(JSON.stringify(json));
       };
 
-      const text: string = body?.message?.text ?? "";
+      const text: string = body?.message?.text ?? body?.message?.attachment?.payload?.text ?? "";
       if (text.includes("FAIL_PERMANENT")) {
         return send(400, { error: { message: "(#551) This person isn't available right now.", code: 551 } });
       }
@@ -78,6 +79,25 @@ export async function resetDatabase() {
   return db;
 }
 
+/** flow แบบเดียวกับ ManyChat: ข้อความแรกมีปุ่ม "ใช่ ฉันสนใจ" → ข้อความที่ 2 มีปุ่มเปิดลิงก์ */
+export const TWO_STEP_FLOW: FlowStep[] = [
+  {
+    id: "s1",
+    text: "สวัสดีค่ะ {name} สนใจรับรายละเอียดไหมคะ",
+    buttons: [{ id: "b1", title: "ใช่ ฉันสนใจ", type: "next", nextStepId: "s2" }],
+  },
+  {
+    id: "s2",
+    text: "ขอบคุณค่ะ {name} รายละเอียดอยู่ด้านล่าง",
+    buttons: [{ id: "b2", title: "ดูรายละเอียด", type: "link", url: "https://shop.example.com/product" }],
+  },
+];
+
+/** ข้อความเดียว (มีหรือไม่มีปุ่มก็ได้) */
+export function singleStep(text: string, buttons: FlowStep["buttons"] = []): FlowStep[] {
+  return [{ id: "s1", text, buttons }];
+}
+
 export async function createRule(overrides: Partial<NewRule> = {}) {
   const [row] = await getDb()
     .insert(rules)
@@ -88,8 +108,7 @@ export async function createRule(overrides: Partial<NewRule> = {}) {
       matchType: "contains",
       keywords: ["สนใจ"],
       publicReplies: ["ส่งรายละเอียดให้ทาง DM แล้วนะคะ {name}"],
-      dmText: "สวัสดีค่ะ {name} รายละเอียดอยู่ที่ {link}",
-      linkUrl: "https://shop.example.com/product",
+      steps: TWO_STEP_FLOW,
       ...overrides,
     })
     .returning();

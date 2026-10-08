@@ -1,12 +1,33 @@
-import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { contacts, dedupKeys, events, links, messages, rules, type Job, type Platform, type TriggerType } from "@/db/schema";
+import {
+  contacts,
+  dedupKeys,
+  events,
+  links,
+  messages,
+  rules,
+  type Job,
+  type MessageSource,
+  type Platform,
+  type TriggerType,
+} from "@/db/schema";
 import { getPublicBaseUrl } from "@/lib/config";
 import { randomCode } from "@/lib/crypto";
 import { env } from "@/lib/env";
-import { fetchProfile, GraphApiError, replyToComment, sendTextMessage, type Recipient, type SendResult } from "@/lib/meta/graph";
+import { flowPayload, parseFlowPayload } from "@/lib/flows/types";
+import {
+  buildMessage,
+  fetchProfile,
+  GraphApiError,
+  replyToComment,
+  sendMessage,
+  type GraphButton,
+  type Recipient,
+  type SendResult,
+} from "@/lib/meta/graph";
 import type { CommentJob, DmJob, ReadJob } from "@/lib/meta/webhook";
-import { findPageByAccount, getPageById } from "@/lib/pages";
+import { findPageByAccount, getPageById, type ConnectedPage } from "@/lib/pages";
 import { enqueue, rescheduleJob, updateJobPayload } from "@/lib/queue/queue";
 import { findMatchingRule } from "@/lib/rules/match";
 import { firstName, pickRandom, renderTemplate } from "@/lib/rules/template";
@@ -16,13 +37,15 @@ export interface SendDmJob {
   platform: Platform;
   pageId: string;
   ruleId: number;
-  source: TriggerType;
+  /** ข้อความไหนในกฎที่จะส่ง */
+  stepId: string;
+  source: MessageSource;
   recipient: Recipient;
   actorId: string;
   actorName: string | null;
   postId: string | null;
-  /** สร้างครั้งแรกแล้วเก็บไว้ ถ้างานถูกลองใหม่จะได้ใช้ลิงก์เดิม */
-  linkCode?: string;
+  /** ลิงก์ติดตามของแต่ละปุ่ม (buttonId → code) สร้างครั้งแรกแล้วเก็บไว้ ถ้างานถูกลองใหม่จะได้ใช้ลิงก์เดิม */
+  linkCodes?: Record<string, string>;
 }
 
 type EventInsert = typeof events.$inferInsert;
@@ -99,6 +122,8 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
     postId: job.postId,
   });
   if (!rule) return;
+  const firstStep = rule.steps[0];
+  if (!firstStep) return;
   if (!token) {
     await logTokenProblem(db, job.platform, page.id, rule.id, job.fromId);
     return;
@@ -145,6 +170,7 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
     platform: job.platform,
     pageId: page.id,
     ruleId: rule.id,
+    stepId: firstStep.id,
     source: "comment",
     recipient: { comment_id: job.commentId },
     actorId: job.fromId,
@@ -212,6 +238,15 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
     }
   }
 
+  const actorName = job.platform === "facebook" ? firstName(name) : (username ?? name);
+
+  // ลูกค้ากดปุ่มในข้อความของเรา → ส่งข้อความถัดไป (ไม่ต้องเอาไปจับ keyword ซ้ำ)
+  const tap = parseFlowPayload(job.payload);
+  if (tap) {
+    await handleButtonTap(db, page, job, contact.id, actorName, tap);
+    return;
+  }
+
   await logEvent(db, {
     type: "dm_received",
     platform: job.platform,
@@ -228,6 +263,8 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
     text: job.text || job.payload || "",
   });
   if (!rule) return;
+  const firstStep = rule.steps[0];
+  if (!firstStep) return;
   if (!page.token) {
     await logTokenProblem(db, job.platform, page.id, rule.id, job.senderId);
     return;
@@ -249,10 +286,71 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
     platform: job.platform,
     pageId: page.id,
     ruleId: rule.id,
+    stepId: firstStep.id,
     source: "dm",
     recipient: { id: job.senderId },
     actorId: job.senderId,
-    actorName: job.platform === "facebook" ? firstName(name) : (username ?? name),
+    actorName,
+    postId: null,
+  };
+  await enqueue(db, "send_dm", { ...sendJob });
+}
+
+/** ลูกค้ากดปุ่ม "ส่งข้อความถัดไป" → บันทึกการกด แล้วส่งข้อความที่ปุ่มนั้นพาไป */
+async function handleButtonTap(
+  db: Db,
+  page: ConnectedPage,
+  job: DmJob,
+  contactId: number,
+  actorName: string | null,
+  tap: { ruleId: number; stepId: string; buttonId: string },
+): Promise<void> {
+  const rule = await db.query.rules.findFirst({ where: eq(rules.id, tap.ruleId) });
+  const button = rule?.steps.find((s) => s.id === tap.stepId)?.buttons.find((b) => b.id === tap.buttonId);
+
+  await logEvent(db, {
+    type: "button_clicked",
+    platform: job.platform,
+    pageId: page.id,
+    ruleId: rule ? rule.id : null,
+    contactId,
+    actorId: job.senderId,
+    text: job.text,
+    meta: { mid: job.mid, stepId: tap.stepId, buttonId: tap.buttonId },
+  });
+
+  // ปุ่มจากข้อความเก่าที่ถูกแก้/ลบไปแล้ว → ไม่ต้องทำอะไรต่อ
+  if (!rule || button?.type !== "next") return;
+  const next = rule.steps.find((s) => s.id === button.nextStepId);
+  if (!next) return;
+  if (!rule.active) {
+    await logEvent(db, {
+      type: "skipped",
+      platform: job.platform,
+      pageId: page.id,
+      ruleId: rule.id,
+      contactId,
+      actorId: job.senderId,
+      text: job.text,
+      meta: { reason: "rule_inactive" },
+    });
+    return;
+  }
+  if (!page.token) {
+    await logTokenProblem(db, job.platform, page.id, rule.id, job.senderId);
+    return;
+  }
+
+  const sendJob: SendDmJob = {
+    type: "send_dm",
+    platform: job.platform,
+    pageId: page.id,
+    ruleId: rule.id,
+    stepId: next.id,
+    source: "button",
+    recipient: { id: job.senderId },
+    actorId: job.senderId,
+    actorName,
     postId: null,
   };
   await enqueue(db, "send_dm", { ...sendJob });
@@ -321,6 +419,20 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
   const page = await getPageById(db, data.pageId);
   const rule = await db.query.rules.findFirst({ where: eq(rules.id, data.ruleId) });
   if (!page || !rule) return;
+  const step = rule.steps.find((s) => s.id === data.stepId);
+  if (!step) {
+    // ข้อความถูกลบออกจากกฎระหว่างรอส่ง
+    await logEvent(db, {
+      type: "dm_failed",
+      platform: data.platform,
+      pageId: page.id,
+      ruleId: rule.id,
+      actorId: data.actorId,
+      postId: data.postId,
+      meta: { stepId: data.stepId, error: { message: "ไม่พบข้อความนี้ในกฎแล้ว (อาจถูกลบระหว่างรอส่ง)" } },
+    });
+    return;
+  }
   const token = page.token;
   if (!token) {
     await logTokenProblem(db, data.platform, page.id, rule.id, data.actorId);
@@ -333,32 +445,50 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
     throw new RescheduledError();
   }
 
-  // ลิงก์ติดตามต้องรู้ URL ของระบบ ถ้ายังไม่รู้ให้ส่งลิงก์ปลายทางตรงๆ (ไม่นับคลิก) ดีกว่าไม่ส่งเลย
-  const baseUrl = rule.linkUrl ? await getPublicBaseUrl(db) : null;
-  let linkCode: string | null = null;
-  if (rule.linkUrl && baseUrl) {
-    linkCode = data.linkCode ?? null;
-    if (!linkCode) {
-      linkCode = randomCode();
-      await db.insert(links).values({ code: linkCode, targetUrl: rule.linkUrl, ruleId: rule.id, platform: data.platform });
-      await updateJobPayload(db, job.id, { ...data, linkCode });
-    }
+  // ปุ่มเปิดลิงก์ → แปลงเป็นลิงก์ติดตาม (ต้องรู้ URL ของระบบ ถ้ายังไม่รู้ให้ใช้ลิงก์ปลายทางตรงๆ ดีกว่าไม่ส่ง)
+  const hasLinks = step.buttons.some((b) => b.type === "link" && b.url);
+  const baseUrl = hasLinks ? await getPublicBaseUrl(db) : null;
+  const linkCodes: Record<string, string> = { ...(data.linkCodes ?? {}) };
+  let createdLinks = false;
+  for (const b of step.buttons) {
+    if (b.type !== "link" || !b.url || !baseUrl || linkCodes[b.id]) continue;
+    const code = randomCode();
+    await db.insert(links).values({
+      code,
+      targetUrl: b.url,
+      ruleId: rule.id,
+      stepId: step.id,
+      buttonId: b.id,
+      platform: data.platform,
+    });
+    linkCodes[b.id] = code;
+    createdLinks = true;
   }
-  const linkUrl = linkCode ? `${baseUrl}/r/${linkCode}` : rule.linkUrl;
+  if (createdLinks) await updateJobPayload(db, job.id, { ...data, linkCodes });
 
-  const text = renderTemplate(rule.dmText, { name: data.actorName, link: linkUrl });
+  const buttons: GraphButton[] = step.buttons.flatMap((b): GraphButton[] => {
+    if (b.type === "link") {
+      if (!b.url) return [];
+      return [{ type: "web_url", title: b.title, url: linkCodes[b.id] ? `${baseUrl}/r/${linkCodes[b.id]}` : b.url }];
+    }
+    return b.nextStepId ? [{ type: "postback", title: b.title, payload: flowPayload(rule.id, step.id, b.id) }] : [];
+  });
+  const text = renderTemplate(step.text, { name: data.actorName });
+  const logText = buttons.length ? `${text}\n\n${buttons.map((b) => `[${b.title}]`).join(" ")}` : text;
+  const codes = Object.values(linkCodes);
 
   let res: SendResult;
   try {
-    res = await sendTextMessage(page.id, token, data.recipient, text);
+    res = await sendMessage(page.id, token, data.recipient, buildMessage(text, buttons));
   } catch (err) {
     if (err instanceof GraphApiError && err.retryable && job.attempts < job.maxAttempts) throw err;
     // ส่งไม่สำเร็จแน่แล้ว → ลบลิงก์ทิ้ง เพื่อไม่ให้ไปถ่วงสถิติ % คลิก
-    if (linkCode) await db.delete(links).where(eq(links.code, linkCode));
+    if (codes.length) await db.delete(links).where(inArray(links.code, codes));
     await db.insert(messages).values({
       platform: data.platform,
       pageId: page.id,
       ruleId: rule.id,
+      stepId: step.id,
       source: data.source,
       status: "failed",
       error: (err as Error).message.slice(0, 1000),
@@ -370,15 +500,15 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
       ruleId: rule.id,
       actorId: data.actorId,
       postId: data.postId,
-      text,
-      meta: { source: data.source, error: errorInfo(err) },
+      text: logText,
+      meta: { source: data.source, stepId: step.id, error: errorInfo(err) },
     });
     return;
   }
 
   // ส่งถึงลูกค้าแล้ว: ถ้าบันทึกสถิติพลาด ห้ามโยน error ออกไป ไม่งั้นงานจะถูกลองใหม่และส่ง DM ซ้ำ
   try {
-    await recordSent(db, data, page.id, rule.id, res, text, linkCode);
+    await recordSent(db, data, page.id, rule.id, step.id, res, logText, codes);
   } catch (err) {
     console.error(`[send_dm] ส่ง DM แล้วแต่บันทึกสถิติไม่สำเร็จ (งาน #${job.id}):`, err);
   }
@@ -389,9 +519,10 @@ async function recordSent(
   data: SendDmJob,
   pageId: string,
   ruleId: number,
+  stepId: string,
   res: SendResult,
   text: string,
-  linkCode: string | null,
+  linkCodes: string[],
 ): Promise<void> {
   const contact = res.recipient_id
     ? await upsertContact(db, {
@@ -407,12 +538,13 @@ async function recordSent(
     pageId,
     contactId: contact?.id ?? null,
     ruleId,
+    stepId,
     source: data.source,
     mid: res.message_id ?? null,
     status: "sent",
   });
-  if (linkCode && contact) {
-    await db.update(links).set({ contactId: contact.id }).where(eq(links.code, linkCode));
+  if (linkCodes.length && contact) {
+    await db.update(links).set({ contactId: contact.id }).where(inArray(links.code, linkCodes));
   }
   await logEvent(db, {
     type: "dm_sent",
@@ -423,7 +555,7 @@ async function recordSent(
     actorId: data.actorId,
     postId: data.postId,
     text,
-    meta: { mid: res.message_id, source: data.source },
+    meta: { mid: res.message_id, source: data.source, stepId },
   });
 }
 

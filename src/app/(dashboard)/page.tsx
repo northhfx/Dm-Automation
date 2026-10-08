@@ -77,19 +77,19 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
         />
         <StatTile label="อัตราการอ่าน" value={formatPercent(rate(t.dmsRead, sent))} detail={`อ่านแล้ว ${formatNumber(t.dmsRead)} ข้อความ`} />
         <StatTile
-          label="อัตราการคลิก"
-          value={formatPercent(rate(t.linksClicked, t.linksSent))}
-          detail={`${formatNumber(t.linksClicked)} จาก ${formatNumber(t.linksSent)} ลิงก์ · ${formatNumber(t.totalClicks)} คลิก`}
+          label="CTR (อัตราการกด)"
+          value={formatPercent(rate(t.engagedContacts, t.reachedContacts))}
+          detail={`${formatNumber(t.engagedContacts)} จาก ${formatNumber(t.reachedContacts)} คน · กดปุ่ม ${formatNumber(t.buttonTaps)} · คลิกลิงก์ ${formatNumber(t.totalClicks)}`}
         />
         <StatTile label="ลูกค้าใหม่" value={formatNumber(t.newContacts)} detail={`ตอบคอมเมนต์ ${formatNumber(t.publicReplies)} ครั้ง`} />
       </div>
 
-      <Card title="DM ที่ส่งและการคลิกลิงก์ รายวัน" className="mt-6">
+      <Card title="DM ที่ส่ง และการกดปุ่ม/คลิกลิงก์ รายวัน" className="mt-6">
         <LineChart
           data={overview.daily}
           series={[
             { key: "sent", label: "DM ที่ส่งสำเร็จ", color: "var(--series-1)" },
-            { key: "clicks", label: "คลิกลิงก์", color: "var(--series-2)" },
+            { key: "clicks", label: "กดปุ่ม/คลิกลิงก์", color: "var(--series-2)" },
           ]}
         />
       </Card>
@@ -111,7 +111,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                   <th className="py-2 pr-4 text-right font-medium">ส่งสำเร็จ</th>
                   <th className="py-2 pr-4 text-right font-medium">ล้มเหลว</th>
                   <th className="py-2 pr-4 text-right font-medium">อ่าน</th>
-                  <th className="py-2 text-right font-medium">คลิก</th>
+                  <th className="py-2 text-right font-medium">CTR</th>
                 </tr>
               </thead>
               <tbody>
@@ -135,9 +135,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                       {formatNumber(r.failed)}
                     </td>
                     <td className="py-2.5 pr-4 text-right tabular">{formatPercent(rate(r.read, r.sent))}</td>
-                    <td className="py-2.5 text-right tabular">
-                      {r.linksSent > 0 ? formatPercent(rate(r.linksClicked, r.linksSent)) : "–"}
-                    </td>
+                    <td className="py-2.5 text-right tabular">{formatPercent(rate(r.engaged, r.reached))}</td>
                   </tr>
                 ))}
               </tbody>

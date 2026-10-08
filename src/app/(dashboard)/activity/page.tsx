@@ -12,8 +12,9 @@ const EVENT_LABELS: Record<string, { label: string; tone: "neutral" | "good" | "
   public_reply_failed: { label: "✕ ตอบคอมเมนต์ไม่สำเร็จ", tone: "critical" },
   dm_sent: { label: "ส่ง DM แล้ว", tone: "good" },
   dm_failed: { label: "✕ ส่ง DM ไม่สำเร็จ", tone: "critical" },
+  button_clicked: { label: "กดปุ่ม", tone: "accent" },
   link_clicked: { label: "คลิกลิงก์", tone: "accent" },
-  skipped: { label: "ข้าม (ตอบคนนี้ไปแล้ว)", tone: "warning" },
+  skipped: { label: "ข้าม (ไม่ส่ง)", tone: "warning" },
 };
 
 const FILTERS = [
@@ -21,7 +22,7 @@ const FILTERS = [
   { key: "sent", label: "ส่งแล้ว", types: ["dm_sent", "public_reply_sent"] },
   { key: "failed", label: "ไม่สำเร็จ", types: ["dm_failed", "public_reply_failed"] },
   { key: "incoming", label: "ข้อความเข้า", types: ["comment_received", "dm_received"] },
-  { key: "clicks", label: "คลิก", types: ["link_clicked"] },
+  { key: "clicks", label: "กดปุ่ม/คลิก", types: ["button_clicked", "link_clicked"] },
 ] as const;
 
 export default async function ActivityPage({ searchParams }: PageProps<"/activity">) {

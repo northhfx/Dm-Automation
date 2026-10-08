@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getDb } from "@/db/client";
 import { rules } from "@/db/schema";
 import { buttonClass, PageHeader } from "@/components/ui";
+import { getStepStats } from "@/lib/stats";
 import { deleteRule } from "../actions";
 import { ruleToFormValues } from "../form-values";
 import { loadRecentPosts } from "../recent-posts";
@@ -14,7 +15,7 @@ export default async function EditRulePage({ params }: PageProps<"/rules/[id]">)
   const db = getDb();
   const rule = await db.query.rules.findFirst({ where: eq(rules.id, id) });
   if (!rule) notFound();
-  const { posts, error } = await loadRecentPosts(db);
+  const [{ posts, error }, stepStats] = await Promise.all([loadRecentPosts(db), getStepStats(db, rule.id)]);
 
   return (
     <>
@@ -28,7 +29,7 @@ export default async function EditRulePage({ params }: PageProps<"/rules/[id]">)
           </form>
         }
       />
-      <RuleForm initial={ruleToFormValues(rule)} recentPosts={posts} postsError={error} />
+      <RuleForm initial={ruleToFormValues(rule)} recentPosts={posts} postsError={error} stepStats={stepStats} />
     </>
   );
 }
