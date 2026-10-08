@@ -135,7 +135,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                       {formatNumber(r.failed)}
                     </td>
                     <td className="py-2.5 pr-4 text-right tabular">{formatPercent(rate(r.read, r.sent))}</td>
-                    <td className="py-2.5 text-right tabular">{formatPercent(rate(r.engaged, r.reached))}</td>
+                    <td className="py-2.5 text-right tabular">{r.hasButtons ? formatPercent(rate(r.engaged, r.reached)) : "–"}</td>
                   </tr>
                 ))}
               </tbody>

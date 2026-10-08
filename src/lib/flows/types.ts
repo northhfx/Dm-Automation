@@ -32,6 +32,25 @@ export const FLOW_LIMITS = {
 
 export const ID_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 
+/** เผื่อความยาวชื่อที่จะมาแทน {name} (ชื่อ/username ส่วนใหญ่ยาวไม่เกิน 30 ตัวอักษร) */
+export const NAME_ALLOWANCE = 30;
+
+/** ความยาวข้อความหลังแทนชื่อลูกค้าแล้ว (ใช้ตรวจลิมิตตอนบันทึก) */
+export function measuredLength(text: string): number {
+  return text.replaceAll("{name}", "x".repeat(NAME_ALLOWANCE)).length;
+}
+
+/** ตัดข้อความให้ไม่เกินลิมิตของ Meta (กันกรณีชื่อลูกค้ายาวผิดปกติ) โดยไม่ตัดอีโมจิกลางตัว */
+export function fitText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let out = "";
+  for (const ch of Array.from(text)) {
+    if (out.length + ch.length > max - 1) break;
+    out += ch;
+  }
+  return `${out}…`;
+}
+
 /** payload ที่ฝังในปุ่ม เพื่อให้รู้ว่าลูกค้ากดปุ่มไหนของกฎไหน */
 export function flowPayload(ruleId: number, stepId: string, buttonId: string): string {
   return `flow:${ruleId}:${stepId}:${buttonId}`;

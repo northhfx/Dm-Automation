@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { buttonClass, Card, cx, Field, inputClass, Notice } from "@/components/ui";
 import type { RecentPost } from "@/lib/meta/graph";
@@ -61,7 +61,7 @@ function RuleFormFields({
     <form action={action} className="space-y-6">
       {values.id && <input type="hidden" name="id" value={values.id} />}
 
-      {state.error && <Notice tone="critical">{state.error}</Notice>}
+      {state.error && <ErrorNotice message={state.error} />}
 
       <Card title="1. เมื่อไหร่ให้ระบบทำงาน">
         <div className="space-y-5">
@@ -236,5 +236,19 @@ function RuleFormFields({
         </Link>
       </div>
     </form>
+  );
+}
+
+/** แจ้ง error แล้วเลื่อนหน้าขึ้นมาให้เห็น (บนมือถือปุ่มบันทึกอยู่ล่างสุด ไม่งั้นจะเหมือนกดแล้วไม่เกิดอะไร) */
+function ErrorNotice({ message }: { message: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    ref.current?.focus();
+  }, [message]);
+  return (
+    <div ref={ref} tabIndex={-1} role="alert" className="outline-none">
+      <Notice tone="critical">{message}</Notice>
+    </div>
   );
 }

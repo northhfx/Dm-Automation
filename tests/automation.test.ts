@@ -272,6 +272,38 @@ describe("ข้อผิดพลาดและลิมิต", () => {
     expect((await eventTypes()).at(-1)).toBe("dm_failed");
   });
 
+  it("งานส่ง DM ที่เข้าคิวไว้ก่อนอัปเดต (ไม่มี stepId) → ส่งข้อความแรก และลบลิงก์แบบเก่าทิ้ง", async () => {
+    const rule = await createRule({ publicReplies: [] });
+    await db.insert(links).values({ code: "legacy01", targetUrl: "https://old.example.com", ruleId: rule.id });
+    const { enqueue } = await import("@/lib/queue/queue");
+    await enqueue(db, "send_dm", {
+      type: "send_dm",
+      platform: "facebook",
+      pageId: "PAGE1",
+      ruleId: rule.id,
+      source: "comment",
+      recipient: { comment_id: "C9" },
+      actorId: "U9",
+      actorName: "Nok",
+      postId: null,
+      linkCode: "legacy01",
+    });
+    await drainQueue(db);
+    expect(templateOf(sentMessages()[0]).text).toBe("สวัสดีค่ะ Nok สนใจรับรายละเอียดไหมคะ");
+    expect(await db.select().from(links).where(eq(links.code, "legacy01"))).toHaveLength(0);
+  });
+
+  it("ชื่อลูกค้ายาวจนข้อความเกิน 640 ตัวอักษร → ตัดให้พอดีก่อนส่ง (ไม่โดน Meta ปฏิเสธ)", async () => {
+    await createRule({
+      publicReplies: [],
+      steps: singleStep("ก".repeat(635) + " {name}", [{ id: "b1", title: "ดู", type: "link", url: "https://shop.example.com" }]),
+    });
+    await deliver(igComment({ text: "สนใจ" }));
+    const text = templateOf(sentMessages()[0]).text;
+    expect(text.length).toBeLessThanOrEqual(640);
+    expect(text.endsWith("…")).toBe(true);
+  });
+
   it("Instagram ครบลิมิตต่อชั่วโมง → เลื่อนเวลาส่ง ไม่ทิ้งข้อความ", async () => {
     process.env.INSTAGRAM_DM_PER_HOUR = "1";
     await createRule({ oncePerUser: false, publicReplies: [] });

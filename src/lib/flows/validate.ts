@@ -1,4 +1,4 @@
-import { FLOW_LIMITS, ID_PATTERN, type FlowButton, type FlowStep } from "./types";
+import { FLOW_LIMITS, ID_PATTERN, measuredLength, NAME_ALLOWANCE, type FlowButton, type FlowStep } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- รับข้อมูลจากฟอร์ม (JSON) แล้วตรวจทีละช่อง */
 
@@ -41,12 +41,13 @@ export function validateSteps(input: unknown): { ok: true; steps: FlowStep[] } |
     const label = `ข้อความที่ ${i + 1}`;
     if (!step.text) return { ok: false, error: `${label}: ยังไม่ได้ใส่ข้อความ` };
     const max = step.buttons.length ? FLOW_LIMITS.textWithButtons : FLOW_LIMITS.textPlain;
-    if (step.text.length > max) {
+    if (measuredLength(step.text) > max) {
+      const nameNote = step.text.includes("{name}") ? ` โดยนับ {name} เผื่อเป็น ${NAME_ALLOWANCE} ตัวอักษร` : "";
       return {
         ok: false,
         error: step.buttons.length
-          ? `${label}: ยาวเกิน ${max} ตัวอักษร (ข้อความที่มีปุ่มส่งได้ไม่เกิน ${max} ตัวอักษร)`
-          : `${label}: ยาวเกิน ${max} ตัวอักษร`,
+          ? `${label}: ยาวเกิน ${max} ตัวอักษร (ข้อความที่มีปุ่มส่งได้ไม่เกิน ${max} ตัวอักษร${nameNote})`
+          : `${label}: ยาวเกิน ${max} ตัวอักษร${nameNote ? ` (${nameNote.trim()})` : ""}`,
       };
     }
     if (step.buttons.length > FLOW_LIMITS.maxButtons) return { ok: false, error: `${label}: ใส่ปุ่มได้สูงสุด ${FLOW_LIMITS.maxButtons} ปุ่ม` };

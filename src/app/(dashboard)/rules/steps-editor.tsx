@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import { Badge, buttonClass, cx, inputClass } from "@/components/ui";
 import type { TriggerType } from "@/db/schema";
-import { FLOW_LIMITS, type FlowButton, type FlowStep } from "@/lib/flows/types";
+import { FLOW_LIMITS, measuredLength, NAME_ALLOWANCE, type FlowButton, type FlowStep } from "@/lib/flows/types";
 import type { StepStats } from "@/lib/stats";
 
 interface Props {
@@ -44,17 +44,34 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
     setSteps((all) => all.map((s) => (s.id === stepId ? { ...s, buttons: s.buttons.filter((b) => b.id !== buttonId) } : s)));
   }
 
-  /** ปุ่ม "ส่งข้อความถัดไป" พร้อมสร้างข้อความใหม่ต่อท้ายให้เลย */
+  /**
+   * แทรกข้อความใหม่ถัดจากข้อความนี้ — ถ้ามีปุ่มอื่นพาไปข้อความที่อยู่ใต้ลงมาแล้ว ให้ต่อท้ายกลุ่มนั้น
+   * (ปุ่มที่ 1 → ข้อความถัดไป, ปุ่มที่ 2 → ข้อความถัดจากนั้น เรียงตามลำดับปุ่ม)
+   */
+  function insertStepAfter(all: FlowStep[], stepId: string, step: FlowStep): FlowStep[] {
+    const index = all.findIndex((s) => s.id === stepId);
+    const reach = new Set<string>();
+    const visit = (id: string | undefined) => {
+      if (!id || id === stepId || reach.has(id)) return;
+      reach.add(id);
+      all.find((s) => s.id === id)?.buttons.forEach((b) => b.type === "next" && visit(b.nextStepId));
+    };
+    all[index].buttons.forEach((b) => b.type === "next" && visit(b.nextStepId));
+    let at = index + 1;
+    while (at < all.length && reach.has(all[at].id)) at++;
+    return [...all.slice(0, at), step, ...all.slice(at)];
+  }
+
+  /** ปุ่ม "ส่งข้อความถัดไป" พร้อมสร้างข้อความใหม่ให้เลย */
   function addNextButton(stepId: string) {
     const next = blankStep();
     setSteps((all) => {
-      const index = all.findIndex((s) => s.id === stepId);
-      const withButton = all.map((s) =>
+      const placed = insertStepAfter(all, stepId, next);
+      return placed.map((s) =>
         s.id === stepId
           ? { ...s, buttons: [...s.buttons, { id: newId("b"), title: "", type: "next" as const, nextStepId: next.id }] }
           : s,
       );
-      return [...withButton.slice(0, index + 1), next, ...withButton.slice(index + 1)];
     });
   }
 
@@ -74,11 +91,35 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
 
   function changeType(stepId: string, button: FlowButton, type: FlowButton["type"]) {
     if (type === button.type) return;
-    if (type === "link") updateButton(stepId, button.id, { type, url: button.url ?? "", nextStepId: undefined });
-    else {
-      const fallback = steps.find((s) => s.id !== stepId)?.id ?? "";
-      updateButton(stepId, button.id, { type, nextStepId: button.nextStepId || fallback, url: undefined });
+    if (type === "link") {
+      // ข้อความที่ปุ่มนี้เคยพาไป ถ้ายังว่างและไม่มีปุ่มอื่นพาไป ให้ลบทิ้งด้วย (ไม่ทิ้งข้อความค้างไว้)
+      const oldTarget = button.nextStepId;
+      setSteps((all) => {
+        const updated = all.map((s) =>
+          s.id === stepId
+            ? { ...s, buttons: s.buttons.map((b) => (b.id === button.id ? { ...b, type, url: b.url ?? "", nextStepId: undefined } : b)) }
+            : s,
+        );
+        const target = updated.find((s) => s.id === oldTarget);
+        const stillUsed = updated.some((s) => s.buttons.some((b) => b.type === "next" && b.nextStepId === oldTarget));
+        const isBlank = target && !target.text.trim() && target.buttons.length === 0;
+        return isBlank && !stillUsed ? updated.filter((s) => s.id !== oldTarget) : updated;
+      });
+      return;
     }
+    // เปลี่ยนเป็น "ส่งข้อความถัดไป" → สร้างข้อความใหม่ให้ (ไม่ย้อนกลับไปข้อความก่อนหน้า ซึ่งจะทำให้วนซ้ำ)
+    if (steps.length >= FLOW_LIMITS.maxSteps) {
+      updateButton(stepId, button.id, { type, nextStepId: "", url: undefined });
+      return;
+    }
+    const next = blankStep();
+    setSteps((all) =>
+      insertStepAfter(all, stepId, next).map((s) =>
+        s.id === stepId
+          ? { ...s, buttons: s.buttons.map((b) => (b.id === button.id ? { ...b, type, nextStepId: next.id, url: undefined } : b)) }
+          : s,
+      ),
+    );
   }
 
   return (
@@ -91,6 +132,7 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
         );
         const fromPrevious = index > 0 ? incoming.filter((x) => x.from.id === steps[index - 1].id) : [];
         const maxLength = step.buttons.length ? FLOW_LIMITS.textWithButtons : FLOW_LIMITS.textPlain;
+        const length = measuredLength(step.text);
         const stat = stats?.[step.id];
 
         return (
@@ -121,7 +163,7 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
                     ส่งเมื่อกด {incoming.map((x) => `"${x.button.title || "ปุ่ม"}" (ข้อความที่ ${numberOf(x.from.id)})`).join(", ")}
                   </Badge>
                 ) : (
-                  <Badge tone="warning">ยังไม่มีปุ่มพามาที่ข้อความนี้</Badge>
+                  <Badge tone="warning">ยังไม่มีปุ่มพามาที่ข้อความนี้ (ลบทิ้ง หรือเลือกข้อความนี้ในปุ่ม &quot;ส่งข้อความถัดไป&quot;)</Badge>
                 )}
                 {stat && (
                   <span className="text-xs text-fg-3">
@@ -146,13 +188,14 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
                     <textarea
                       id={`text-${step.id}`}
                       rows={4}
+                      required
                       value={step.text}
                       onChange={(e) => updateStep(step.id, { text: e.target.value })}
                       placeholder="เช่น สวัสดีค่ะคุณ {name} ขอบคุณที่สนใจนะคะ"
                       className={inputClass}
                     />
-                    <p className={cx("text-xs", step.text.length > maxLength ? "text-critical-text" : "text-fg-3")}>
-                      {step.text.length}/{maxLength} ตัวอักษร · ใช้ {"{name}"} แทนชื่อลูกค้า
+                    <p className={cx("text-xs", length > maxLength ? "text-critical-text" : "text-fg-3")}>
+                      {length}/{maxLength} ตัวอักษร · ใช้ {"{name}"} แทนชื่อลูกค้า (นับเผื่อชื่อยาว {NAME_ALLOWANCE} ตัวอักษร)
                     </p>
                   </div>
 
@@ -167,6 +210,7 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
                           <input
                             id={`title-${button.id}`}
                             value={button.title}
+                            required
                             maxLength={FLOW_LIMITS.buttonTitle}
                             onChange={(e) => updateButton(step.id, button.id, { title: e.target.value })}
                             placeholder="ชื่อปุ่ม เช่น ใช่ ฉันสนใจ!"
@@ -207,6 +251,7 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
                           </div>
                           {button.type === "next" ? (
                             <select
+                              required
                               aria-label="ส่งข้อความไหน"
                               value={button.nextStepId ?? ""}
                               onChange={(e) => updateButton(step.id, button.id, { nextStepId: e.target.value })}
@@ -225,6 +270,7 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
                           ) : (
                             <input
                               type="url"
+                              required
                               aria-label="ลิงก์ปลายทาง"
                               value={button.url ?? ""}
                               onChange={(e) => updateButton(step.id, button.id, { url: e.target.value })}
@@ -257,13 +303,9 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
         );
       })}
 
-      {steps.length < FLOW_LIMITS.maxSteps && (
-        <div className="mt-3">
-          <button type="button" onClick={() => setSteps((all) => [...all, blankStep()])} className={buttonClass.secondary}>
-            + เพิ่มข้อความ
-          </button>
-        </div>
-      )}
+      <p className="mt-3 text-xs text-fg-3">
+        อยากส่งข้อความต่ออีก? กด &quot;+ ปุ่มส่งข้อความถัดไป&quot; ในข้อความไหนก็ได้ ระบบจะสร้างข้อความใหม่ที่ส่งเมื่อลูกค้ากดปุ่มนั้นให้
+      </p>
     </div>
   );
 }

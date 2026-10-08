@@ -60,7 +60,12 @@ export default async function RulesPage() {
                   <Badge>{rule.steps.length} ข้อความ</Badge>
                 </div>
                 <p className="mt-2 line-clamp-1 text-sm text-fg-2">{rule.steps[0]?.text}</p>
-                <RuleNumbers runs={stats.get(rule.id)?.triggers ?? 0} reached={stats.get(rule.id)?.reached ?? 0} engaged={stats.get(rule.id)?.engaged ?? 0} />
+                <RuleNumbers
+                  runs={stats.get(rule.id)?.triggers ?? 0}
+                  reached={stats.get(rule.id)?.reached ?? 0}
+                  engaged={stats.get(rule.id)?.engaged ?? 0}
+                  hasButtons={rule.steps.some((s) => s.buttons.length > 0)}
+                />
               </div>
               <div className="flex gap-2">
                 <form action={toggleRule}>
@@ -80,10 +85,10 @@ export default async function RulesPage() {
 }
 
 /** สถิติย่อแบบ ManyChat: ทำงานกี่ครั้ง · CTR (คนที่กดปุ่ม/ลิงก์ ÷ คนที่ได้รับข้อความ) */
-function RuleNumbers({ runs, reached, engaged }: { runs: number; reached: number; engaged: number }) {
+function RuleNumbers({ runs, reached, engaged, hasButtons }: { runs: number; reached: number; engaged: number; hasButtons: boolean }) {
   return (
     <p className="mt-1 text-xs text-fg-3 tabular">
-      ทำงาน {formatNumber(runs)} ครั้ง · CTR {formatPercent(rate(engaged, reached))}
+      ทำงาน {formatNumber(runs)} ครั้ง · CTR {hasButtons ? formatPercent(rate(engaged, reached)) : "– (ไม่มีปุ่ม)"}
     </p>
   );
 }

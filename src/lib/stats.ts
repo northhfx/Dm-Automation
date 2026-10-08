@@ -48,6 +48,8 @@ export interface RuleStats {
   trigger: "comment" | "dm";
   platforms: Platform[];
   active: boolean;
+  /** กฎที่ไม่มีปุ่มเลยไม่มี CTR (แสดง "–") */
+  hasButtons: boolean;
   triggers: number;
   sent: number;
   failed: number;
@@ -115,11 +117,19 @@ export async function getOverview(db: Db, days: number): Promise<Overview> {
       ORDER BY days.day
     `),
     db.execute<Row>(ruleStatsSql(since)),
+    // CTR นับเฉพาะกฎที่มีปุ่ม และนับคนกดเฉพาะคนที่ได้รับข้อความในช่วงเวลาเดียวกัน (ไม่เกิน 100%)
     db.execute<Row>(sql`
-      SELECT
-        (SELECT count(DISTINCT contact_id)::int FROM messages WHERE status = 'sent' AND sent_at >= ${since}) AS reached,
-        (SELECT count(DISTINCT contact_id)::int FROM events
-          WHERE type IN ('button_clicked', 'link_clicked') AND contact_id IS NOT NULL AND created_at >= ${since}) AS engaged
+      WITH reached AS (
+        SELECT DISTINCT rule_id, contact_id FROM messages
+        WHERE status = 'sent' AND contact_id IS NOT NULL AND sent_at >= ${since}
+          AND rule_id IN (SELECT id FROM rules WHERE ${HAS_BUTTONS})
+      ),
+      engaged AS (
+        SELECT DISTINCT e.contact_id FROM events e
+        JOIN reached r ON r.rule_id = e.rule_id AND r.contact_id = e.contact_id
+        WHERE e.type IN ('button_clicked', 'link_clicked') AND e.created_at >= ${since}
+      )
+      SELECT (SELECT count(DISTINCT contact_id)::int FROM reached) AS reached, (SELECT count(*)::int FROM engaged) AS engaged
     `),
   ]);
 
@@ -174,12 +184,17 @@ export async function getOverview(db: Db, days: number): Promise<Overview> {
   };
 }
 
+/** เงื่อนไข SQL: กฎนี้มีข้อความที่มีปุ่มอย่างน้อย 1 ข้อความ (กฎที่ไม่มีปุ่มไม่มี CTR) */
+const HAS_BUTTONS = sql.raw(
+  `EXISTS (SELECT 1 FROM jsonb_array_elements(steps) st WHERE jsonb_array_length(coalesce(st->'buttons', '[]'::jsonb)) > 0)`,
+);
+
 /** สถิติของแต่ละกฎ (since = null คือนับทั้งหมดตั้งแต่เริ่มใช้) */
 function ruleStatsSql(since: SQL | null): SQL {
   const eventsSince = since ? sql`AND created_at >= ${since}` : sql``;
   const sentSince = since ? sql`AND sent_at >= ${since}` : sql``;
   return sql`
-    SELECT r.id, r.name, r.trigger, r.platforms, r.active,
+    SELECT r.id, r.name, r.trigger, r.platforms, r.active, ${HAS_BUTTONS} AS has_buttons,
       coalesce(e.triggers, 0)::int AS triggers,
       coalesce(m.sent, 0)::int AS sent, coalesce(m.failed, 0)::int AS failed, coalesce(m.read, 0)::int AS read,
       coalesce(m.reached, 0)::int AS reached, coalesce(c.engaged, 0)::int AS engaged
@@ -195,7 +210,9 @@ function ruleStatsSql(since: SQL | null): SQL {
     ) m ON m.rule_id = r.id
     LEFT JOIN (
       SELECT rule_id, count(DISTINCT contact_id) AS engaged FROM events
-      WHERE type IN ('button_clicked', 'link_clicked') AND contact_id IS NOT NULL ${eventsSince} GROUP BY rule_id
+      WHERE type IN ('button_clicked', 'link_clicked') AND contact_id IS NOT NULL ${eventsSince}
+        AND (rule_id, contact_id) IN (SELECT rule_id, contact_id FROM messages WHERE status = 'sent' ${sentSince})
+      GROUP BY rule_id
     ) c ON c.rule_id = r.id
     ORDER BY coalesce(e.triggers, 0) DESC, r.id
   `;
@@ -208,6 +225,7 @@ function toRuleStats(r: Row): RuleStats {
     trigger: r.trigger as "comment" | "dm",
     platforms: r.platforms as Platform[],
     active: Boolean(r.active),
+    hasButtons: Boolean(r.has_buttons),
     triggers: num(r.triggers),
     sent: num(r.sent),
     failed: num(r.failed),
@@ -232,23 +250,29 @@ export interface StepStats {
 
 /** สถิติของแต่ละข้อความในกฎ (ทั้งหมดตั้งแต่เริ่มใช้) — key คือ stepId */
 export async function getStepStats(db: Db, ruleId: number): Promise<Record<string, StepStats>> {
+  // นับคนกดเฉพาะคนที่ได้รับข้อความนั้นจริง (กดปุ่มเก่าของข้อความที่ถูกแก้ไปแล้วไม่นับ)
   const result = await db.execute<Row>(sql`
-    WITH sent AS (
-      SELECT step_id, count(*)::int AS sent, count(DISTINCT contact_id)::int AS reached
-      FROM messages WHERE rule_id = ${ruleId} AND status = 'sent' AND step_id IS NOT NULL GROUP BY step_id
+    WITH reached AS (
+      SELECT DISTINCT step_id, contact_id FROM messages
+      WHERE rule_id = ${ruleId} AND status = 'sent' AND step_id IS NOT NULL AND contact_id IS NOT NULL
+    ),
+    sent AS (
+      SELECT step_id, count(*)::int AS sent FROM messages
+      WHERE rule_id = ${ruleId} AND status = 'sent' AND step_id IS NOT NULL GROUP BY step_id
     ),
     engaged AS (
-      SELECT step_id, count(DISTINCT contact_id)::int AS engaged FROM (
+      SELECT DISTINCT x.step_id, x.contact_id FROM (
         SELECT meta->>'stepId' AS step_id, contact_id FROM events
           WHERE type = 'button_clicked' AND rule_id = ${ruleId} AND contact_id IS NOT NULL
         UNION
         SELECT step_id, contact_id FROM links
           WHERE rule_id = ${ruleId} AND clicks > 0 AND contact_id IS NOT NULL AND step_id IS NOT NULL
-      ) x GROUP BY step_id
+      ) x JOIN reached r ON r.step_id = x.step_id AND r.contact_id = x.contact_id
     )
-    SELECT coalesce(s.step_id, e.step_id) AS step_id, coalesce(s.sent, 0) AS sent, coalesce(s.reached, 0) AS reached,
-      coalesce(e.engaged, 0) AS engaged
-    FROM sent s FULL OUTER JOIN engaged e ON e.step_id = s.step_id
+    SELECT s.step_id, s.sent,
+      (SELECT count(*)::int FROM reached r WHERE r.step_id = s.step_id) AS reached,
+      (SELECT count(*)::int FROM engaged e WHERE e.step_id = s.step_id) AS engaged
+    FROM sent s
   `);
   const out: Record<string, StepStats> = {};
   for (const r of result.rows) {

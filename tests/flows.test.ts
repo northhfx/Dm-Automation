@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateSteps } from "@/lib/flows/validate";
-import type { FlowStep } from "@/lib/flows/types";
+import { fitText, measuredLength, type FlowStep } from "@/lib/flows/types";
 
 const good: FlowStep[] = [
   { id: "s1", text: "สวัสดี {name}", buttons: [{ id: "b1", title: "ใช่ ฉันสนใจ!", type: "next", nextStepId: "s2" }] },
@@ -54,5 +54,21 @@ describe("validateSteps", () => {
     expect(errorOf([good[0], { ...good[1], id: "s1" }])).toContain("ลองรีเฟรช");
     expect(errorOf([{ id: "bad id!", text: "a", buttons: [] }])).toContain("ลองรีเฟรช");
     expect(errorOf("not an array")).toContain("อย่างน้อย 1");
+  });
+});
+
+describe("ความยาวข้อความ", () => {
+  it("นับ {name} เผื่อชื่อยาว 30 ตัวอักษร", () => {
+    expect(measuredLength("สวัสดี {name}")).toBe(7 + 30);
+    const almost = "ก".repeat(620) + "{name}"; // 620 + 6 ตัวผ่านแบบนับตรงๆ แต่หลังแทนชื่อยาวได้ถึง 650
+    expect(errorOf([{ ...good[1], text: almost }])).toContain("นับ {name} เผื่อ");
+    expect(validateSteps([{ ...good[1], text: "ก".repeat(600) + "{name}" }]).ok).toBe(true);
+  });
+
+  it("ตัดข้อความที่ยาวเกินโดยไม่ทำให้อีโมจิแตก", () => {
+    expect(fitText("สั้น", 10)).toBe("สั้น");
+    const cut = fitText("😀".repeat(10), 7);
+    expect(cut.length).toBeLessThanOrEqual(7);
+    expect(cut).toBe("😀😀😀…");
   });
 });

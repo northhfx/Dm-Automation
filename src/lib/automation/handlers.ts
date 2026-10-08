@@ -15,7 +15,7 @@ import {
 import { getPublicBaseUrl } from "@/lib/config";
 import { randomCode } from "@/lib/crypto";
 import { env } from "@/lib/env";
-import { flowPayload, parseFlowPayload } from "@/lib/flows/types";
+import { fitText, FLOW_LIMITS, flowPayload, parseFlowPayload } from "@/lib/flows/types";
 import {
   buildMessage,
   fetchProfile,
@@ -419,7 +419,8 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
   const page = await getPageById(db, data.pageId);
   const rule = await db.query.rules.findFirst({ where: eq(rules.id, data.ruleId) });
   if (!page || !rule) return;
-  const step = rule.steps.find((s) => s.id === data.stepId);
+  // งานที่เข้าคิวไว้ก่อนอัปเดตเป็นแบบหลายข้อความจะไม่มี stepId → ส่งข้อความแรก
+  const step = data.stepId ? rule.steps.find((s) => s.id === data.stepId) : rule.steps[0];
   if (!step) {
     // ข้อความถูกลบออกจากกฎระหว่างรอส่ง
     await logEvent(db, {
@@ -449,6 +450,9 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
   const hasLinks = step.buttons.some((b) => b.type === "link" && b.url);
   const baseUrl = hasLinks ? await getPublicBaseUrl(db) : null;
   const linkCodes: Record<string, string> = { ...(data.linkCodes ?? {}) };
+  // ลิงก์ของงานเวอร์ชันเก่า (ก่อนมีปุ่ม) ไม่ได้ใช้แล้ว ลบทิ้งไม่ให้ถ่วงสถิติ
+  const legacyCode = (data as { linkCode?: string }).linkCode;
+  if (legacyCode && !data.linkCodes) await db.delete(links).where(eq(links.code, legacyCode));
   let createdLinks = false;
   for (const b of step.buttons) {
     if (b.type !== "link" || !b.url || !baseUrl || linkCodes[b.id]) continue;
@@ -473,7 +477,9 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
     }
     return b.nextStepId ? [{ type: "postback", title: b.title, payload: flowPayload(rule.id, step.id, b.id) }] : [];
   });
-  const text = renderTemplate(step.text, { name: data.actorName });
+  // เผื่อชื่อลูกค้ายาวจนข้อความเกินลิมิตของ Meta (ข้อความที่มีปุ่มห้ามว่างด้วย)
+  const maxLength = buttons.length ? FLOW_LIMITS.textWithButtons : FLOW_LIMITS.textPlain;
+  const text = fitText(renderTemplate(step.text, { name: data.actorName }) || (buttons.length ? "👇" : ""), maxLength);
   const logText = buttons.length ? `${text}\n\n${buttons.map((b) => `[${b.title}]`).join(" ")}` : text;
   const codes = Object.values(linkCodes);
 
