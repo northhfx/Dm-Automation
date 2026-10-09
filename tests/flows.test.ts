@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { layoutFlow } from "@/lib/flows/layout";
 import { validateSteps } from "@/lib/flows/validate";
 import { fitText, measuredLength, type FlowStep } from "@/lib/flows/types";
 
@@ -70,5 +71,27 @@ describe("ความยาวข้อความ", () => {
     const cut = fitText("😀".repeat(10), 7);
     expect(cut.length).toBeLessThanOrEqual(7);
     expect(cut).toBe("😀😀😀…");
+  });
+});
+
+describe("layoutFlow (แผนผัง)", () => {
+  const step = (id: string, ...targets: string[]): FlowStep => ({
+    id,
+    text: id,
+    buttons: targets.map((t, i) => ({ id: `${id}b${i}`, title: t, type: "next", nextStepId: t })),
+  });
+
+  it("เรียงคอลัมน์ตามระยะจากข้อความแรก และแยกข้อความที่ไม่มีปุ่มพามาไว้ต่างหาก", () => {
+    const steps = [step("s1", "s2", "s3"), step("s2", "s4"), step("s3"), step("s4", "s1"), step("lost", "s2")];
+    expect(layoutFlow(steps)).toEqual({ columns: [["s1"], ["s2", "s3"], ["s4"]], unreachable: ["lost"] });
+  });
+
+  it("ไม่สนปุ่มลิงก์และปุ่มที่ยังไม่ได้เลือกข้อความ", () => {
+    const steps: FlowStep[] = [
+      { id: "s1", text: "a", buttons: [{ id: "b1", title: "x", type: "link", url: "https://x.com" }, { id: "b2", title: "y", type: "next", nextStepId: "" }] },
+      step("s2"),
+    ];
+    expect(layoutFlow(steps)).toEqual({ columns: [["s1"]], unreachable: ["s2"] });
+    expect(layoutFlow([])).toEqual({ columns: [], unreachable: [] });
   });
 });

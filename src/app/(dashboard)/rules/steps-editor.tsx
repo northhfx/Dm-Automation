@@ -1,14 +1,15 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Badge, buttonClass, cx, inputClass } from "@/components/ui";
-import type { TriggerType } from "@/db/schema";
 import { FLOW_LIMITS, measuredLength, NAME_ALLOWANCE, type FlowButton, type FlowStep } from "@/lib/flows/types";
 import type { StepStats } from "@/lib/stats";
+import { FlowMap, type TriggerSummary } from "./flow-map";
 
 interface Props {
   initial: FlowStep[];
-  trigger: TriggerType;
+  /** เงื่อนไขที่ตั้งไว้ด้านบน (แสดงในการ์ด "เมื่อ…" ของแผนผัง) */
+  summary: TriggerSummary;
   /** สถิติของแต่ละข้อความ (มีเฉพาะตอนแก้กฎที่เคยใช้งานแล้ว) */
   stats?: Record<string, StepStats>;
 }
@@ -25,8 +26,22 @@ function blankStep(): FlowStep {
 const PREVIEW_NAME = "มิ้นท์";
 
 /** แก้ข้อความที่จะส่งทาง DM: ข้อความแรกส่งทันที ข้อความถัดไปส่งเมื่อลูกค้ากดปุ่ม */
-export function StepsEditor({ initial, trigger, stats }: Props) {
+export function StepsEditor({ initial, summary, stats }: Props) {
   const [steps, setSteps] = useState<FlowStep[]>(initial.length ? initial : [blankStep()]);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const { trigger } = summary;
+
+  useEffect(() => {
+    if (!highlight) return;
+    const timer = setTimeout(() => setHighlight(null), 1600);
+    return () => clearTimeout(timer);
+  }, [highlight]);
+
+  /** กดการ์ดในแผนผัง → เลื่อนลงมาที่ข้อความนั้น */
+  function selectStep(id: string) {
+    document.getElementById(`step-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setHighlight(id);
+  }
 
   const numberOf = (id: string | undefined) => steps.findIndex((s) => s.id === id) + 1;
 
@@ -126,6 +141,16 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
     <div>
       <input type="hidden" name="steps" value={JSON.stringify(steps)} />
 
+      <div className="mb-5 overflow-hidden rounded-xl border border-line">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-line bg-surface px-4 py-2.5">
+          <span className="text-sm font-semibold">แผนผังการทำงาน</span>
+          <span className="text-xs text-fg-3">กดที่การ์ดเพื่อไปแก้ข้อความ · เลื่อนซ้าย-ขวาเพื่อดูทั้งหมด</span>
+        </div>
+        <div className="max-h-[560px] overflow-auto">
+          <FlowMap steps={steps} summary={summary} stats={stats} onSelect={selectStep} />
+        </div>
+      </div>
+
       {steps.map((step, index) => {
         const incoming = steps.flatMap((s) =>
           s.buttons.filter((b) => b.type === "next" && b.nextStepId === step.id).map((b) => ({ from: s, button: b })),
@@ -150,7 +175,14 @@ export function StepsEditor({ initial, trigger, stats }: Props) {
               </div>
             )}
 
-            <section className="rounded-xl border border-line bg-surface p-4" aria-label={`ข้อความที่ ${index + 1}`}>
+            <section
+              id={`step-${step.id}`}
+              className={cx(
+                "scroll-mt-4 rounded-xl border bg-surface p-4 transition-shadow",
+                highlight === step.id ? "border-accent ring-2 ring-accent/40" : "border-line",
+              )}
+              aria-label={`ข้อความที่ ${index + 1}`}
+            >
               <header className="mb-3 flex flex-wrap items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-fg">
                   {index + 1}

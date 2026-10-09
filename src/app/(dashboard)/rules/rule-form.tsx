@@ -54,6 +54,8 @@ function RuleFormFields({
   const [trigger, setTrigger] = useState(values.trigger);
   const [matchType, setMatchType] = useState(values.matchType);
   const [allPosts, setAllPosts] = useState(values.postIds.length === 0);
+  const [platforms, setPlatforms] = useState(values.platforms);
+  const [keywords, setKeywords] = useState(values.keywords);
   const knownIds = new Set(recentPosts.map((p) => p.id));
   const manualIds = values.postIds.filter((id) => !knownIds.has(id));
 
@@ -112,7 +114,13 @@ function RuleFormFields({
                 ] as const
               ).map(([value, label]) => (
                 <label key={value} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="platforms" value={value} defaultChecked={values.platforms.includes(value)} />
+                  <input
+                    type="checkbox"
+                    name="platforms"
+                    value={value}
+                    checked={platforms.includes(value)}
+                    onChange={(e) => setPlatforms((all) => (e.target.checked ? [...all, value] : all.filter((p) => p !== value)))}
+                  />
                   {label}
                 </label>
               ))}
@@ -135,7 +143,14 @@ function RuleFormFields({
             </Field>
             {matchType !== "any" && (
               <Field label="Keyword" hint="บรรทัดละ 1 คำ หรือคั่นด้วยจุลภาค เช่น สนใจ, ราคา, link" htmlFor="keywords">
-                <textarea id="keywords" name="keywords" rows={3} defaultValue={values.keywords} className={inputClass} />
+                <textarea
+                  id="keywords"
+                  name="keywords"
+                  rows={3}
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                  className={inputClass}
+                />
               </Field>
             )}
           </div>
@@ -201,7 +216,21 @@ function RuleFormFields({
         title={`${trigger === "comment" ? 3 : 2}. ข้อความที่ส่งทาง DM`}
         description="ข้อความแรกส่งทันที ข้อความถัดไปส่งเมื่อลูกค้ากดปุ่ม — ถามก่อนแล้วให้กดปุ่ม มักได้คนกดลิงก์มากกว่าส่งลิงก์ทันที"
       >
-        <StepsEditor initial={values.steps} trigger={trigger} stats={stepStats} />
+        <StepsEditor
+          initial={values.steps}
+          summary={{
+            trigger,
+            platforms,
+            matchType,
+            // แยกคำแบบเดียวกับตอนบันทึก (บรรทัดใหม่หรือจุลภาค)
+            keywords: keywords
+              .split(/[\n,]/)
+              .map((k) => k.trim())
+              .filter(Boolean),
+            allPosts,
+          }}
+          stats={stepStats}
+        />
       </Card>
 
       <Card title={`${trigger === "comment" ? 4 : 3}. ตัวเลือกเพิ่มเติม`}>
