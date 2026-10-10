@@ -15,6 +15,13 @@ import {
 export type Platform = "facebook" | "instagram";
 export type TriggerType = "comment" | "dm";
 export type MatchType = "contains" | "exact" | "any";
+/**
+ * กฎคอมเมนต์ใช้กับโพสต์ไหน: ทุกโพสต์/รีล, เฉพาะที่เลือก (postIds),
+ * หรือโพสต์/รีลถัดไปที่ลงหลังบันทึกกฎ (ระบบผูกให้อัตโนมัติ แยก Facebook กับ Instagram — ดู boundPosts)
+ */
+export type PostScope = "any" | "specific" | "next";
+/** โพสต์ที่กฎแบบ "โพสต์ถัดไป" ผูกไว้แล้ว ของแต่ละแพลตฟอร์ม */
+export type BoundPosts = Partial<Record<Platform, { id: string; boundAt: string }>>;
 /** ข้อความถูกส่งเพราะ: คอมเมนต์, ทัก DM, หรือลูกค้ากดปุ่มในข้อความก่อนหน้า */
 export type MessageSource = TriggerType | "button";
 
@@ -39,7 +46,11 @@ export const rules = pgTable("rules", {
   platforms: text("platforms").array().$type<Platform[]>().notNull(),
   matchType: text("match_type").$type<MatchType>().notNull().default("contains"),
   keywords: text("keywords").array().notNull().default([]),
-  postIds: text("post_ids").array().notNull().default([]), // ว่าง = ทุกโพสต์
+  postScope: text("post_scope").$type<PostScope>().notNull().default("any"),
+  postIds: text("post_ids").array().notNull().default([]), // ใช้เมื่อ postScope = "specific"
+  /** กฎแบบ "โพสต์ถัดไป": เริ่มรอโพสต์ที่ลงตั้งแต่เวลานี้ */
+  nextPostSince: timestamp("next_post_since", { withTimezone: true }),
+  boundPosts: jsonb("bound_posts").$type<BoundPosts>().notNull().default({}),
   publicReplies: text("public_replies").array().notNull().default([]),
   /** ข้อความที่จะส่ง ข้อความแรกคือข้อความเริ่มต้น ข้อความถัดไปส่งเมื่อลูกค้ากดปุ่ม */
   steps: jsonb("steps").$type<FlowStep[]>().notNull().default([]),
@@ -120,7 +131,8 @@ export const links = pgTable(
 /**
  * บันทึกเหตุการณ์ทั้งหมด ใช้ทำสถิติและหน้า Activity
  * type: comment_received | dm_received | rule_triggered | public_reply_sent |
- *       public_reply_failed | dm_sent | dm_failed | button_clicked | link_clicked | skipped
+ *       public_reply_failed | dm_sent | dm_failed | button_clicked | link_clicked | skipped |
+ *       post_bound (กฎแบบ "โพสต์ถัดไป" ผูกกับโพสต์แล้ว)
  */
 export const events = pgTable(
   "events",

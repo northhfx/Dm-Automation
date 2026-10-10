@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db/client";
 import { rules } from "@/db/schema";
 import { requireAuth } from "@/lib/auth";
+import { nextPostState } from "@/lib/rules/post-scope";
 import { formDataToValues, validateRule, type RuleFormState } from "./form-values";
 
 export async function saveRule(prev: RuleFormState, formData: FormData): Promise<RuleFormState> {
@@ -16,14 +17,30 @@ export async function saveRule(prev: RuleFormState, formData: FormData): Promise
   if (!result.ok) return { error: result.error, errorStepId: result.stepId, values, attempt };
 
   const db = getDb();
+  const now = new Date();
   if (values.id) {
     // กฎเดิม: อยู่หน้าเดิมต่อ (หน้าแผนผังแสดง "บันทึกแล้ว" เอง)
-    await db.update(rules).set({ ...result.data, updatedAt: new Date() }).where(eq(rules.id, values.id));
+    const previous = await db.query.rules.findFirst({
+      where: eq(rules.id, values.id),
+      columns: { postScope: true, nextPostSince: true, boundPosts: true },
+    });
+    const scope = nextPostState(previous ?? null, result.data.postScope, values.rearmNext === true, now);
+    await db
+      .update(rules)
+      .set({ ...result.data, ...scope, updatedAt: now })
+      .where(eq(rules.id, values.id));
     revalidatePath("/rules");
-    return { values, attempt };
+    return {
+      values: { ...values, rearmNext: false, nextPostSince: scope.nextPostSince?.toISOString() ?? null, boundPosts: scope.boundPosts },
+      attempt,
+    };
   }
   // กฎใหม่: ไปหน้าแก้ไขของกฎนั้น (มี URL ของตัวเอง แก้ต่อได้ทันที)
-  const [created] = await db.insert(rules).values(result.data).returning({ id: rules.id });
+  const scope = nextPostState(null, result.data.postScope, false, now);
+  const [created] = await db
+    .insert(rules)
+    .values({ ...result.data, ...scope })
+    .returning({ id: rules.id });
   revalidatePath("/rules");
   redirect(`/rules/${created.id}?saved=1`);
 }
@@ -47,9 +64,11 @@ export async function duplicateRule(formData: FormData): Promise<void> {
   if (!rule) return;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ไม่คัดลอก id/วันที่
   const { id: _id, createdAt, updatedAt, ...copy } = rule;
+  // สำเนาแบบ "โพสต์ถัดไป" เริ่มรอโพสต์ใหม่ของตัวเอง (ไม่ใช้โพสต์ที่กฎเดิมผูกไว้)
+  const scope = nextPostState(null, rule.postScope, true, new Date());
   const [created] = await db
     .insert(rules)
-    .values({ ...copy, name: `${rule.name} (สำเนา)`.slice(0, 100), active: false })
+    .values({ ...copy, ...scope, name: `${rule.name} (สำเนา)`.slice(0, 100), active: false })
     .returning({ id: rules.id });
   revalidatePath("/rules");
   redirect(`/rules/${created.id}`);

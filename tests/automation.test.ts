@@ -143,7 +143,7 @@ describe("คอมเมนต์ → ตอบคอมเมนต์ + ส�
   });
 
   it("ไม่ทำอะไรถ้าไม่ตรง keyword หรือไม่ใช่โพสต์ที่เลือกไว้", async () => {
-    await createRule({ postIds: ["OTHERPOST"] });
+    await createRule({ postScope: "specific", postIds: ["OTHERPOST"] });
     await deliver(fbComment({ text: "สนใจ" }));
     await deliver(fbComment({ text: "สวยมาก", commentId: "C2" }));
     expect(graph.calls).toHaveLength(0);

@@ -11,7 +11,9 @@ function rule(overrides: Partial<MatchableRule>): MatchableRule {
     platforms: ["facebook", "instagram"],
     matchType: "contains",
     keywords: ["สนใจ"],
+    postScope: "any",
     postIds: [],
+    boundPosts: {},
     priority: 100,
     ...overrides,
   };
@@ -62,7 +64,7 @@ describe("findMatchingRule", () => {
   });
 
   it("กฎแบบคอมเมนต์ไม่ทำงานกับ DM และกรองตามโพสต์", () => {
-    const rules = [rule({ id: 1, postIds: ["999"] })];
+    const rules = [rule({ id: 1, postScope: "specific", postIds: ["999"] })];
     expect(findMatchingRule(rules, { trigger: "dm", platform: "facebook", text: "สนใจ" })).toBeNull();
     expect(findMatchingRule(rules, { trigger: "comment", platform: "facebook", text: "สนใจ", postId: "1_999" })?.id).toBe(1);
     expect(findMatchingRule(rules, { trigger: "comment", platform: "facebook", text: "สนใจ", postId: "1_111" })).toBeNull();

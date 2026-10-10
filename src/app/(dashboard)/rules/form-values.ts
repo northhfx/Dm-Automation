@@ -1,7 +1,8 @@
 import { z } from "zod";
-import type { MatchType, Platform, Rule, TriggerType } from "@/db/schema";
+import type { BoundPosts, MatchType, Platform, PostScope, Rule, TriggerType } from "@/db/schema";
 import type { FlowCanvas, FlowStep } from "@/lib/flows/types";
 import { sanitizeCanvas, validateSteps } from "@/lib/flows/validate";
+import { isPostScope } from "@/lib/rules/post-scope";
 
 /** ค่าในฟอร์มตั้งกฎ (เก็บเป็นข้อความเพื่อคืนค่ากลับไปให้ฟอร์มเมื่อกรอกผิด) */
 export interface RuleFormValues {
@@ -11,7 +12,15 @@ export interface RuleFormValues {
   platforms: Platform[];
   matchType: MatchType;
   keywords: string;
+  /** กฎคอมเมนต์ใช้กับ: ทุกโพสต์/รีล, เฉพาะที่เลือก (postIds) หรือโพสต์/รีลถัดไป */
+  postScope: PostScope;
   postIds: string[];
+  /** กด "เริ่มรอโพสต์ถัดไปใหม่" (ล้างโพสต์ที่ผูกไว้ แล้วเริ่มนับจากตอนบันทึก) */
+  rearmNext?: boolean;
+  /** แสดงผลเท่านั้น: เริ่มรอโพสต์ถัดไปตั้งแต่เมื่อไหร่ (ISO) */
+  nextPostSince: string | null;
+  /** แสดงผลเท่านั้น: โพสต์ที่กฎแบบ "โพสต์ถัดไป" ผูกไว้แล้ว */
+  boundPosts: BoundPosts;
   publicReplies: string;
   /** ข้อความแรกอยู่ลำดับแรกเสมอ (ข้อความที่การ์ด "เมื่อ…" เชื่อมไป) */
   steps: FlowStep[];
@@ -47,7 +56,10 @@ export function ruleToFormValues(rule: Rule): RuleFormValues {
     platforms: rule.platforms,
     matchType: rule.matchType,
     keywords: rule.keywords.join("\n"),
+    postScope: rule.postScope,
     postIds: rule.postIds,
+    nextPostSince: rule.nextPostSince ? rule.nextPostSince.toISOString() : null,
+    boundPosts: rule.boundPosts ?? {},
     publicReplies: rule.publicReplies.join("\n"),
     steps: rule.steps,
     canvas: rule.canvas ?? {},
@@ -92,6 +104,8 @@ export function formDataToValues(formData: FormData): RuleFormValues {
   const id = Number(formData.get("id"));
   const manualPostIds = splitList(String(formData.get("postIdsManual") ?? "")).flatMap((s) => s.split(/\s+/));
   const startStepId = formData.has("startStepId") ? String(formData.get("startStepId")) : undefined;
+  const postIds = [...new Set([...formData.getAll("postIds").map(String), ...manualPostIds])].filter(Boolean);
+  const scope = formData.get("postScope");
   const steps = moveStartFirst(parseStepsJson(formData.get("steps")), startStepId);
   return {
     id: Number.isInteger(id) && id > 0 ? id : undefined,
@@ -102,7 +116,12 @@ export function formDataToValues(formData: FormData): RuleFormValues {
       ? formData.get("matchType")
       : "contains") as MatchType,
     keywords: String(formData.get("keywords") ?? ""),
-    postIds: [...new Set([...formData.getAll("postIds").map(String), ...manualPostIds])].filter(Boolean),
+    // ฟอร์มรุ่นเก่าที่ไม่ส่ง postScope มา: มีโพสต์ = เฉพาะที่เลือก, ไม่มี = ทุกโพสต์
+    postScope: isPostScope(scope) ? scope : postIds.length ? "specific" : "any",
+    postIds,
+    rearmNext: formData.get("rearmNext") === "1",
+    nextPostSince: null,
+    boundPosts: {},
     publicReplies: String(formData.get("publicReplies") ?? ""),
     steps,
     canvas: (parseJson(formData.get("canvas")) ?? {}) as FlowCanvas,
@@ -119,6 +138,7 @@ const ruleSchema = z.object({
   platforms: z.array(z.enum(["facebook", "instagram"])).min(1, "เลือกอย่างน้อย 1 แพลตฟอร์ม"),
   matchType: z.enum(["contains", "exact", "any"]),
   keywords: z.array(z.string().max(100)),
+  postScope: z.enum(["any", "specific", "next"]),
   postIds: z.array(z.string().max(100)),
   publicReplies: z.array(z.string().max(500, "ข้อความตอบคอมเมนต์ยาวเกิน 500 ตัวอักษร")),
   oncePerUser: z.boolean(),
@@ -135,10 +155,14 @@ export function validateRule(
     ...values,
     keywords: splitList(values.keywords),
     publicReplies: values.trigger === "comment" ? splitLines(values.publicReplies) : [],
-    postIds: values.trigger === "comment" ? values.postIds : [],
+    postScope: values.trigger === "comment" ? values.postScope : "any",
+    postIds: values.trigger === "comment" && values.postScope === "specific" ? values.postIds : [],
   });
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const data = parsed.data;
+  if (data.postScope === "specific" && data.postIds.length === 0) {
+    return { ok: false, error: "เลือกโพสต์หรือรีลอย่างน้อย 1 รายการ (หรือเปลี่ยนเป็น 'ทุกโพสต์และรีล' / 'โพสต์หรือรีลถัดไป')" };
+  }
   if (data.matchType !== "any" && data.keywords.length === 0) {
     return { ok: false, error: "ใส่ keyword อย่างน้อย 1 คำ (หรือเลือก 'ทุกข้อความ')" };
   }

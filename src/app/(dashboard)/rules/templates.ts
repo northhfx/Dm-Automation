@@ -16,7 +16,10 @@ export const DEFAULT_RULE: RuleFormValues = {
   platforms: ["facebook", "instagram"],
   matchType: "contains",
   keywords: "",
+  postScope: "any",
   postIds: [],
+  nextPostSince: null,
+  boundPosts: {},
   publicReplies: "ส่งรายละเอียดให้ทาง DM แล้วนะคะ 💌\nเช็คกล่องข้อความได้เลยค่ะ ✨\nส่งให้แล้วค่ะ ดูใน DM นะคะ 🙏",
   steps: [
     {

@@ -1,4 +1,7 @@
-import type { MatchType, Platform, TriggerType } from "@/db/schema";
+import type { BoundPosts, MatchType, Platform, PostScope, TriggerType } from "@/db/schema";
+import { postScopeMatches } from "./post-scope";
+
+export { postIdMatches } from "./post-scope";
 
 export interface MatchableRule {
   id: number;
@@ -7,7 +10,9 @@ export interface MatchableRule {
   platforms: Platform[];
   matchType: MatchType;
   keywords: string[];
+  postScope: PostScope;
   postIds: string[];
+  boundPosts: BoundPosts;
   priority: number;
 }
 
@@ -41,25 +46,17 @@ export function textMatches(matchType: MatchType, keywords: string[], text: stri
   return words.some((w) => normalized.includes(w));
 }
 
-/** Facebook ส่ง post_id มาเป็น "<pageId>_<postId>" ส่วนผู้ใช้อาจกรอกแค่ "<postId>" */
-export function postIdMatches(ruleIds: string[], postId: string | null | undefined): boolean {
-  if (ruleIds.length === 0) return true;
-  if (!postId) return false;
-  const short = postId.includes("_") ? postId.split("_").pop()! : postId;
-  return ruleIds.some((id) => {
-    const trimmed = id.trim();
-    return trimmed === postId || trimmed === short;
-  });
-}
-
-/** หากฎแรกที่ตรงเงื่อนไข (เรียงตาม priority น้อยไปมาก แล้วตาม id) */
+/**
+ * หากฎแรกที่ตรงเงื่อนไข (เรียงตาม priority น้อยไปมาก แล้วตาม id)
+ * กฎแบบ "โพสต์ถัดไป" ที่ยังไม่ได้ผูกโพสต์จะถูกข้าม — ตัวจัดการคอมเมนต์ต้องเช็คกับ Meta เอง
+ */
 export function findMatchingRule<R extends MatchableRule>(rules: R[], incoming: IncomingText): R | null {
   const sorted = [...rules].sort((a, b) => a.priority - b.priority || a.id - b.id);
   for (const rule of sorted) {
     if (!rule.active) continue;
     if (rule.trigger !== incoming.trigger) continue;
     if (!rule.platforms.includes(incoming.platform)) continue;
-    if (incoming.trigger === "comment" && !postIdMatches(rule.postIds, incoming.postId)) continue;
+    if (incoming.trigger === "comment" && postScopeMatches(rule, incoming.platform, incoming.postId) !== true) continue;
     if (!textMatches(rule.matchType, rule.keywords, incoming.text)) continue;
     return rule;
   }
