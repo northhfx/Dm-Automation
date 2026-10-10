@@ -13,7 +13,6 @@ import { ReloadButton } from "./login-form";
  */
 
 const PRODUCT_NAME = "DM Automation";
-const TAGLINE = "ตอบคอมเมนต์และส่ง DM อัตโนมัติ บน Facebook และ Instagram";
 
 export function AuthShell({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
@@ -25,7 +24,11 @@ export function AuthShell({ children, wide }: { children: ReactNode; wide?: bool
             <div className="mb-6 flex flex-col items-center text-center lg:hidden">
               <LogoMark size={44} />
               <p className="mt-3 text-lg leading-7 font-semibold tracking-tight text-fg">{PRODUCT_NAME}</p>
-              <p className="mt-0.5 max-w-xs text-sm leading-6 text-fg-2">{TAGLINE}</p>
+              <p className="mt-0.5 text-sm leading-6 text-fg-2">
+                ตอบคอมเมนต์และส่ง DM อัตโนมัติ
+                <br />
+                สำหรับ Facebook และ Instagram
+              </p>
             </div>
             {children}
           </div>
@@ -112,7 +115,7 @@ function BrandPanel() {
           </span>
         </div>
 
-        <div className="my-auto w-full max-w-[460px] self-center py-12">
+        <div className="my-auto w-full max-w-[480px] py-12">
           <p className="text-[28px] leading-[1.4] font-semibold tracking-tight text-fg">
             ลูกค้าคอมเมนต์ปุ๊บ
             <br />
@@ -126,7 +129,7 @@ function BrandPanel() {
 
         <ul className="grid grid-cols-3 gap-4 border-t border-line pt-6">
           {FEATURES.map((f) => (
-            <li key={f.label} className="flex items-center gap-2.5 text-sm leading-5 text-fg-2">
+            <li key={f.label} className="flex flex-col items-start gap-2 text-sm leading-5 text-fg-2 xl:flex-row xl:items-center xl:gap-2.5">
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent [&_svg]:size-4">
                 {f.icon}
               </span>
