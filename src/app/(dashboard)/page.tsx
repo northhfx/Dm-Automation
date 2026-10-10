@@ -182,7 +182,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
           <Card
             className="xl:col-span-2"
             title="กฎที่ทำงานมากที่สุด"
-            description={`เรียงตามจำนวนครั้งที่ทำงานใน ${days} วัน`}
+            description={`เรียงตามครั้งที่ทำงานใน ${days} วัน`}
             padding="none"
             actions={
               !noRules && (

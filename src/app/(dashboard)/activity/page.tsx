@@ -82,6 +82,29 @@ function webhookSource(object: string | null): { label: string; platform: "faceb
   return { label: object ?? "ไม่ทราบที่มา", platform: null };
 }
 
+/** สรุปว่าข้อมูลจาก Meta ก้อนนี้มีอะไรบ้าง เช่น "คอมเมนต์ · กดปุ่ม 2" (อ่านอย่างเดียว ไม่เชื่อโครงสร้างข้อมูล) */
+function webhookSummary(body: unknown): string | null {
+  const counts = new Map<string, number>();
+  const add = (label: string) => counts.set(label, (counts.get(label) ?? 0) + 1);
+  const entries = (body as { entry?: unknown } | null)?.entry;
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const e = (entry ?? {}) as { changes?: unknown; messaging?: unknown };
+    for (const change of Array.isArray(e.changes) ? e.changes : []) {
+      const field = (change as { field?: unknown } | null)?.field;
+      add(field === "feed" || field === "comments" ? "คอมเมนต์" : typeof field === "string" ? field : "อื่นๆ");
+    }
+    for (const m of Array.isArray(e.messaging) ? e.messaging : []) {
+      const msg = (m ?? {}) as { message?: { is_echo?: unknown }; postback?: unknown; read?: unknown };
+      if (msg.message) add(msg.message.is_echo ? "ข้อความจากเพจ" : "แชท");
+      else if (msg.postback) add("กดปุ่ม");
+      else if (msg.read) add("อ่านแล้ว");
+      else add("อื่นๆ");
+    }
+  }
+  if (counts.size === 0) return null;
+  return [...counts].map(([label, n]) => (n > 1 ? `${label} ${formatNumber(n)}` : label)).join(" · ");
+}
+
 export default async function ActivityPage({ searchParams }: PageProps<"/activity">) {
   const params = await searchParams;
   const filterKey = String(params.filter ?? "all");
@@ -271,13 +294,17 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
               <ul className="divide-y divide-line">
                 {logs.map((log) => {
                   const source = webhookSource(log.object);
+                  const summary = webhookSummary(log.body);
                   return (
                     <li key={log.id}>
                       <details className="group">
                         <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-5 py-2.5 text-sm transition-colors hover:bg-surface-2/50 [&::-webkit-details-marker]:hidden">
                           <ChevronRight className="size-4 shrink-0 text-fg-3 transition-transform group-open:rotate-90" aria-hidden />
                           {source.platform && <PlatformIcon platform={source.platform} size={16} />}
-                          <span className="min-w-0 flex-1 truncate font-medium text-fg">{source.label}</span>
+                          <span className="min-w-0 flex-1 truncate">
+                            <span className="font-medium text-fg">{source.label}</span>
+                            {summary && <span className="text-fg-3"> · {summary}</span>}
+                          </span>
                           <span className="hidden text-xs text-fg-3 sm:inline">{formatDateTime(log.receivedAt)}</span>
                           <RelativeTime date={log.receivedAt} now={now} className="text-xs text-fg-3 sm:hidden" />
                         </summary>

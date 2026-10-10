@@ -5,18 +5,21 @@ import { Fragment, useOptimistic, useTransition, type ReactNode } from "react";
 import {
   ChevronRight,
   Copy,
+  Hourglass,
   Info,
   ListOrdered,
   MessageCircle,
   MessagesSquare,
   MousePointerClick,
+  Newspaper,
   Pencil,
+  Pin,
   Reply,
   Send,
   Trash2,
   Zap,
 } from "lucide-react";
-import type { MatchType, Platform, TriggerType } from "@/db/schema";
+import type { MatchType, Platform, PostScope, TriggerType } from "@/db/schema";
 import { Badge, cx, formatNumber, formatPercent, PlatformIcon } from "@/components/ui";
 import { Switch } from "@/components/switch";
 import { Menu, MenuItem, MenuSeparator } from "@/components/menu";
@@ -39,8 +42,12 @@ export interface RuleListItem {
   platforms: Platform[];
   matchType: MatchType;
   keywords: string[];
-  /** 0 = ทุกโพสต์ */
+  /** กฎคอมเมนต์ใช้กับโพสต์ไหน: ทุกโพสต์ / เฉพาะที่เลือก / โพสต์ถัดไป */
+  postScope: PostScope;
+  /** จำนวนโพสต์ที่เลือก (ใช้เมื่อ postScope = "specific") */
   postCount: number;
+  /** แบบ "โพสต์ถัดไป": แพลตฟอร์มที่ผูกโพสต์ได้แล้ว */
+  boundPlatforms: Platform[];
   /** มีข้อความตอบใต้คอมเมนต์ */
   publicReply: boolean;
   stepCount: number;
@@ -96,7 +103,7 @@ export function RuleList({ rules }: { rules: RuleListItem[] }) {
       <p className="flex items-start gap-2 text-xs leading-5 text-fg-3">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
-          ตัวเลขนับตั้งแต่สร้างกฎ · {CTR_HINT} · เปลี่ยนลำดับกฎได้ที่ “ลำดับความสำคัญ” ในหน้าแก้ไขกฎ
+          ตัวเลขนับตั้งแต่สร้างกฎ · {CTR_HINT} · เปลี่ยนลำดับกฎได้ที่ “ลำดับความสำคัญ” (ขั้นสูง) ในหน้าแก้ไขกฎ
         </span>
       </p>
     </div>
@@ -178,7 +185,7 @@ function RuleCard({ rule, rank }: { rule: RuleListItem; rank: number }) {
           </div>
         </div>
 
-        <MessagePreview text={rule.firstText} className={cx("mt-3", muted)} />
+        <MessagePreview text={rule.firstText} inactive={!active} className={cx("mt-3", muted)} />
 
         <div
           className={cx(
@@ -222,6 +229,32 @@ function RuleMenu({ rule, href }: { rule: RuleListItem; href: string }) {
   );
 }
 
+const PLATFORM_NAME: Record<Platform, string> = { facebook: "Facebook", instagram: "Instagram" };
+
+/** ขอบเขตโพสต์ของกฎคอมเมนต์ → ไอคอน + ข้อความสั้น (+ คำอธิบายตอนชี้) */
+function postScopeLabel(rule: RuleListItem): { icon: ReactNode; text: string; title: string; tone?: "warning" } {
+  if (rule.postScope === "specific") {
+    return rule.postCount > 0
+      ? { icon: <Pin />, text: `${formatNumber(rule.postCount)} โพสต์ที่เลือก`, title: "ใช้กับโพสต์ที่เลือกไว้เท่านั้น" }
+      : { icon: <Pin />, text: "ยังไม่ได้เลือกโพสต์", title: "เลือกโพสต์ในหน้าแก้ไขกฎ", tone: "warning" };
+  }
+  if (rule.postScope === "next") {
+    const bound = rule.platforms.filter((p) => rule.boundPlatforms.includes(p));
+    if (bound.length === 0) {
+      return { icon: <Hourglass />, text: "รอโพสต์ถัดไป", title: "ระบบจะผูกกฎนี้กับโพสต์หรือรีลถัดไปที่คุณลงให้อัตโนมัติ" };
+    }
+    if (bound.length === rule.platforms.length) {
+      return { icon: <Pin />, text: "ผูกกับโพสต์ใหม่แล้ว", title: "ใช้กับโพสต์ใหม่ที่ระบบผูกไว้ให้แล้ว" };
+    }
+    return {
+      icon: <Pin />,
+      text: `ผูก ${bound.map((p) => PLATFORM_NAME[p]).join(", ")} แล้ว`,
+      title: "แพลตฟอร์มที่เหลือยังรอโพสต์ถัดไป",
+    };
+  }
+  return { icon: <Newspaper />, text: "ทุกโพสต์", title: "ใช้กับทุกโพสต์และรีล" };
+}
+
 /** เงื่อนไข: แพลตฟอร์ม · คำที่ต้องมี · โพสต์ */
 function TriggerSummary({ rule, className }: { rule: RuleListItem; className?: string }) {
   const comment = rule.trigger === "comment";
@@ -232,13 +265,14 @@ function TriggerSummary({ rule, className }: { rule: RuleListItem; className?: s
       ? comment
         ? "ทุกคอมเมนต์"
         : "ทุกข้อความในแชท"
-      : `${comment ? "คอมเมนต์" : "แชท"}${rule.matchType === "exact" ? "ที่ตรงกับ" : "ที่มีคำว่า"}`;
+      : `${comment ? "คอมเมนต์" : "แชท"}${rule.matchType === "exact" ? "ที่พิมพ์ว่า" : "ที่มีคำว่า"}`;
+  const scope = comment ? postScopeLabel(rule) : null;
 
   return (
     <div className={cx("flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] leading-5 text-fg-2", className)}>
       <span className="inline-flex items-center gap-1">
         {rule.platforms.map((p) => (
-          <PlatformIcon key={p} platform={p} size={16} title={p === "instagram" ? "Instagram" : "Facebook"} />
+          <PlatformIcon key={p} platform={p} size={16} title={PLATFORM_NAME[p]} />
         ))}
       </span>
       <span>{lead}</span>
@@ -252,17 +286,23 @@ function TriggerSummary({ rule, className }: { rule: RuleListItem; className?: s
           </span>
         ))}
       {rule.matchType !== "any" && more > 0 && (
-        <span className="text-xs text-fg-3" title={rule.keywords.join(", ")}>
+        // อยู่เหนือลิงก์ของการ์ด เพื่อให้ชี้ดูคำที่เหลือได้
+        <span className="relative z-10 cursor-default text-xs text-fg-3" title={rule.keywords.join(", ")}>
           +{more} คำ
         </span>
       )}
-      {comment && (
-        <>
-          <span aria-hidden className="text-fg-3">
-            ·
-          </span>
-          <span>{rule.postCount === 0 ? "ทุกโพสต์" : `${formatNumber(rule.postCount)} โพสต์`}</span>
-        </>
+      {scope && (
+        // ไม่มีจุดคั่น เพราะบนมือถือจุดจะค้างอยู่ท้ายบรรทัด (ไอคอนแยกให้เห็นเองว่าเป็นอีกเรื่อง)
+        <span
+          className={cx(
+            "ml-1 inline-flex items-center gap-1 [&_svg]:size-3.5 [&_svg]:shrink-0",
+            scope.tone === "warning" ? "font-medium text-warning-text [&_svg]:text-warning-text" : "[&_svg]:text-fg-3",
+          )}
+          title={scope.title}
+        >
+          {scope.icon}
+          {scope.text}
+        </span>
       )}
     </div>
   );
@@ -288,13 +328,18 @@ function TextWithName({ text }: { text: string }) {
 }
 
 /** ตัวอย่างข้อความแรกที่ลูกค้าจะได้รับ (แบบฟองแชท) */
-function MessagePreview({ text, className }: { text: string; className?: string }) {
+function MessagePreview({ text, inactive, className }: { text: string; inactive?: boolean; className?: string }) {
   const flat = text.replace(/\s+/g, " ").trim();
   return (
     <div className={cx("flex", className)}>
       {/* ตัดบรรทัดที่ข้อความด้านใน (ถ้าตัดที่กล่องที่มี padding บรรทัดถัดไปจะโผล่มาครึ่งบรรทัด) */}
       <p
-        className={cx("max-w-2xl rounded-2xl rounded-tl-md bg-surface-2 px-3.5 py-2 text-sm leading-6", flat ? "text-fg-2" : "text-fg-3 italic")}
+        className={cx(
+          "max-w-2xl rounded-2xl rounded-tl-md px-3.5 py-2 text-sm leading-6",
+          // การ์ดที่ปิดอยู่มีพื้นสีเทา → ฟองเป็นสีขาวมีขอบ จะได้ยังเห็นชัด
+          inactive ? "border border-line bg-surface" : "bg-surface-2",
+          flat ? "text-fg-2" : "text-fg-3 italic",
+        )}
         title={flat || undefined}
       >
         <span className="line-clamp-2 sm:line-clamp-1">{flat ? <TextWithName text={flat} /> : "ยังไม่ได้เขียนข้อความ"}</span>
@@ -370,7 +415,7 @@ export function RulesEmptyState() {
         <h2 id="rules-empty-title" className="mt-6 text-lg leading-7 font-semibold text-fg">
           ยังไม่มีกฎอัตโนมัติ
         </h2>
-        <p className="mt-1.5 max-w-md text-sm leading-6 text-fg-2">
+        <p className="mt-1.5 max-w-md text-sm leading-6 text-balance text-fg-2">
           เลือกแบบเริ่มต้นด้านล่าง แล้วปรับข้อความ ปุ่ม และการ์ดได้เองทุกอย่าง
         </p>
       </div>

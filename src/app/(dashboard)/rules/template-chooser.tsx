@@ -22,13 +22,21 @@ import { Badge, Button, cx, Spinner, type ButtonSize } from "@/components/ui";
  * - TemplateOptions: รายการแบบเริ่มต้น (ใช้ในหน้าต่าง และในหน้าว่างตอนยังไม่มีกฎ)
  */
 
+interface FlowPart {
+  icon: ReactNode;
+  /** ชื่อสั้นใต้ไอคอน (แสดงเฉพาะแบบการ์ดใหญ่) */
+  label: string;
+  /** กรอบเส้นประ = ยังว่าง ให้สร้างเอง */
+  empty?: boolean;
+}
+
 interface TemplateOption {
   id: "comment" | "dm" | "blank";
   title: string;
   description: string;
   icon: ReactNode;
-  /** ไอคอนเล็กๆ เรียงเป็นลำดับการทำงาน (ภาพประกอบเท่านั้น) */
-  flow: ReactNode[];
+  /** ลำดับการทำงานย่อส่วน (ภาพประกอบเท่านั้น) */
+  flow: FlowPart[];
   recommended?: boolean;
 }
 
@@ -36,56 +44,90 @@ const TEMPLATES: TemplateOption[] = [
   {
     id: "comment",
     title: "คอมเมนต์ → ส่ง DM พร้อมปุ่ม",
-    description: "ตอบใต้คอมเมนต์ให้ แล้วส่ง DM ที่มีปุ่มให้ลูกค้ากดรับรายละเอียด",
+    description: "ตอบใต้คอมเมนต์ แล้วส่ง DM ที่มีปุ่มให้ลูกค้ากดรับรายละเอียด",
     icon: <MessageCircle />,
-    flow: [<MessageCircle key="c" />, <Send key="s" />, <MousePointerClick key="b" />, <Link2 key="l" />],
+    flow: [
+      { icon: <MessageCircle />, label: "คอมเมนต์" },
+      { icon: <Send />, label: "ส่ง DM" },
+      { icon: <MousePointerClick />, label: "กดปุ่ม" },
+      { icon: <Link2 />, label: "ลิงก์" },
+    ],
     recommended: true,
   },
   {
     id: "dm",
     title: "ตอบแชทตาม keyword",
-    description: "ลูกค้าทักแชทด้วยคำที่ตั้งไว้ เช่น “ราคา” ระบบตอบกลับพร้อมลิงก์ทันที",
+    description: "ลูกค้าทักแชทว่า “ราคา” ระบบตอบกลับพร้อมลิงก์ให้ทันที",
     icon: <MessagesSquare />,
-    flow: [<MessagesSquare key="m" />, <Send key="s" />, <Link2 key="l" />],
+    flow: [
+      { icon: <MessagesSquare />, label: "ทักแชท" },
+      { icon: <Send />, label: "ตอบกลับ" },
+      { icon: <Link2 />, label: "ลิงก์" },
+    ],
   },
   {
     id: "blank",
     title: "เริ่มจากว่าง",
     description: "เริ่มจากการ์ดเปล่าใบเดียว แล้วสร้างข้อความและปุ่มเองทั้งหมด",
     icon: <Plus />,
-    flow: [<Zap key="z" />, <SquareDashed key="d" />],
+    flow: [
+      { icon: <Zap />, label: "เงื่อนไข" },
+      { icon: <SquareDashed />, label: "การ์ดเปล่า", empty: true },
+    ],
   },
 ];
 
 const hrefOf = (id: TemplateOption["id"]) => `/rules/new?template=${id}`;
 
-/** ภาพลำดับการทำงานย่อส่วน: [ไอคอน]—[ไอคอน]—[ไอคอน] */
-function FlowHint({ flow, recommended, className }: { flow: ReactNode[]; recommended?: boolean; className?: string }) {
+/**
+ * ภาพลำดับการทำงานย่อส่วน: [ไอคอน]—[ไอคอน]—[ไอคอน]
+ * size="sm" ในรายการ · size="lg" ในการ์ดใหญ่ (มีชื่อใต้ไอคอน)
+ */
+function FlowHint({
+  flow,
+  recommended,
+  size = "sm",
+  className,
+}: {
+  flow: FlowPart[];
+  recommended?: boolean;
+  size?: "sm" | "lg";
+  className?: string;
+}) {
+  const lg = size === "lg";
   return (
-    <span aria-hidden className={cx("flex items-center", className)}>
-      {flow.map((icon, i) => {
-        const last = i === flow.length - 1;
-        const dashed = last && flow.length === 2;
-        return (
-          <Fragment key={i}>
-            {i > 0 && <span className={cx("h-px w-3 sm:w-4", dashed ? "border-t border-dashed border-line-strong" : "bg-line-strong")} />}
+    <span aria-hidden className={cx("flex items-start", className)}>
+      {flow.map((part, i) => (
+        <Fragment key={i}>
+          {i > 0 && (
             <span
               className={cx(
-                "flex size-6 items-center justify-center rounded-md border [&_svg]:size-3.5",
+                "shrink-0",
+                lg ? "mt-[15.5px] w-5" : "mt-[11.5px] w-3 sm:w-4",
+                part.empty ? "border-t border-dashed border-line-strong" : "h-px bg-line-strong",
+              )}
+            />
+          )}
+          <span className="flex flex-col items-center gap-1">
+            <span
+              className={cx(
+                "flex items-center justify-center border",
+                lg ? "size-8 rounded-lg [&_svg]:size-4" : "size-6 rounded-md [&_svg]:size-3.5",
                 i === 0
                   ? recommended
-                    ? "border-transparent bg-accent text-accent-fg"
+                    ? "border-transparent bg-accent text-accent-fg shadow-xs"
                     : "border-accent/25 bg-accent-soft text-accent"
-                  : dashed
+                  : part.empty
                     ? "border-dashed border-line-strong bg-surface text-fg-3"
-                    : "border-line bg-surface text-fg-2",
+                    : "border-line bg-surface text-fg-2 shadow-xs",
               )}
             >
-              {icon}
+              {part.icon}
             </span>
-          </Fragment>
-        );
-      })}
+            {lg && <span className="text-[11px] leading-4 whitespace-nowrap text-fg-3">{part.label}</span>}
+          </span>
+        </Fragment>
+      ))}
     </span>
   );
 }
@@ -123,11 +165,11 @@ export function TemplateOptions({ layout = "list", className }: { layout?: "list
             >
               <span
                 className={cx(
-                  "flex h-[72px] items-center justify-center border-b",
+                  "flex h-24 items-center justify-center border-b px-4",
                   t.recommended ? "border-accent/20 bg-accent-soft/60" : "border-line bg-surface-2/60",
                 )}
               >
-                <FlowHint flow={t.flow} recommended={t.recommended} />
+                <FlowHint flow={t.flow} recommended={t.recommended} size="lg" />
               </span>
               <span className="flex flex-1 items-start gap-3 p-4">
                 <span className="min-w-0 flex-1">

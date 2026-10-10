@@ -6,11 +6,26 @@ import { getAllTimeRuleStats, rate } from "@/lib/stats";
 import { RuleList, RulesEmptyState, type RuleListItem } from "./rule-list";
 import { NewRuleButton } from "./template-chooser";
 
-export default async function RulesPage({ searchParams }: PageProps<"/rules">) {
-  const TEMP_PREVIEW_EMPTY = (await searchParams).preview === "empty";
+export default async function RulesPage() {
   const db = getDb();
   const [list, stats] = await Promise.all([
-    db.select().from(rules).orderBy(asc(rules.priority), asc(rules.id)),
+    db
+      .select({
+        id: rules.id,
+        name: rules.name,
+        active: rules.active,
+        trigger: rules.trigger,
+        platforms: rules.platforms,
+        matchType: rules.matchType,
+        keywords: rules.keywords,
+        postScope: rules.postScope,
+        postIds: rules.postIds,
+        boundPosts: rules.boundPosts,
+        publicReplies: rules.publicReplies,
+        steps: rules.steps,
+      })
+      .from(rules)
+      .orderBy(asc(rules.priority), asc(rules.id)),
     getAllTimeRuleStats(db),
   ]);
 
@@ -27,13 +42,16 @@ export default async function RulesPage({ searchParams }: PageProps<"/rules">) {
       platforms: rule.platforms,
       matchType: rule.matchType,
       keywords: rule.keywords,
+      postScope: rule.postScope,
       postCount: rule.postIds.length,
+      boundPlatforms: rule.platforms.filter((p) => rule.boundPosts?.[p]),
       publicReply: rule.publicReplies.some((r) => r.trim() !== ""),
       stepCount: rule.steps.length,
       buttonCount: buttons.length,
       firstText: rule.steps[0]?.text ?? "",
       runs: s?.triggers ?? 0,
       hasButtons,
+      // แบบเดียวกับเดิม: CTR = คนกดปุ่ม/ลิงก์ ÷ คนที่ได้รับข้อความ (ไม่มีปุ่ม = ไม่มี CTR)
       ctr: hasButtons ? rate(s?.engaged ?? 0, s?.reached ?? 0) : null,
     };
   });
@@ -54,7 +72,7 @@ export default async function RulesPage({ searchParams }: PageProps<"/rules">) {
         actions={<NewRuleButton />}
       />
 
-      {items.length === 0 || TEMP_PREVIEW_EMPTY ? <RulesEmptyState /> : <RuleList rules={items} />}
+      {items.length === 0 ? <RulesEmptyState /> : <RuleList rules={items} />}
     </>
   );
 }
