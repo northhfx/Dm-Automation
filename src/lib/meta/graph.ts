@@ -188,6 +188,8 @@ export interface RecentPost {
   permalink: string | null;
   imageUrl: string | null;
   createdAt: string | null;
+  /** Instagram: IMAGE | VIDEO | CAROUSEL_ALBUM (วิดีโอ/รีลเป็น VIDEO), Facebook: null */
+  mediaType: string | null;
 }
 
 export async function listRecentFacebookPosts(pageId: string, token: string, limit = 12): Promise<RecentPost[]> {
@@ -204,6 +206,7 @@ export async function listRecentFacebookPosts(pageId: string, token: string, lim
     permalink: p.permalink_url ?? null,
     imageUrl: p.full_picture ?? null,
     createdAt: p.created_time ?? null,
+    mediaType: null,
   }));
 }
 
@@ -229,5 +232,6 @@ export async function listRecentInstagramPosts(igUserId: string, token: string, 
     permalink: p.permalink ?? null,
     imageUrl: (p.media_type === "VIDEO" ? p.thumbnail_url : p.media_url) ?? null,
     createdAt: p.timestamp ?? null,
+    mediaType: p.media_type ?? null,
   }));
 }
