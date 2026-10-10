@@ -89,7 +89,7 @@ export function PagesList({ pages, inset }: { pages: ConnectedPage[]; inset?: bo
                 <p className="mt-1.5 text-xs leading-5 text-fg-3">เชื่อมต่อเมื่อ {formatDateTime(p.connectedAt)}</p>
               </div>
             </div>
-            <div className="flex gap-2 sm:shrink-0 max-sm:pl-[52px]">
+            <div className="flex flex-wrap gap-2 sm:shrink-0 sm:flex-nowrap">
               {!p.token ? (
                 <a href="#connect" className={cx(buttonStyle("secondary"), "max-sm:flex-1")}>
                   <Plug aria-hidden />

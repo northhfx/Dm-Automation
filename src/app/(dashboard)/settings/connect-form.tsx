@@ -139,7 +139,7 @@ export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: str
       <input type="hidden" name="intent" value="fetch" />
       {state.step === "done" && state.message && (
         <Notice tone={state.error ? "warning" : "good"} title={state.message}>
-          {state.error ?? "ระบบเริ่มตอบคอมเมนต์และข้อความของเพจนี้แล้ว"}
+          {state.error ?? "ระบบเริ่มตอบคอมเมนต์และข้อความของเพจที่เลือกแล้ว"}
         </Notice>
       )}
       <ConnectSteps current={1} />
