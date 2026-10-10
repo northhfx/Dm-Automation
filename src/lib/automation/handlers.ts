@@ -18,6 +18,7 @@ import { env } from "@/lib/env";
 import { fitText, FLOW_LIMITS, flowPayload, parseFlowPayload } from "@/lib/flows/types";
 import {
   buildMessage,
+  errorInfo,
   fetchProfile,
   GraphApiError,
   replyToComment,
@@ -26,10 +27,12 @@ import {
   type Recipient,
   type SendResult,
 } from "@/lib/meta/graph";
-import type { CommentJob, DmJob, ReadJob } from "@/lib/meta/webhook";
+import type { CommentJob, DmJob, PagePostJob, ReadJob } from "@/lib/meta/webhook";
 import { findPageByAccount, getPageById, type ConnectedPage } from "@/lib/pages";
 import { enqueue, rescheduleJob, updateJobPayload } from "@/lib/queue/queue";
 import { findMatchingRule } from "@/lib/rules/match";
+import { bindPublishedFacebookPost, resolveNextPost } from "@/lib/rules/next-post";
+import { postScopeMatches } from "@/lib/rules/post-scope";
 import { firstName, pickRandom, renderTemplate } from "@/lib/rules/template";
 
 export interface SendDmJob {
@@ -115,12 +118,7 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
     meta: { commentId: job.commentId, fromName: job.fromName },
   });
 
-  const rule = findMatchingRule(await loadActiveRules(db, "comment"), {
-    trigger: "comment",
-    platform: job.platform,
-    text: job.text,
-    postId: job.postId,
-  });
+  const rule = await findCommentRule(db, page, job);
   if (!rule) return;
   const firstStep = rule.steps[0];
   if (!firstStep) return;
@@ -207,6 +205,41 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
       });
     }
   }
+}
+
+/**
+ * หากฎคอมเมนต์ตามลำดับ priority แบบเดียวกับ findMatchingRule
+ * แต่กฎ "โพสต์ถัดไป" ที่ยังไม่ได้ผูกโพสต์ของแพลตฟอร์มนี้ จะถาม Meta ว่าโพสต์นี้คือโพสต์ถัดไปหรือเปล่า
+ * (เช็คข้อความก่อนเสมอ คอมเมนต์ที่ไม่ตรง keyword จะไม่ทำให้ต้องเรียก Graph API)
+ */
+async function findCommentRule(db: Db, page: ConnectedPage, job: CommentJob) {
+  const incoming = { trigger: "comment" as const, platform: job.platform, text: job.text, postId: job.postId };
+  const sorted = (await loadActiveRules(db, "comment")).sort((a, b) => a.priority - b.priority || a.id - b.id);
+  for (const rule of sorted) {
+    if (findMatchingRule([rule], incoming)) return rule;
+    if (postScopeMatches(rule, job.platform, job.postId) !== "resolve") continue;
+    // เงื่อนไขอื่น (เปิดอยู่, แพลตฟอร์ม, keyword) ต้องผ่านก่อน — เช็คโดยมองข้ามเรื่องโพสต์ไปชั่วคราว
+    if (!findMatchingRule([{ ...rule, postScope: "any" as const }], incoming)) continue;
+    const isNextPost = await resolveNextPost(db, rule, job.platform, page, job.postId, {
+      commentId: job.commentId,
+      actorId: job.fromId,
+      text: job.text,
+    });
+    if (isNextPost) return rule;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// เพจลงโพสต์ใหม่บน Facebook → ผูกกฎ "โพสต์ถัดไป" ที่รออยู่ทันที
+// ---------------------------------------------------------------------------
+
+export async function handlePagePost(db: Db, job: PagePostJob): Promise<void> {
+  const page = await findPageByAccount(db, "facebook", job.accountId);
+  if (!page) return;
+  // โพสต์หลายรูปส่ง webhook มาหลายครั้งด้วย post_id เดียวกัน
+  if (!(await claimOnce(db, `page_post:${job.postId}`))) return;
+  await bindPublishedFacebookPost(db, page.id, { id: job.postId, createdMs: job.createdTime, caption: job.caption });
 }
 
 // ---------------------------------------------------------------------------
@@ -583,9 +616,4 @@ async function logTokenProblem(db: Db, platform: Platform, pageId: string, ruleI
     actorId,
     meta: { error: { message: "token ของเพจใช้ไม่ได้ — ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่" } },
   });
-}
-
-function errorInfo(err: unknown): Record<string, unknown> {
-  if (err instanceof GraphApiError) return { message: err.message, code: err.code, subcode: err.subcode, status: err.status };
-  return { message: (err as Error)?.message ?? String(err) };
 }

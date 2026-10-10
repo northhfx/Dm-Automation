@@ -14,14 +14,34 @@ export interface GraphCall {
   body: Record<string, unknown> | null;
 }
 
+/** โพสต์/รีลในเพจปลอม (Facebook id แบบ "PAGE1_xxx", Instagram id ของ media) */
+export interface MockPost {
+  id: string;
+  platform: "facebook" | "instagram";
+  /** ISO เช่น new Date().toISOString() — mock จะส่งกลับในรูปแบบของ Meta ("+0000") */
+  createdAt: string;
+  caption?: string;
+  /** true = ดูรายละเอียดได้ แต่ยังไม่โผล่ในรายการโพสต์ล่าสุด (เช่น เพิ่งลง) */
+  hidden?: boolean;
+}
+
+/** เวลาในรูปแบบที่ Meta ส่งมา เช่น 2026-10-10T08:00:00+0000 */
+function metaTime(iso: string): string {
+  return new Date(iso).toISOString().replace(/\.\d{3}Z$/, "+0000");
+}
+
 /**
  * Graph API ปลอม สำหรับเทสโดยไม่ต้องยิงไปที่ Meta จริง
  * - ข้อความที่มีคำว่า FAIL_PERMANENT → error ถาวร
  * - ข้อความที่มีคำว่า FAIL_TRANSIENT → error ชั่วคราว (ควรลองใหม่)
+ * - setPosts() กำหนดโพสต์ของเพจ (GET /{post-id}, /PAGE1/posts, /IG1/media)
+ * - failWhen() ให้ request ที่ตรงเงื่อนไขตอบ error
  */
 export async function startMockGraph() {
   const calls: GraphCall[] = [];
   let counter = 0;
+  let posts: MockPost[] = [];
+  let failWhen: ((call: GraphCall) => boolean) | null = null;
   const server: Server = createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
@@ -35,6 +55,10 @@ export async function startMockGraph() {
         res.writeHead(status, { "Content-Type": "application/json" });
         res.end(JSON.stringify(json));
       };
+
+      if (failWhen?.(calls[calls.length - 1])) {
+        return send(500, { error: { message: "mock: Graph API ล่ม", code: 1, is_transient: true } });
+      }
 
       const text: string = body?.message?.text ?? body?.message?.attachment?.payload?.text ?? "";
       if (text.includes("FAIL_PERMANENT")) {
@@ -53,6 +77,29 @@ export async function startMockGraph() {
       if (req.method === "POST" && (path.endsWith("/comments") || path.endsWith("/replies"))) {
         return send(200, { id: `reply_${++counter}` });
       }
+      if (req.method === "GET" && /^\/[^/]+\/(posts|media)$/.test(path)) {
+        const platform = path.endsWith("/media") ? "instagram" : "facebook";
+        const list = posts
+          .filter((p) => p.platform === platform && !p.hidden)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .slice(0, Number(url.searchParams.get("limit") ?? 25));
+        return send(200, {
+          data: list.map((p) =>
+            platform === "instagram"
+              ? { id: p.id, caption: p.caption, media_type: "VIDEO", timestamp: metaTime(p.createdAt), permalink: `https://ig/${p.id}` }
+              : { id: p.id, message: p.caption, created_time: metaTime(p.createdAt), permalink_url: `https://fb/${p.id}` },
+          ),
+        });
+      }
+      const post = req.method === "GET" ? posts.find((p) => path === `/${p.id}`) : undefined;
+      if (post) {
+        return send(
+          200,
+          post.platform === "instagram"
+            ? { id: post.id, caption: post.caption, timestamp: metaTime(post.createdAt), permalink: `https://ig/${post.id}` }
+            : { id: post.id, message: post.caption, created_time: metaTime(post.createdAt), permalink_url: `https://fb/${post.id}` },
+        );
+      }
       if (req.method === "GET" && /^\/[^/]+$/.test(path)) {
         return send(200, { first_name: "Mint", last_name: "Chan", name: "Mint Chan", username: "mint.ig" });
       }
@@ -64,7 +111,20 @@ export async function startMockGraph() {
   process.env.GRAPH_API_BASE = `http://127.0.0.1:${port}`;
   return {
     calls,
+    /** ล้างรายการ request ที่บันทึกไว้ (โพสต์และ failWhen ยังอยู่) */
     reset: () => calls.splice(0, calls.length),
+    /** ล้างทุกอย่าง: request, โพสต์, failWhen */
+    resetAll: () => {
+      calls.splice(0, calls.length);
+      posts = [];
+      failWhen = null;
+    },
+    setPosts: (list: MockPost[]) => {
+      posts = [...list];
+    },
+    failWhen: (fn: ((call: GraphCall) => boolean) | null) => {
+      failWhen = fn;
+    },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }

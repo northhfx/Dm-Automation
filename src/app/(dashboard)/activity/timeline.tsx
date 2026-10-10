@@ -9,6 +9,7 @@ import {
   MessageCircleX,
   MessagesSquare,
   MousePointerClick,
+  Pin,
   Reply,
   Send,
   SkipForward,
@@ -44,6 +45,7 @@ export const EVENT_TYPES: Record<string, EventType> = {
   button_clicked: { label: "กดปุ่ม", tone: "accent", icon: MousePointerClick, who: "โดย" },
   link_clicked: { label: "คลิกลิงก์", tone: "accent", icon: Link2, who: "โดย" },
   skipped: { label: "ข้าม ไม่ได้ส่ง", tone: "warning", icon: SkipForward, who: "จาก" },
+  post_bound: { label: "กฎเริ่มใช้กับโพสต์ใหม่แล้ว", tone: "accent", icon: Pin, who: "โดย" },
 };
 
 const FALLBACK: EventType = { label: "กิจกรรม", tone: "neutral", icon: Activity, who: "จาก" };
@@ -92,6 +94,7 @@ export function RelativeTime({ date, now, className }: { date: Date | string | n
 const SKIP_REASONS: Record<string, string> = {
   once_per_user: "คนนี้เคยได้รับจากกฎนี้แล้ว (ตั้งไว้ให้ส่งครั้งเดียวต่อคน)",
   rule_inactive: "กฎนี้ปิดอยู่ จึงไม่ส่งข้อความถัดไป",
+  next_post_lookup_failed: "เช็คกับ Meta ไม่ได้ว่าโพสต์นี้เป็นโพสต์ถัดไปของกฎหรือเปล่า จึงยังไม่ส่ง (คอมเมนต์ถัดไปจะลองเช็คใหม่)",
 };
 
 /** คำอธิบายภาษาคนของรหัสผิดพลาดที่พบบ่อยจาก Meta */

@@ -2,7 +2,7 @@
  * สมองของหน้าสร้าง/แก้กฎแบบแผนผัง (ไม่มี React — ทดสอบได้ใน tests/builder.test.ts)
  * เก็บทุกอย่างของกฎไว้ใน "doc" ก้อนเดียว + ประวัติสำหรับย้อนกลับ/ทำซ้ำ
  */
-import type { MatchType, Platform, TriggerType } from "@/db/schema";
+import type { BoundPosts, MatchType, Platform, PostScope, TriggerType } from "@/db/schema";
 import { estimateStepHeight, layoutCanvas, type CanvasLayout, type NodeSize } from "@/lib/flows/layout";
 import { FLOW_LIMITS, type CanvasPoint, type FlowButton, type FlowStep } from "@/lib/flows/types";
 import { validateSteps } from "@/lib/flows/validate";
@@ -26,12 +26,20 @@ export interface BuilderDoc {
   platforms: Platform[];
   matchType: MatchType;
   keywords: string[];
-  /** true = ทุกโพสต์, false = เฉพาะโพสต์ที่เลือก */
-  allPosts: boolean;
-  /** โพสต์ที่ติ๊กเลือกจากรายการโพสต์ล่าสุด */
+  /** กฎคอมเมนต์ใช้กับ: โพสต์/รีลที่เลือก, โพสต์/รีลถัดไป หรือทุกโพสต์/รีล */
+  postScope: PostScope;
+  /** กด "เริ่มรอโพสต์ถัดไปใหม่" แล้วยังไม่ได้บันทึก (คำสั่งครั้งเดียว — บันทึกแล้วล้างทิ้ง) */
+  rearmNext: boolean;
+  /** โพสต์ที่ติ๊กเลือกจากรายการโพสต์ล่าสุด (ใช้เมื่อ postScope = "specific") */
   postIds: string[];
   /** Post ID ที่พิมพ์เอง (คั่นด้วยบรรทัดใหม่/จุลภาค) */
   postIdsManual: string;
+  /**
+   * แสดงผลเท่านั้น (มาจากเซิร์ฟเวอร์ ไม่นับเป็นการแก้ไข — ดู docJson):
+   * เริ่มรอโพสต์ถัดไปตั้งแต่เมื่อไหร่ (ISO) และโพสต์ที่กฎแบบ "โพสต์ถัดไป" ผูกไว้แล้วในแต่ละแพลตฟอร์ม
+   */
+  nextPostSince: string | null;
+  boundPosts: BoundPosts;
   /** ข้อความตอบใต้คอมเมนต์ (สุ่มใช้) — ช่องว่างจะถูกตัดทิ้งตอนบันทึก */
   publicReplies: string[];
   oncePerUser: boolean;
@@ -44,6 +52,9 @@ export interface BuilderDoc {
   triggerPos: CanvasPoint;
   positions: Record<string, CanvasPoint>;
 }
+
+/** ค่าแสดงผลของกฎแบบ "โพสต์ถัดไป" ที่เซิร์ฟเวอร์ส่งกลับมาหลังบันทึก */
+export type ScopeDisplay = Pick<BuilderDoc, "nextPostSince" | "boundPosts">;
 
 export interface BuilderState {
   doc: BuilderDoc;
@@ -88,8 +99,11 @@ const splitLines = (s: string) =>
     .map((x) => x.trim())
     .filter(Boolean);
 
+/** ค่าที่ใช้เทียบว่ามีการแก้ค้างไหม (ไม่รวมค่าที่แสดงผลอย่างเดียวจากเซิร์ฟเวอร์) */
 export function docJson(doc: BuilderDoc): string {
-  return JSON.stringify(doc);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ตัดค่าที่แสดงผลอย่างเดียวออก
+  const { nextPostSince, boundPosts, ...editable } = doc;
+  return JSON.stringify(editable);
 }
 
 export function isDirty(state: BuilderState): boolean {
@@ -140,9 +154,13 @@ export function createInitialState(values: RuleFormValues, knownPostIds: Iterabl
     platforms: [...values.platforms],
     matchType: values.matchType,
     keywords: splitKeywords(values.keywords),
-    allPosts: values.postIds.length === 0,
+    // ค่าจากฟอร์มรุ่นเก่าที่ไม่มี postScope: มีโพสต์ = เฉพาะที่เลือก
+    postScope: values.postScope ?? (values.postIds.length ? "specific" : "any"),
+    rearmNext: false,
     postIds: values.postIds.filter((id) => known.has(id)),
     postIdsManual: values.postIds.filter((id) => !known.has(id)).join("\n"),
+    nextPostSince: values.nextPostSince ?? null,
+    boundPosts: values.boundPosts ?? {},
     publicReplies: splitLines(values.publicReplies),
     oncePerUser: values.oncePerUser,
     priority: values.priority,
@@ -261,7 +279,7 @@ export function findProblems(doc: BuilderDoc): Problem[] {
   if (doc.keywords.some((k) => k.length > 100)) add("keyword-long", "คำที่ให้จับยาวได้ไม่เกิน 100 ตัวอักษร", trigger);
   if (doc.trigger === "comment") {
     if (doc.publicReplies.some((r) => r.trim().length > 500)) add("replies", "ข้อความตอบใต้คอมเมนต์ยาวเกิน 500 ตัวอักษร", trigger);
-    if (!doc.allPosts && postIdsOf(doc).length === 0) add("posts", "เลือกโพสต์อย่างน้อย 1 โพสต์ (หรือเปลี่ยนเป็น 'ทุกโพสต์')", trigger);
+    if (doc.postScope === "specific" && postIdsOf(doc).length === 0) add("posts", "เลือกโพสต์หรือรีลอย่างน้อย 1 รายการ", trigger);
   }
   if (!doc.startStepId || !doc.steps.some((s) => s.id === doc.startStepId)) {
     add("start", 'ยังไม่ได้เชื่อมการ์ด "เมื่อ…" กับข้อความแรก — ลากเส้นจากจุด "แล้ว" ไปที่การ์ดข้อความ', trigger);
@@ -293,9 +311,29 @@ export function findProblems(doc: BuilderDoc): Problem[] {
 }
 
 export function postIdsOf(doc: BuilderDoc): string[] {
-  if (doc.allPosts || doc.trigger !== "comment") return [];
+  if (doc.postScope !== "specific" || doc.trigger !== "comment") return [];
   const manual = splitKeywords(doc.postIdsManual).flatMap((s) => s.split(/\s+/));
   return [...new Set([...doc.postIds, ...manual])].filter(Boolean);
+}
+
+/** สถานะของกฎแบบ "โพสต์หรือรีลถัดไป" (ใช้ทั้งบนการ์ด "เมื่อ…" และในแผงตั้งค่า) */
+export type NextPostStatus =
+  /** ยังไม่ได้บันทึกเป็นแบบ "โพสต์ถัดไป" → เริ่มนับหลังกดบันทึก */
+  | { kind: "start" }
+  /** กด "เริ่มรอโพสต์ถัดไปใหม่" ไว้ → เริ่มนับใหม่เมื่อกดบันทึก */
+  | { kind: "rearm" }
+  /** บันทึกแล้ว ยังไม่มีโพสต์ใหม่ */
+  | { kind: "waiting"; since: string }
+  /** ผูกกับโพสต์แล้วอย่างน้อย 1 แพลตฟอร์ม (waiting = แพลตฟอร์มที่ยังรออยู่) */
+  | { kind: "bound"; since: string; bound: Platform[]; waiting: Platform[] };
+
+export function nextPostStatus(doc: BuilderDoc): NextPostStatus {
+  if (doc.rearmNext) return { kind: "rearm" };
+  if (!doc.nextPostSince) return { kind: "start" };
+  const platforms: Platform[] = doc.platforms.length ? doc.platforms : ["facebook", "instagram"];
+  const bound = platforms.filter((p) => doc.boundPosts[p]);
+  if (!bound.length) return { kind: "waiting", since: doc.nextPostSince };
+  return { kind: "bound", since: doc.nextPostSince, bound, waiting: platforms.filter((p) => !doc.boundPosts[p]) };
 }
 
 /* ---------------------------------------------------------------- ค่าที่ส่งไปบันทึก */
@@ -307,10 +345,14 @@ export function toFormEntries(doc: BuilderDoc, ruleId?: number): [string, string
   entries.push(["name", doc.name.trim()], ["trigger", doc.trigger]);
   for (const p of doc.platforms) entries.push(["platforms", p]);
   entries.push(["matchType", doc.matchType], ["keywords", doc.keywords.join("\n")]);
-  if (doc.trigger === "comment" && !doc.allPosts) {
+  const isComment = doc.trigger === "comment";
+  // ข้อความแชท (DM) ใช้ได้ทุกที่เสมอ — เซิร์ฟเวอร์ก็บังคับเป็น "any" เหมือนกัน
+  entries.push(["postScope", isComment ? doc.postScope : "any"]);
+  if (isComment && doc.postScope === "specific") {
     for (const id of doc.postIds) entries.push(["postIds", id]);
     entries.push(["postIdsManual", doc.postIdsManual]);
   }
+  if (isComment && doc.postScope === "next" && doc.rearmNext) entries.push(["rearmNext", "1"]);
   entries.push([
     "publicReplies",
     doc.publicReplies
@@ -376,7 +418,8 @@ type ScalarKey =
   | "platforms"
   | "matchType"
   | "keywords"
-  | "allPosts"
+  | "postScope"
+  | "rearmNext"
   | "postIds"
   | "postIdsManual"
   | "publicReplies"
@@ -402,7 +445,7 @@ export type BuilderAction =
   | { type: "select"; selection: Selection }
   | { type: "undo" }
   | { type: "redo" }
-  | { type: "markSaved"; json: string };
+  | { type: "saved"; doc: BuilderDoc; display?: ScopeDisplay };
 
 function fixSelection(selection: Selection, doc: BuilderDoc): Selection {
   if (!selection) return null;
@@ -615,8 +658,21 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         selection: fixSelection(state.selection, next),
       };
     }
-    case "markSaved":
-      return { ...state, savedJson: action.json };
+    case "saved": {
+      // "เริ่มรอใหม่" เป็นคำสั่งครั้งเดียว: บันทึกแล้วเซิร์ฟเวอร์ทำให้แล้ว → ล้างทุกฉบับ (รวมประวัติย้อนกลับ) กันส่งซ้ำ
+      // ค่าแสดงผลจากเซิร์ฟเวอร์ใส่ให้ทุกฉบับเช่นกัน — ย้อนกลับแล้วจะได้ไม่เห็นสถานะเก่า
+      const consumed = action.doc.rearmNext;
+      const display = action.display;
+      const fix = (d: BuilderDoc): BuilderDoc => {
+        let out = d;
+        if (consumed && out.rearmNext) out = { ...out, rearmNext: false };
+        if (display && (out.nextPostSince !== display.nextPostSince || JSON.stringify(out.boundPosts) !== JSON.stringify(display.boundPosts))) {
+          out = { ...out, nextPostSince: display.nextPostSince, boundPosts: display.boundPosts };
+        }
+        return out;
+      };
+      return { ...state, doc: fix(state.doc), past: state.past.map(fix), future: state.future.map(fix), savedJson: docJson(fix(action.doc)) };
+    }
   }
 }
 

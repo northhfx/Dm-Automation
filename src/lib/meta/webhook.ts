@@ -40,7 +40,21 @@ export interface ReadJob {
   mid: string | null;
 }
 
-export type WebhookJob = CommentJob | DmJob | ReadJob;
+/** เพจลงโพสต์ใหม่บน Facebook (ใช้ผูกกฎ "โพสต์ถัดไป" ทันที — Instagram ไม่มี webhook แบบนี้) */
+export interface PagePostJob {
+  type: "page_post";
+  platform: "facebook";
+  accountId: string;
+  postId: string;
+  /** เวลาที่ลงโพสต์ (ms) ตามที่ Meta ส่งมา */
+  createdTime: number | null;
+  caption: string;
+}
+
+export type WebhookJob = CommentJob | DmJob | ReadJob | PagePostJob;
+
+/** ประเภทโพสต์ใน webhook feed ที่นับว่าเป็น "โพสต์/รีลใหม่ของเพจ" */
+const PAGE_POST_ITEMS = new Set(["status", "photo", "video", "post", "share", "reel"]);
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- payload จากภายนอก ตรวจทีละ field เอง */
 
@@ -71,12 +85,13 @@ export function parseWebhook(body: any): WebhookJob[] {
   return jobs;
 }
 
-function parseChange(platform: Platform, accountId: string, change: any): CommentJob | null {
+function parseChange(platform: Platform, accountId: string, change: any): CommentJob | PagePostJob | null {
   const v = change?.value;
   if (!v) return null;
 
   if (platform === "facebook" && change.field === "feed") {
-    if (v.item !== "comment" || v.verb !== "add") return null;
+    if (v.item !== "comment") return parsePagePost(accountId, v);
+    if (v.verb !== "add") return null;
     const commentId = str(v.comment_id);
     const fromId = str(v.from?.id);
     if (!commentId || !fromId) return null;
@@ -114,6 +129,24 @@ function parseChange(platform: Platform, accountId: string, change: any): Commen
   }
 
   return null;
+}
+
+/** โพสต์ใหม่ที่เพจลงเอง (โพสต์ของคนอื่นบนหน้าเพจ และโพสต์ที่ยังไม่เผยแพร่/ตั้งเวลาไว้ → ข้าม) */
+function parsePagePost(accountId: string, v: any): PagePostJob | null {
+  if (v.verb !== "add" || !PAGE_POST_ITEMS.has(v.item)) return null;
+  if (str(v.from?.id) !== accountId) return null;
+  if (v.published === 0 || v.published === "0" || v.published === false) return null;
+  const postId = str(v.post_id);
+  if (!postId) return null;
+  const created = typeof v.created_time === "number" ? v.created_time * 1000 : null;
+  return {
+    type: "page_post",
+    platform: "facebook",
+    accountId,
+    postId,
+    createdTime: created,
+    caption: typeof v.message === "string" ? v.message : "",
+  };
 }
 
 function parseMessaging(platform: Platform, accountId: string, event: any): DmJob | ReadJob | null {

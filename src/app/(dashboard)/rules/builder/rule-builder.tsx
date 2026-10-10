@@ -40,6 +40,7 @@ import {
   stepNumbers,
   toFormData,
   TRIGGER_NODE,
+  type BuilderDoc,
   type EdgeFrom,
   type MeasuredNode,
   type ProblemTarget,
@@ -111,7 +112,8 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
   const nameRef = useRef<HTMLInputElement>(null);
   const sheetRef = useRef<HTMLElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
-  const submitted = useRef<string | null>(null);
+  /** doc ที่ส่งไปบันทึกล่าสุด */
+  const submitted = useRef<BuilderDoc | null>(null);
 
   const dirty = docJson(doc) !== state.savedJson;
   const problems = useMemo(() => findProblems(doc), [doc]);
@@ -288,7 +290,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
       toast("ยังบันทึกไม่ได้", { tone: "critical", description: first.message });
       return;
     }
-    submitted.current = docJson(doc);
+    submitted.current = doc;
     setClearedAttempt(saveState.attempt);
     const data = toFormData(doc, ruleId);
     startTransition(() => formAction(data));
@@ -304,7 +306,9 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
       // เลือกการ์ดที่มีปัญหาหลังหน้าจอแสดงผลเสร็จ
       if (stepId) requestAnimationFrame(() => goTo({ kind: "step", id: stepId }));
     } else if (submitted.current) {
-      dispatch({ type: "markSaved", json: submitted.current });
+      // กฎเดิม: เซิร์ฟเวอร์ส่งสถานะ "โพสต์ถัดไป" ล่าสุดกลับมา (เริ่มรอเมื่อไหร่ / ผูกโพสต์ไหนแล้ว) → ใส่ให้โดยไม่นับเป็นการแก้ไข
+      const v = saveState.values;
+      dispatch({ type: "saved", doc: submitted.current, display: v ? { nextPostSince: v.nextPostSince, boundPosts: v.boundPosts } : undefined });
       toast("บันทึกแล้ว", { tone: "good" });
     }
   }, [saveState, goTo]);

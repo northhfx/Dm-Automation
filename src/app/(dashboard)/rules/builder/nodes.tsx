@@ -1,11 +1,37 @@
 "use client";
 
 import { Fragment, memo, useLayoutEffect, useRef, type ReactNode } from "react";
-import { CircleAlert, Copy, ExternalLink, MessageCircle, MessageSquareText, Pencil, Send, Trash2, TriangleAlert, Zap } from "lucide-react";
+import {
+  CalendarClock,
+  CircleAlert,
+  Copy,
+  ExternalLink,
+  Layers,
+  ListChecks,
+  MessageCircle,
+  MessageSquareText,
+  MessageSquareReply,
+  MessageSquareOff,
+  Pencil,
+  Send,
+  Trash2,
+  TriangleAlert,
+  Zap,
+} from "lucide-react";
 import { cx, formatNumber, formatPercent } from "@/components/ui";
 import type { FlowStep } from "@/lib/flows/types";
 import type { StepStats } from "@/lib/stats";
-import { CARD_WIDTH, INPUT_HANDLE_Y, stepCtr, TRIGGER_NODE, TRIGGER_WIDTH, type BuilderDoc, type MeasuredNode } from "./model";
+import {
+  CARD_WIDTH,
+  INPUT_HANDLE_Y,
+  nextPostStatus,
+  postIdsOf,
+  stepCtr,
+  TRIGGER_NODE,
+  TRIGGER_WIDTH,
+  type BuilderDoc,
+  type MeasuredNode,
+} from "./model";
 import { PlatformMark } from "./widgets";
 
 /* ---------------------------------------------------------------- การวัดขนาดการ์ด (หน่วย world ไม่ขึ้นกับซูม) */
@@ -138,6 +164,59 @@ const cardBase =
 
 /* ---------------------------------------------------------------- การ์ด "เมื่อ…" */
 
+/** บรรทัดสรุปว่ากฎใช้กับโพสต์/รีลไหน */
+function PostScopeLine({ doc }: { doc: BuilderDoc }) {
+  const row = "flex items-start gap-2";
+  const icon = "mt-px shrink-0 text-fg-3";
+  if (doc.postScope === "specific") {
+    const count = postIdsOf(doc).length;
+    return (
+      <li className={row}>
+        <ListChecks size={14} className={icon} aria-hidden="true" />
+        {count ? <span>โพสต์/รีลที่เลือก ({count})</span> : <span className="font-medium text-critical-text">ยังไม่ได้เลือกโพสต์หรือรีล</span>}
+      </li>
+    );
+  }
+  if (doc.postScope === "next") {
+    const status = nextPostStatus(doc);
+    return (
+      <li className={row}>
+        <CalendarClock size={14} className={icon} aria-hidden="true" />
+        <span className="min-w-0">
+          โพสต์หรือรีลถัดไป
+          <span aria-hidden="true"> · </span>
+          {status.kind === "bound" ? (
+            <span className="inline-flex flex-wrap items-center gap-x-1 align-bottom">
+              <span className="font-medium text-good-text">ผูกแล้ว</span>
+              {status.bound.map((p) => (
+                <PlatformMark key={p} platform={p} />
+              ))}
+              {status.waiting.length > 0 && (
+                <>
+                  <span aria-hidden="true">·</span> รอ
+                  {status.waiting.map((p) => (
+                    <PlatformMark key={p} platform={p} />
+                  ))}
+                </>
+              )}
+            </span>
+          ) : status.kind === "waiting" ? (
+            <span className="font-medium text-accent">รอโพสต์ใหม่</span>
+          ) : (
+            <span>{status.kind === "rearm" ? "เริ่มนับใหม่หลังบันทึก" : "เริ่มนับหลังบันทึก"}</span>
+          )}
+        </span>
+      </li>
+    );
+  }
+  return (
+    <li className={row}>
+      <Layers size={14} className={icon} aria-hidden="true" />
+      ทุกโพสต์และรีล
+    </li>
+  );
+}
+
 interface TriggerNodeProps {
   doc: BuilderDoc;
   selected: boolean;
@@ -149,7 +228,7 @@ const KEYWORD_LIMIT = 6;
 
 export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, onMeasure }: TriggerNodeProps) {
   const ref = useMeasure(TRIGGER_NODE, onMeasure);
-  const { trigger, platforms, matchType, keywords, allPosts, triggerPos } = doc;
+  const { trigger, platforms, matchType, keywords, triggerPos } = doc;
   const replies = doc.publicReplies.filter((r) => r.trim()).length;
   const shown = keywords.slice(0, KEYWORD_LIMIT);
   const connected = !!doc.startStepId;
@@ -219,9 +298,16 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, o
         </div>
 
         {trigger === "comment" && (
-          <ul className="space-y-1 text-xs text-fg-2">
-            <li>{allPosts ? "ใช้กับทุกโพสต์" : "เฉพาะโพสต์ที่เลือก"}</li>
-            <li>{replies ? `ตอบใต้คอมเมนต์ ${replies} แบบ (สุ่ม)` : "ไม่ตอบใต้คอมเมนต์"}</li>
+          <ul className="space-y-1.5 text-xs text-fg-2">
+            <PostScopeLine doc={doc} />
+            <li className="flex items-center gap-2">
+              {replies ? (
+                <MessageSquareReply size={14} className="shrink-0 text-fg-3" aria-hidden="true" />
+              ) : (
+                <MessageSquareOff size={14} className="shrink-0 text-fg-3" aria-hidden="true" />
+              )}
+              {replies ? `ตอบใต้คอมเมนต์ ${replies} แบบ (สุ่ม)` : "ไม่ตอบใต้คอมเมนต์"}
+            </li>
           </ul>
         )}
       </div>

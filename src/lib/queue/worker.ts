@@ -1,14 +1,15 @@
 import { and, eq, lt } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { dedupKeys, jobs, webhookLogs, type Job } from "@/db/schema";
-import { handleComment, handleDm, handleRead, handleSendDm, RescheduledError } from "@/lib/automation/handlers";
-import type { CommentJob, DmJob, ReadJob } from "@/lib/meta/webhook";
+import { handleComment, handleDm, handlePagePost, handleRead, handleSendDm, RescheduledError } from "@/lib/automation/handlers";
+import type { CommentJob, DmJob, PagePostJob, ReadJob } from "@/lib/meta/webhook";
 import { claimJobs, completeJob, failJob, recoverStuckJobs } from "./queue";
 
 const HANDLERS: Record<string, (db: Db, job: Job) => Promise<void>> = {
   comment: (db, job) => handleComment(db, job.payload as unknown as CommentJob),
   dm: (db, job) => handleDm(db, job.payload as unknown as DmJob),
   read: (db, job) => handleRead(db, job.payload as unknown as ReadJob),
+  page_post: (db, job) => handlePagePost(db, job.payload as unknown as PagePostJob),
   send_dm: (db, job) => handleSendDm(db, job),
 };
 

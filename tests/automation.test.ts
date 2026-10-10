@@ -346,3 +346,33 @@ describe("Webhook endpoint", () => {
     expect(queued.map((j) => j.type)).toEqual(["comment"]);
   });
 });
+
+describe("กฎแบบ 'โพสต์/รีลถัดไป' (ภาพรวม — รายละเอียดอยู่ใน next-post.test.ts)", () => {
+  beforeEach(async () => {
+    graph.resetAll();
+    const { clearNextPostCache } = await import("@/lib/rules/next-post");
+    clearNextPostCache();
+  });
+  afterAll(() => graph.resetAll());
+
+  it("ลงเนื้อหาเดียวกันทั้ง Facebook และ Instagram → กฎผูกโพสต์แรกของแต่ละที่ และตอบเฉพาะโพสต์นั้น", async () => {
+    const since = new Date(Date.now() - 10 * 60_000);
+    const after = (min: number) => new Date(since.getTime() + min * 60_000).toISOString();
+    graph.setPosts([
+      { id: "PAGE1_OLD", platform: "facebook", createdAt: new Date(since.getTime() - 60_000).toISOString() },
+      { id: "PAGE1_NEW", platform: "facebook", createdAt: after(1) },
+      { id: "IGNEW", platform: "instagram", createdAt: after(2) },
+    ]);
+    const rule = await createRule({ postScope: "next", nextPostSince: since, publicReplies: [] });
+
+    await deliver(fbComment({ postId: "PAGE1_OLD", commentId: "C0" }));
+    await deliver(fbComment({ postId: "PAGE1_NEW", commentId: "C1" }));
+    await deliver(igComment({ mediaId: "IGNEW", commentId: "IGC1" }));
+
+    expect(sentMessages().map((c) => c.body!.recipient)).toEqual([{ comment_id: "C1" }, { comment_id: "IGC1" }]);
+    const row = (await db.select().from(rules).where(eq(rules.id, rule.id)))[0];
+    expect(row.boundPosts.facebook?.id).toBe("PAGE1_NEW");
+    expect(row.boundPosts.instagram?.id).toBe("IGNEW");
+    expect((await eventTypes()).filter((t) => t === "post_bound")).toHaveLength(2);
+  });
+});

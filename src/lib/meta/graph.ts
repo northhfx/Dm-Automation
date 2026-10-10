@@ -235,3 +235,40 @@ export async function listRecentInstagramPosts(igUserId: string, token: string, 
     mediaType: p.media_type ?? null,
   }));
 }
+
+export interface PostInfo {
+  id: string;
+  /** เวลาที่ลงโพสต์ (รูปแบบของ Meta เช่น 2026-10-10T08:00:00+0000) */
+  createdAt: string | null;
+  caption: string;
+  permalink: string | null;
+}
+
+/** ดูว่าโพสต์/รีลนี้ลงเมื่อไหร่ (ใช้กับกฎแบบ "โพสต์ถัดไป") */
+export async function getPostInfo(platform: "facebook" | "instagram", postId: string, token: string): Promise<PostInfo> {
+  if (platform === "instagram") {
+    const data = await graphRequest<{ id?: string; timestamp?: string; caption?: string; permalink?: string }>(`/${postId}`, {
+      token,
+      query: { fields: "id,timestamp,caption,permalink" },
+    });
+    return { id: data.id ?? postId, createdAt: data.timestamp ?? null, caption: data.caption ?? "", permalink: data.permalink ?? null };
+  }
+  const data = await graphRequest<{ id?: string; created_time?: string; message?: string; permalink_url?: string }>(`/${postId}`, {
+    token,
+    query: { fields: "id,created_time,message,permalink_url" },
+  });
+  return { id: data.id ?? postId, createdAt: data.created_time ?? null, caption: data.message ?? "", permalink: data.permalink_url ?? null };
+}
+
+/** แปลงเวลาที่ Meta ส่งมา ("+0000" ไม่มีโคลอน) เป็น ms — อ่านไม่ออกคืน null */
+export function parseGraphTime(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(value.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** รายละเอียด error สำหรับเก็บใน events.meta (หน้ากิจกรรมใช้แสดงสาเหตุ) */
+export function errorInfo(err: unknown): Record<string, unknown> {
+  if (err instanceof GraphApiError) return { message: err.message, code: err.code, subcode: err.subcode, status: err.status };
+  return { message: (err as Error)?.message ?? String(err) };
+}
