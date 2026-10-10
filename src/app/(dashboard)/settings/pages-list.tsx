@@ -1,9 +1,7 @@
-import { CircleAlert, CircleCheck, CircleX, Plug, Unplug } from "lucide-react";
-import { ConfirmSubmit } from "@/components/dialog";
+import { CircleAlert, CircleCheck, CircleX, Plug } from "lucide-react";
 import { Avatar, Badge, buttonStyle, cx, EmptyState, formatDateTime, PlatformIcon } from "@/components/ui";
 import type { ConnectedPage } from "@/lib/pages";
-import { disconnectPage } from "./actions";
-import { ResubscribeButton } from "./resubscribe-button";
+import { DisconnectButton, ResubscribeButton } from "./page-actions";
 
 /** สถานะของเพจ: พร้อมใช้งาน / ต้องเชื่อมต่อใหม่ / ยังไม่รับข้อความ (subscribe webhook ไม่สำเร็จ) */
 function PageStatus({ page }: { page: ConnectedPage }) {
@@ -100,19 +98,7 @@ export function PagesList({ pages, inset }: { pages: ConnectedPage[]; inset?: bo
               ) : (
                 !p.subscribed && <ResubscribeButton pageId={p.id} pageName={p.name} />
               )}
-              <ConfirmSubmit
-                action={disconnectPage}
-                fields={{ pageId: p.id }}
-                title={`ยกเลิกการเชื่อมต่อ ${p.name}?`}
-                description="ระบบจะหยุดตอบคอมเมนต์และข้อความของเพจนี้ทันที กฎ รายชื่อลูกค้า และสถิติเดิมยังอยู่ครบ เชื่อมต่อกลับได้ทุกเมื่อ"
-                confirmLabel="ยกเลิกการเชื่อมต่อ"
-                cancelLabel="ไม่ใช่ตอนนี้"
-                successMessage="ยกเลิกการเชื่อมต่อแล้ว"
-                icon={<Unplug />}
-                className="max-sm:flex-1"
-              >
-                ยกเลิกการเชื่อมต่อ
-              </ConfirmSubmit>
+              <DisconnectButton pageId={p.id} pageName={p.name} />
             </div>
           </li>
         );
