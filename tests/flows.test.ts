@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layoutFlow } from "@/lib/flows/layout";
+import { estimateStepHeight, LAYOUT_COLUMN_GAP, LAYOUT_ROW_GAP, layoutCanvas, layoutFlow } from "@/lib/flows/layout";
 import { sanitizeCanvas, validateSteps } from "@/lib/flows/validate";
 import { fitText, measuredLength, type FlowStep } from "@/lib/flows/types";
 
@@ -116,5 +116,34 @@ describe("sanitizeCanvas", () => {
     expect(sanitizeCanvas("x", ["s1"])).toEqual({});
     expect(sanitizeCanvas({ steps: { s1: { x: 1e12, y: -1e12 } } }, ["s1"])).toEqual({ steps: { s1: { x: 100000, y: -100000 } } });
     expect(sanitizeCanvas({ steps: { __proto__: { x: 1, y: 1 } } }, ["__proto__"])).toEqual({});
+  });
+});
+
+describe("layoutCanvas (จัดตำแหน่งการ์ดอัตโนมัติ)", () => {
+  const step = (id: string, ...targets: string[]): FlowStep => ({
+    id,
+    text: id,
+    buttons: targets.map((t, i) => ({ id: `${id}b${i}`, title: t, type: "next", nextStepId: t })),
+  });
+
+  it("การ์ด เมื่อ… ซ้ายสุด แล้วเป็นคอลัมน์ห่างกัน 340px เรียงตามลำดับปุ่ม และการ์ดที่ไม่มีปุ่มพามาอยู่คอลัมน์ท้าย", () => {
+    // s1 → ปุ่มแรกไป s3 ปุ่มสองไป s2 (s3 ต้องอยู่บน แม้จะสร้างทีหลัง)
+    const steps = [step("s1", "s3", "s2"), step("s2"), step("s3"), step("lost")];
+    const sizes = { s1: { w: 288, h: 200 }, s2: { w: 288, h: 120 }, s3: { w: 288, h: 150 }, lost: { w: 288, h: 100 } };
+    const out = layoutCanvas(steps, { startStepId: "s1", sizes });
+    expect(out.trigger).toEqual({ x: 0, y: 0 });
+    expect(out.steps.s1).toEqual({ x: LAYOUT_COLUMN_GAP, y: 0 });
+    expect(out.steps.s3).toEqual({ x: LAYOUT_COLUMN_GAP * 2, y: 0 });
+    expect(out.steps.s2).toEqual({ x: LAYOUT_COLUMN_GAP * 2, y: 150 + LAYOUT_ROW_GAP });
+    expect(out.steps.lost).toEqual({ x: LAYOUT_COLUMN_GAP * 3, y: 0 });
+  });
+
+  it("ข้อความแรกไม่ได้อยู่ลำดับแรก → เริ่มจัดจากข้อความแรกจริง, ไม่มีขนาดจริงใช้ขนาดประมาณ", () => {
+    const steps = [step("a"), step("b", "a")];
+    const out = layoutCanvas(steps, { startStepId: "b" });
+    expect(out.steps.b).toEqual({ x: LAYOUT_COLUMN_GAP, y: 0 });
+    expect(out.steps.a).toEqual({ x: LAYOUT_COLUMN_GAP * 2, y: 0 });
+    expect(estimateStepHeight(step("x", "y"))).toBeGreaterThan(estimateStepHeight(step("x")));
+    expect(layoutCanvas([])).toEqual({ trigger: { x: 0, y: 0 }, steps: {} });
   });
 });

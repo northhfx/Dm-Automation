@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_RULE, formDataToValues, validateRule, type RuleFormValues } from "@/app/(dashboard)/rules/form-values";
+import type { FlowStep } from "@/lib/flows/types";
 
-const STEPS = [
+const STEPS: FlowStep[] = [
   { id: "s1", text: "ข้อความแรก", buttons: [{ id: "b1", title: "ต่อ", type: "next", nextStepId: "s2" }] },
   { id: "s2", text: "ข้อความสอง", buttons: [] },
 ];

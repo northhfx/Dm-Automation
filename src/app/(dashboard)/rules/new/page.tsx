@@ -1,15 +1,11 @@
 import { getDb } from "@/db/client";
-import { PageHeader } from "@/components/ui";
-import { DEFAULT_RULE } from "../form-values";
 import { loadRecentPosts } from "../recent-posts";
-import { RuleForm } from "../rule-form";
+import { RuleBuilder } from "../builder/rule-builder";
+import { parseTemplateId, ruleTemplate } from "../templates";
 
-export default async function NewRulePage() {
+export default async function NewRulePage({ searchParams }: PageProps<"/rules/new">) {
+  const template = parseTemplateId((await searchParams).template);
   const { posts, error } = await loadRecentPosts(getDb());
-  return (
-    <>
-      <PageHeader title="สร้างกฎใหม่" description="ตั้งว่าเมื่อเจอคำไหน ให้ระบบตอบอะไร" />
-      <RuleForm initial={DEFAULT_RULE} recentPosts={posts} postsError={error} />
-    </>
-  );
+  // key = แม่แบบ: เปลี่ยนแม่แบบแล้วเริ่มใหม่ทั้งหมด
+  return <RuleBuilder key={template} initial={ruleTemplate(template)} recentPosts={posts} postsError={error} />;
 }

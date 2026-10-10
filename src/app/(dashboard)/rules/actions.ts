@@ -11,17 +11,21 @@ import { formDataToValues, validateRule, type RuleFormState } from "./form-value
 export async function saveRule(prev: RuleFormState, formData: FormData): Promise<RuleFormState> {
   await requireAuth();
   const values = formDataToValues(formData);
+  const attempt = (prev.attempt ?? 0) + 1;
   const result = validateRule(values);
-  if (!result.ok) return { error: result.error, errorStepId: result.stepId, values, attempt: (prev.attempt ?? 0) + 1 };
+  if (!result.ok) return { error: result.error, errorStepId: result.stepId, values, attempt };
 
   const db = getDb();
   if (values.id) {
+    // กฎเดิม: อยู่หน้าเดิมต่อ (หน้าแผนผังแสดง "บันทึกแล้ว" เอง)
     await db.update(rules).set({ ...result.data, updatedAt: new Date() }).where(eq(rules.id, values.id));
-  } else {
-    await db.insert(rules).values(result.data);
+    revalidatePath("/rules");
+    return { values, attempt };
   }
+  // กฎใหม่: ไปหน้าแก้ไขของกฎนั้น (มี URL ของตัวเอง แก้ต่อได้ทันที)
+  const [created] = await db.insert(rules).values(result.data).returning({ id: rules.id });
   revalidatePath("/rules");
-  redirect("/rules");
+  redirect(`/rules/${created.id}?saved=1`);
 }
 
 export async function toggleRule(formData: FormData): Promise<void> {

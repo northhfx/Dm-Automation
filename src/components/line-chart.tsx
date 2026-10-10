@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { ChevronRight } from "lucide-react";
 
 export interface ChartSeries<T> {
   key: keyof T & string;
@@ -42,6 +43,7 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   const [active, setActive] = useState<number | null>(null);
+  const gradientId = useId();
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -63,6 +65,11 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
   const paths = series.map((s) =>
     data.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(Number(d[s.key]) || 0).toFixed(1)}`).join(""),
   );
+  // พื้นที่ใต้เส้นแรก (ไล่สีจางๆ) ช่วยให้อ่านแนวโน้มง่ายขึ้น
+  const areaPath =
+    data.length > 0 && series.length > 0
+      ? `${paths[0]}L${x(data.length - 1).toFixed(1)},${y(0).toFixed(1)}L${x(0).toFixed(1)},${y(0).toFixed(1)}Z`
+      : "";
 
   // ป้ายวันที่บนแกน X: แสดงไม่เกิน ~6 ป้าย ไม่ให้ชนกัน
   const labelEvery = Math.max(1, Math.ceil(data.length / Math.max(2, Math.floor(innerW / 90))));
@@ -100,10 +107,10 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap gap-4 text-sm text-fg-2">
+      <div className="mb-4 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px] text-fg-2">
         {series.map((s) => (
           <span key={s.key} className="inline-flex items-center gap-2">
-            <span className="inline-block h-0.5 w-4 rounded" style={{ background: s.color }} aria-hidden />
+            <span className="inline-block size-2.5 rounded-full" style={{ background: s.color }} aria-hidden />
             {s.label}
           </span>
         ))}
@@ -118,11 +125,25 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
           tabIndex={0}
           onKeyDown={onKeyDown}
           onBlur={() => setActive(null)}
-          className="block overflow-visible outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
+          className="block overflow-visible rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={series[0]?.color} stopOpacity={0.16} />
+              <stop offset="100%" stopColor={series[0]?.color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
           {ticks.map((t) => (
             <g key={t}>
-              <line x1={MARGIN.left} x2={width - MARGIN.right} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeWidth={1} />
+              <line
+                x1={MARGIN.left}
+                x2={width - MARGIN.right}
+                y1={y(t)}
+                y2={y(t)}
+                stroke="var(--line)"
+                strokeWidth={1}
+                strokeDasharray={t === 0 ? undefined : "3 4"}
+              />
               <text x={MARGIN.left - 8} y={y(t)} dy="0.32em" textAnchor="end" fontSize={11} fill="var(--fg-3)" className="tabular">
                 {nf.format(t)}
               </text>
@@ -135,12 +156,14 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
             </text>
           ))}
 
+          {areaPath && <path d={areaPath} fill={`url(#${gradientId})`} />}
+
           {active !== null && (
-            <line x1={x(active)} x2={x(active)} y1={MARGIN.top} y2={MARGIN.top + innerH} stroke="var(--fg-3)" strokeWidth={1} />
+            <line x1={x(active)} x2={x(active)} y1={MARGIN.top} y2={MARGIN.top + innerH} stroke="var(--line-strong)" strokeWidth={1} />
           )}
 
           {series.map((s, si) => (
-            <path key={s.key} d={paths[si]} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            <path key={s.key} d={paths[si]} fill="none" stroke={s.color} strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round" />
           ))}
 
           {/* จุดปลายเส้น + ค่าล่าสุด (direct label) */}
@@ -185,13 +208,13 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
 
         {activePoint && (
           <div
-            className="pointer-events-none absolute top-2 w-40 rounded-lg border border-line bg-surface px-3 py-2 text-sm shadow-lg"
+            className="pointer-events-none absolute top-2 w-40 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm shadow-lg"
             style={{ left: tooltipLeft }}
           >
             <div className="mb-1 text-xs text-fg-3">{longDate.format(parseDate(activePoint.date))}</div>
             {series.map((s) => (
               <div key={s.key} className="flex items-center gap-2">
-                <span className="inline-block h-0.5 w-3 rounded" style={{ background: s.color }} aria-hidden />
+                <span className="inline-block size-2 shrink-0 rounded-full" style={{ background: s.color }} aria-hidden />
                 <span className="font-semibold tabular">{nf.format(Number(activePoint[s.key]) || 0)}</span>
                 <span className="text-fg-2">{s.label}</span>
               </div>
@@ -200,15 +223,18 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
         )}
       </div>
 
-      <details className="mt-3 text-sm">
-        <summary className="cursor-pointer text-fg-2 hover:text-fg">ดูเป็นตาราง</summary>
-        <div className="mt-2 max-h-64 overflow-auto">
+      <details className="group mt-3 text-sm">
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md py-1 text-[13px] text-fg-2 hover:text-fg [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-4 transition-transform group-open:rotate-90" aria-hidden />
+          ดูเป็นตาราง
+        </summary>
+        <div className="scroll-thin mt-2 max-h-64 overflow-auto rounded-lg border border-line">
           <table className="w-full text-left">
-            <thead className="text-fg-3">
+            <thead className="sticky top-0 bg-surface-2 text-xs text-fg-3">
               <tr>
-                <th className="py-1 pr-4 font-medium">วันที่</th>
+                <th className="px-3 py-2 font-medium">วันที่</th>
                 {series.map((s) => (
-                  <th key={s.key} className="py-1 pr-4 text-right font-medium">
+                  <th key={s.key} className="px-3 py-2 text-right font-medium">
                     {s.label}
                   </th>
                 ))}
@@ -217,9 +243,9 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
             <tbody>
               {data.map((d) => (
                 <tr key={d.date} className="border-t border-line">
-                  <td className="py-1 pr-4">{shortDate.format(parseDate(d.date))}</td>
+                  <td className="px-3 py-1.5">{shortDate.format(parseDate(d.date))}</td>
                   {series.map((s) => (
-                    <td key={s.key} className="py-1 pr-4 text-right tabular">
+                    <td key={s.key} className="px-3 py-1.5 text-right tabular">
                       {nf.format(Number(d[s.key]) || 0)}
                     </td>
                   ))}

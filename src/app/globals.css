@@ -1,55 +1,133 @@
 @import "tailwindcss";
 
-/* สีทั้งหมดของระบบ กำหนดเป็นตัวแปร เพื่อสลับโหมดสว่าง/มืดได้ในที่เดียว */
+/*
+ * สีทั้งหมดของระบบ กำหนดเป็นตัวแปร เพื่อสลับโหมดสว่าง/มืดได้ในที่เดียว
+ * ใช้ผ่านชื่อ Tailwind เช่น bg-surface, text-fg-2, border-line, bg-accent-soft, shadow-sm, ring-ring
+ */
 :root {
   color-scheme: light;
-  --bg: #f4f4f1;
-  --surface: #fcfcfb;
-  --surface-2: #f0efec;
-  --line: #e4e3de;
-  --fg: #0b0b0b;
-  --fg-2: #52514e;
-  --fg-3: #75746f;
-  --accent: #2a78d6;
-  --accent-hover: #256abf;
+
+  /* พื้นหลัง / พื้นผิว */
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f2f4f7;
+  --surface-3: #e9ecf1;
+  --surface-raised: #ffffff;
+  --sidebar: #fbfcfd;
+  --line: #e4e7ec;
+  --line-strong: #d0d5dd;
+
+  /* ตัวอักษร */
+  --fg: #101828;
+  --fg-2: #475467;
+  --fg-3: #667085;
+
+  /* สีหลัก (ปุ่มหลัก ลิงก์ เมนูที่เลือก) */
+  --accent: #1f6bd6;
+  --accent-hover: #1a5bb8;
   --accent-fg: #ffffff;
-  --accent-soft: #e6f0fc;
-  --series-1: #2a78d6;
+  --accent-soft: #eaf1fd;
+  --accent-soft-hover: #dce8fc;
+  --ring: rgb(31 107 214 / 0.45);
+
+  /* กราฟ */
+  --series-1: #1f6bd6;
   --series-2: #eb6834;
-  --good: #0ca30c;
-  --good-text: #006300;
-  --good-soft: #e5f5e5;
-  --critical: #d03b3b;
-  --critical-text: #b42f2f;
-  --critical-soft: #fbeaea;
-  --warning: #fab219;
-  --warning-soft: #fef4dc;
+
+  /* สถานะ */
+  --good: #16a34a;
+  --good-text: #15803d;
+  --good-soft: #ecfdf3;
+  --critical: #dc2626;
+  --critical-hover: #b91c1c;
+  --critical-text: #b42318;
+  --critical-soft: #fef3f2;
+  --critical-fg: #ffffff;
+  --warning: #f59e0b;
+  --warning-text: #b54708;
+  --warning-soft: #fffaeb;
+  --info: var(--accent);
+  --info-soft: var(--accent-soft);
+
+  /* สีแบรนด์ (ใช้กับไอคอน Facebook / Instagram เท่านั้น) */
+  --brand-facebook: #0866ff;
+  --brand-instagram: #e1306c;
+  --brand-instagram-bg: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285aeb 90%);
+
+  /* อื่นๆ */
+  --overlay: rgb(16 24 40 / 0.45);
+  --knob: #ffffff;
+  --avatar-s: 70%;
+  --avatar-bg-l: 92%;
+  --avatar-fg-l: 32%;
+  --scrollbar: #c9ced6;
+  --elev-xs: 0 1px 2px rgb(16 24 40 / 0.05);
+  --elev-sm: 0 1px 3px rgb(16 24 40 / 0.08), 0 1px 2px rgb(16 24 40 / 0.04);
+  --elev-md: 0 6px 16px -4px rgb(16 24 40 / 0.1), 0 2px 6px -2px rgb(16 24 40 / 0.05);
+  --elev-lg: 0 16px 32px -8px rgb(16 24 40 / 0.16), 0 4px 10px -4px rgb(16 24 40 / 0.06);
+
+  /* ความสูงแถบด้านบนบนมือถือ (เดสก์ท็อปใช้แถบด้านข้าง จึงเป็น 0) — หน้าเต็มจอใช้คำนวณความสูง */
+  --app-topbar-h: 56px;
+  --app-sidebar-w: 248px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #121211;
-    --surface: #1a1a19;
-    --surface-2: #252523;
-    --line: #33332f;
-    --fg: #ffffff;
-    --fg-2: #c3c2b7;
-    --fg-3: #94938a;
-    --accent: #3987e5;
-    --accent-hover: #5598e7;
+
+    --bg: #0c0e12;
+    --surface: #14171d;
+    --surface-2: #1b1f27;
+    --surface-3: #242934;
+    --surface-raised: #2a303b;
+    --sidebar: #101318;
+    --line: #262b35;
+    --line-strong: #353b48;
+
+    --fg: #f2f4f7;
+    --fg-2: #b3bbc9;
+    --fg-3: #8b95a7;
+
+    --accent: #3d84f3;
+    --accent-hover: #5a96f5;
     --accent-fg: #ffffff;
-    --accent-soft: #17263a;
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --good: #0ca30c;
-    --good-text: #5fd35f;
-    --good-soft: #142914;
-    --critical: #e66767;
-    --critical-text: #f08a8a;
-    --critical-soft: #3a1b1b;
-    --warning: #fab219;
-    --warning-soft: #3a2e10;
+    --accent-soft: #172235;
+    --accent-soft-hover: #1d2b44;
+    --ring: rgb(90 150 245 / 0.55);
+
+    --series-1: #4a8df5;
+    --series-2: #e8703f;
+
+    --good: #22c55e;
+    --good-text: #4ade80;
+    --good-soft: #0f2419;
+    --critical: #ef4444;
+    --critical-hover: #f05a5a;
+    --critical-text: #f97066;
+    --critical-soft: #2f1414;
+    --warning: #f5a524;
+    --warning-text: #fdb022;
+    --warning-soft: #2b2110;
+
+    --brand-facebook: #3b8bff;
+    --brand-instagram: #f0518a;
+
+    --overlay: rgb(0 0 0 / 0.6);
+    --knob: #f2f4f7;
+    --avatar-s: 45%;
+    --avatar-bg-l: 22%;
+    --avatar-fg-l: 78%;
+    --scrollbar: #3a404c;
+    --elev-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+    --elev-sm: 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.25);
+    --elev-md: 0 8px 20px -6px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.3);
+    --elev-lg: 0 18px 40px -10px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.4);
+  }
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --app-topbar-h: 0px;
   }
 }
 
@@ -57,7 +135,11 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-raised: var(--surface-raised);
+  --color-sidebar: var(--sidebar);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-fg: var(--fg);
   --color-fg-2: var(--fg-2);
   --color-fg-3: var(--fg-3);
@@ -65,24 +147,172 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-fg: var(--accent-fg);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-hover: var(--accent-soft-hover);
+  --color-ring: var(--ring);
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
   --color-good: var(--good);
   --color-good-text: var(--good-text);
   --color-good-soft: var(--good-soft);
   --color-critical: var(--critical);
+  --color-critical-hover: var(--critical-hover);
   --color-critical-text: var(--critical-text);
   --color-critical-soft: var(--critical-soft);
+  --color-critical-fg: var(--critical-fg);
   --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
   --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-brand-facebook: var(--brand-facebook);
+  --color-brand-instagram: var(--brand-instagram);
+  --color-overlay: var(--overlay);
+  --color-knob: var(--knob);
+  --shadow-xs: var(--elev-xs);
+  --shadow-sm: var(--elev-sm);
+  --shadow-md: var(--elev-md);
+  --shadow-lg: var(--elev-lg);
   --font-sans: var(--font-anuphan), ui-sans-serif, system-ui, sans-serif;
 }
 
-body {
-  background: var(--bg);
-  color: var(--fg);
+@layer base {
+  html {
+    scrollbar-color: var(--scrollbar) transparent;
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+
+  ::selection {
+    background: var(--accent-soft-hover);
+    color: var(--fg);
+  }
+
+  /* วงโฟกัสเมื่อใช้คีย์บอร์ด (เมาส์คลิกจะไม่ขึ้น) */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* ปุ่มและลิงก์ต้องเห็นว่ากดได้ */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+
+  /* <dialog> ของเบราว์เซอร์: ล้างสไตล์เริ่มต้น ให้คอมโพเนนต์ Dialog กำหนดเอง */
+  dialog {
+    color: inherit;
+  }
+  dialog::backdrop {
+    background: var(--overlay);
+  }
+
+  /* เปิดหน้าต่าง (dialog) อยู่ → หน้าด้านหลังไม่เลื่อนตาม */
+  html:has(dialog[open]:modal) {
+    overflow: hidden;
+  }
 }
 
-.tabular {
-  font-variant-numeric: tabular-nums;
+@layer components {
+  /* ลูกศรของช่องเลือก (selectClass) */
+  .ui-select {
+    appearance: none;
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23858c99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 16px;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* แถบเลื่อนบางๆ สำหรับกล่องที่เลื่อนได้ */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+
+  /* ซ่อนแถบเลื่อนแต่ยังเลื่อนได้ (เช่น แท็บแนวนอนบนมือถือ) */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---------- แอนิเมชันที่คอมโพเนนต์ใช้ร่วมกัน ---------- */
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+@keyframes ui-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@keyframes ui-shimmer {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.ui-dialog[open] {
+  animation: ui-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ui-dialog[open]::backdrop {
+  animation: ui-fade-in 160ms ease-out;
+}
+.ui-drawer[open] {
+  animation: ui-slide-in-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ui-drawer[open]::backdrop {
+  animation: ui-fade-in 220ms ease-out;
+}
+.ui-popover:popover-open {
+  animation: ui-pop-in 120ms ease-out;
+}
+.ui-toast {
+  animation: ui-toast-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ui-skeleton {
+  animation: ui-shimmer 1.6s ease-in-out infinite;
+}
+
+/* ผู้ใช้ที่ตั้งค่าลดการเคลื่อนไหว: ปิดแอนิเมชัน (ยกเว้นวงหมุน "กำลังโหลด" ซึ่งบอกสถานะ) */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after,
+  ::backdrop {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
