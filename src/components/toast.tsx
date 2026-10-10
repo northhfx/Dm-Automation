@@ -113,7 +113,7 @@ export function Toaster() {
       <div
         ref={ref}
         popover="manual"
-        className="pointer-events-none fixed inset-x-0 top-[calc(var(--app-topbar-h)+0.5rem)] bottom-auto z-[1000] m-0 flex h-auto w-auto flex-col items-center gap-2 overflow-visible border-0 bg-transparent px-4 text-fg sm:top-auto sm:right-0 sm:bottom-0 sm:left-auto sm:items-end sm:p-6 [&:not(:popover-open)]:hidden"
+        className="pointer-events-none fixed inset-x-0 top-[calc(var(--app-topbar-h)+var(--toast-offset,0px)+0.5rem)] bottom-auto z-[1000] m-0 flex h-auto w-auto flex-col items-center gap-2 overflow-visible border-0 bg-transparent px-4 text-fg sm:top-auto sm:right-0 sm:bottom-0 sm:left-auto sm:items-end sm:p-6 [&:not(:popover-open)]:hidden"
       >
         {list.map((t) => (
           <ToastView key={t.id} item={t} />

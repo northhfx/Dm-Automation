@@ -142,11 +142,12 @@ export function MessagePanel({ doc, step, numbers, problem, unreachable, showErr
                 <div className="flex items-center gap-1">
                   <span className="text-xs font-semibold text-fg-2">ปุ่มที่ {i + 1}</span>
                   <span className="ml-auto flex items-center">
-                    <IconButton icon={<ArrowUp />} label="เลื่อนขึ้น" size="sm" disabled={i === 0} onClick={() => dispatch({ type: "moveButton", stepId: step.id, buttonId: b.id, dir: -1 })} />
+                    <IconButton icon={<ArrowUp />} label="เลื่อนขึ้น" size="sm" className="pointer-coarse:size-10" disabled={i === 0} onClick={() => dispatch({ type: "moveButton", stepId: step.id, buttonId: b.id, dir: -1 })} />
                     <IconButton
                       icon={<ArrowDown />}
                       label="เลื่อนลง"
                       size="sm"
+                      className="pointer-coarse:size-10"
                       disabled={i === step.buttons.length - 1}
                       onClick={() => dispatch({ type: "moveButton", stepId: step.id, buttonId: b.id, dir: 1 })}
                     />
@@ -154,7 +155,7 @@ export function MessagePanel({ doc, step, numbers, problem, unreachable, showErr
                       icon={<Trash2 />}
                       label={`ลบปุ่มที่ ${i + 1}`}
                       size="sm"
-                      className="hover:text-critical-text"
+                      className="hover:text-critical-text pointer-coarse:size-10"
                       onClick={() => dispatch({ type: "removeButton", stepId: step.id, buttonId: b.id })}
                     />
                   </span>
@@ -257,7 +258,7 @@ export function MessagePanel({ doc, step, numbers, problem, unreachable, showErr
             {[
               ["ส่งแล้ว", `${formatNumber(stat.sent)}`, "ครั้ง"],
               ["คนกด", `${formatNumber(stat.engaged)}`, `จาก ${formatNumber(stat.reached)} คน`],
-              ["CTR", step.buttons.length ? formatPercent(stepCtr(stat)) : "–", "กด ÷ ได้รับ"],
+              ["อัตราการกด", step.buttons.length ? formatPercent(stepCtr(stat)) : "–", "จากคนที่ได้รับ"],
             ].map(([label, value, sub]) => (
               <div key={label} className="rounded-lg border border-line bg-surface p-2.5">
                 <dt className="text-xs text-fg-2">{label}</dt>

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { BoundPosts, MatchType, Platform, PostScope, Rule, TriggerType } from "@/db/schema";
 import type { FlowCanvas, FlowStep } from "@/lib/flows/types";
 import { sanitizeCanvas, validateSteps } from "@/lib/flows/validate";
-import { isPostScope } from "@/lib/rules/post-scope";
+import { INVALID_POST_ID_MESSAGE, isPostId, isPostScope } from "@/lib/rules/post-scope";
 
 /** ค่าในฟอร์มตั้งกฎ (เก็บเป็นข้อความเพื่อคืนค่ากลับไปให้ฟอร์มเมื่อกรอกผิด) */
 export interface RuleFormValues {
@@ -139,7 +139,7 @@ const ruleSchema = z.object({
   matchType: z.enum(["contains", "exact", "any"]),
   keywords: z.array(z.string().max(100)),
   postScope: z.enum(["any", "specific", "next"]),
-  postIds: z.array(z.string().max(100)),
+  postIds: z.array(z.string().max(100, "ID โพสต์ยาวเกินไป")),
   publicReplies: z.array(z.string().max(500, "ข้อความตอบคอมเมนต์ยาวเกิน 500 ตัวอักษร")),
   oncePerUser: z.boolean(),
   priority: z.number().int().min(1).max(1000),
@@ -163,11 +163,13 @@ export function validateRule(
   if (data.postScope === "specific" && data.postIds.length === 0) {
     return { ok: false, error: "เลือกโพสต์หรือรีลอย่างน้อย 1 รายการ (หรือเปลี่ยนเป็น 'ทุกโพสต์และรีล' / 'โพสต์หรือรีลถัดไป')" };
   }
+  // วางลิงก์ไว้แทน ID → กฎจะไม่ทำงานเลย จึงไม่ให้บันทึก
+  if (data.postIds.some((id) => !isPostId(id))) return { ok: false, error: INVALID_POST_ID_MESSAGE };
   if (data.matchType !== "any" && data.keywords.length === 0) {
-    return { ok: false, error: "ใส่ keyword อย่างน้อย 1 คำ (หรือเลือก 'ทุกข้อความ')" };
+    return { ok: false, error: "ใส่คำที่ให้ระบบจับอย่างน้อย 1 คำ (หรือเลือก 'ทุกข้อความ')" };
   }
   if (values.startStepId === "" || (values.startStepId && values.steps[0]?.id !== values.startStepId)) {
-    return { ok: false, error: 'ยังไม่ได้เชื่อมการ์ด "เมื่อ…" กับข้อความแรกที่จะส่ง — ลากเส้นจากจุด "แล้ว" ไปที่การ์ดข้อความ' };
+    return { ok: false, error: 'ยังไม่ได้เชื่อมการ์ด "เมื่อ…" กับข้อความแรกที่จะส่ง — ลากเส้นจากจุด "แล้วส่ง" ไปที่การ์ดข้อความ' };
   }
   const steps = validateSteps(values.steps);
   if (!steps.ok) return { ok: false, error: steps.error, stepId: steps.stepId };

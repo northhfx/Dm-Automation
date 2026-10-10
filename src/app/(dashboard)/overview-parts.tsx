@@ -251,7 +251,7 @@ function RuleListItem({ rule: r }: { rule: RuleStats }) {
             { label: "ส่งสำเร็จ", value: formatNumber(r.sent) },
             { label: "ไม่สำเร็จ", value: formatNumber(r.failed), critical: r.failed > 0 },
             { label: "อ่าน", value: formatPercent(rate(r.read, r.sent)) },
-            { label: "CTR", value: ctrOf(r) },
+            { label: "อัตราการกด", value: ctrOf(r) },
           ].map((s) => (
             <div key={s.label} className="rounded-lg bg-surface-2 px-1 py-1.5">
               <dt className="text-[11px] leading-4 text-fg-3">{s.label}</dt>
@@ -290,7 +290,7 @@ export function RuleTable({ rules }: { rules: RuleStats[] }) {
                 อ่าน
               </th>
               <th className={cx(tableClass.th, tableClass.num)} title={CTR_HINT}>
-                CTR
+                อัตราการกด
               </th>
             </tr>
           </thead>

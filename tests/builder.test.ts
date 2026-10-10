@@ -196,6 +196,15 @@ describe("บันทึก", () => {
     expect(findProblems(s.doc).filter((p) => p.blocking)).toEqual([]);
   });
 
+  it("วางลิงก์โพสต์ไว้แทน ID → บันทึกไม่ได้ (ไม่งั้นกฎจะไม่ทำงานเลย)", () => {
+    const s = run(createInitialState(base), {
+      type: "patch",
+      patch: { postScope: "specific", postIds: [], postIdsManual: "https://www.instagram.com/reel/C8xYz12AbCd/" },
+    });
+    expect(findProblems(s.doc).find((p) => p.key === "posts")).toMatchObject({ blocking: true, message: expect.stringContaining("ไม่ใช่ลิงก์") });
+    expect(validateRule(formDataToValues(toFormData(s.doc)))).toMatchObject({ ok: false, error: expect.stringContaining("ไม่ใช่ลิงก์") });
+  });
+
   it("รวบรวมปัญหาทุกการ์ด พร้อมเลขการ์ดที่ตรงกับที่แสดง", () => {
     const s = run(
       createInitialState({ ...base, name: "", keywords: "" }),

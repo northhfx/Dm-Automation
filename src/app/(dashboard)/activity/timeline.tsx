@@ -197,11 +197,14 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
             {event.buttons.length > 0 && (
               <div className={cx("flex flex-wrap gap-1.5", event.text && "mt-2")} role="group" aria-label="ปุ่มในข้อความ">
                 {event.buttons.map((b, i) => (
+                  // แค่บอกว่าข้อความมีปุ่มอะไร (กดไม่ได้) → เส้นประ สีเทา ไม่ให้ดูเหมือนปุ่มจริง
                   <span
                     key={i}
-                    className="inline-flex h-7 max-w-full items-center truncate rounded-md border border-line bg-surface px-2.5 text-xs font-medium text-accent"
+                    className="inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-dashed border-line-strong px-2 text-xs text-fg-2"
                   >
-                    {b}
+                    <MousePointerClick size={12} className="shrink-0 text-fg-3" aria-hidden="true" />
+                    <span className="sr-only">ปุ่ม: </span>
+                    <span className="truncate">{b}</span>
                   </span>
                 ))}
               </div>

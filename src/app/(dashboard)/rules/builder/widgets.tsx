@@ -79,7 +79,8 @@ export function ChipInput({
             type="button"
             onClick={() => onChange(values.filter((_, j) => j !== i))}
             aria-label={`ลบคำ ${v}`}
-            className="flex h-5 w-5 items-center justify-center rounded hover:bg-accent/15 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
+            // พื้นที่แตะกว้างกว่าที่เห็น (before) ให้กดโดนง่ายบนมือถือ
+            className="relative flex h-6 w-6 items-center justify-center rounded before:absolute before:-inset-2 hover:bg-accent/15 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
           >
             <X size={13} aria-hidden="true" />
           </button>

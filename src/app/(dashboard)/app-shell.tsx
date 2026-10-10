@@ -80,7 +80,7 @@ export function AppShell({ data, children }: { data: ShellData; children: ReactN
         <SidebarContent
           data={data}
           onNavigate={() => setDrawerPath(null)}
-          closeButton={<IconButton icon={<X />} label="ปิดเมนู" size="sm" onClick={() => setDrawerPath(null)} />}
+          closeButton={<IconButton icon={<X />} label="ปิดเมนู" size="md" onClick={() => setDrawerPath(null)} />}
         />
       </Dialog>
 

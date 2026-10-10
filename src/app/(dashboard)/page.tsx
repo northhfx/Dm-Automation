@@ -49,9 +49,10 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
       <div className="space-y-6">
         {progress.done < progress.total && <SetupBanner status={setup} done={progress.done} total={progress.total} />}
 
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        {/* มือถือ 1 + 2×2 · แท็บเล็ต 3 + 2 · จอใหญ่ 5 ช่องเรียงกัน */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <StatTile
-            className="col-span-2 xl:col-span-1"
+            className="col-span-2 md:col-span-1"
             label="ตรงกับกฎ"
             icon={<Zap />}
             tone="accent"
@@ -81,7 +82,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             icon={<ChartLine />}
             tone="accent"
             value={formatPercent(rate(t.engagedContacts, t.reachedContacts))}
-            detail={`CTR · ${formatNumber(t.engagedContacts)} จาก ${formatNumber(t.reachedContacts)} คนที่ได้รับ DM กดปุ่มหรือลิงก์`}
+            detail={`${formatNumber(t.engagedContacts)} จาก ${formatNumber(t.reachedContacts)} คนที่ได้รับ DM กดปุ่มหรือลิงก์`}
           />
           <StatTile
             label="กดปุ่ม / คลิกลิงก์"

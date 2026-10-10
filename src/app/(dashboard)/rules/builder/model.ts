@@ -6,6 +6,7 @@ import type { BoundPosts, MatchType, Platform, PostScope, TriggerType } from "@/
 import { estimateStepHeight, layoutCanvas, type CanvasLayout, type NodeSize } from "@/lib/flows/layout";
 import { FLOW_LIMITS, type CanvasPoint, type FlowButton, type FlowStep } from "@/lib/flows/types";
 import { validateSteps } from "@/lib/flows/validate";
+import { INVALID_POST_ID_MESSAGE, isPostId } from "@/lib/rules/post-scope";
 import type { RuleFormValues } from "../form-values";
 
 /** id ของการ์ด "เมื่อ…" บนแผนผัง (มี @ จึงไม่มีทางชนกับ id ของข้อความ) */
@@ -279,10 +280,12 @@ export function findProblems(doc: BuilderDoc): Problem[] {
   if (doc.keywords.some((k) => k.length > 100)) add("keyword-long", "คำที่ให้จับยาวได้ไม่เกิน 100 ตัวอักษร", trigger);
   if (doc.trigger === "comment") {
     if (doc.publicReplies.some((r) => r.trim().length > 500)) add("replies", "ข้อความตอบใต้คอมเมนต์ยาวเกิน 500 ตัวอักษร", trigger);
-    if (doc.postScope === "specific" && postIdsOf(doc).length === 0) add("posts", "เลือกโพสต์หรือรีลอย่างน้อย 1 รายการ", trigger);
+    const postIds = postIdsOf(doc);
+    if (doc.postScope === "specific" && postIds.length === 0) add("posts", "เลือกโพสต์หรือรีลอย่างน้อย 1 รายการ", trigger);
+    else if (postIds.some((id) => !isPostId(id))) add("posts", INVALID_POST_ID_MESSAGE, trigger);
   }
   if (!doc.startStepId || !doc.steps.some((s) => s.id === doc.startStepId)) {
-    add("start", 'ยังไม่ได้เชื่อมการ์ด "เมื่อ…" กับข้อความแรก — ลากเส้นจากจุด "แล้ว" ไปที่การ์ดข้อความ', trigger);
+    add("start", 'ยังไม่ได้เชื่อมการ์ด "เมื่อ…" กับข้อความแรก — ลากเส้นจากจุด "แล้วส่ง" ไปที่การ์ดข้อความ', trigger);
   }
 
   // ตรวจข้อความทีละการ์ด: เจอปัญหาแล้วแทนการ์ดนั้นด้วยการ์ดที่ถูกต้องชั่วคราว แล้วตรวจต่อ (เลขการ์ดใน error ยังตรง)

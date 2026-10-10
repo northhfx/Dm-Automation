@@ -1,11 +1,12 @@
 "use server";
 
-import { eq, not } from "drizzle-orm";
+import { asc, eq, not } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, RedirectType } from "next/navigation";
 import { getDb } from "@/db/client";
 import { rules } from "@/db/schema";
 import { requireAuth } from "@/lib/auth";
+import { movedPriorities } from "@/lib/rules/order";
 import { nextPostState } from "@/lib/rules/post-scope";
 import { formDataToValues, validateRule, type RuleFormState } from "./form-values";
 
@@ -24,14 +25,19 @@ export async function saveRule(prev: RuleFormState, formData: FormData): Promise
       where: eq(rules.id, values.id),
       columns: { postScope: true, nextPostSince: true, boundPosts: true },
     });
-    const scope = nextPostState(previous ?? null, result.data.postScope, values.rearmNext === true, now);
-    await db
+    // กฎถูกลบไปแล้ว (เช่น ลบจากอีกแท็บ/อีกเครื่อง) → บอกตรงๆ แทนที่จะขึ้นว่าบันทึกแล้ว
+    const gone = { error: "ไม่พบกฎนี้แล้ว (อาจถูกลบไป) — คัดลอกข้อความเก็บไว้ก่อน แล้วสร้างกฎใหม่", values, attempt };
+    if (!previous) return gone;
+    const scope = nextPostState(previous, result.data.postScope, values.rearmNext === true, now);
+    const [saved] = await db
       .update(rules)
       .set({ ...result.data, ...scope, updatedAt: now })
-      .where(eq(rules.id, values.id));
+      .where(eq(rules.id, values.id))
+      .returning({ nextPostSince: rules.nextPostSince, boundPosts: rules.boundPosts });
+    if (!saved) return gone;
     revalidatePath("/rules");
     return {
-      values: { ...values, rearmNext: false, nextPostSince: scope.nextPostSince?.toISOString() ?? null, boundPosts: scope.boundPosts },
+      values: { ...values, rearmNext: false, nextPostSince: saved.nextPostSince?.toISOString() ?? null, boundPosts: saved.boundPosts ?? {} },
       attempt,
     };
   }
@@ -42,7 +48,8 @@ export async function saveRule(prev: RuleFormState, formData: FormData): Promise
     .values({ ...result.data, ...scope })
     .returning({ id: rules.id });
   revalidatePath("/rules");
-  redirect(`/rules/${created.id}?saved=1`);
+  // แทนที่ /rules/new ในประวัติ → กดย้อนกลับแล้วไม่วนกลับมาหน้ากฎเปล่า
+  redirect(`/rules/${created.id}?saved=1`, RedirectType.replace);
 }
 
 export async function toggleRule(formData: FormData): Promise<void> {
@@ -72,6 +79,36 @@ export async function duplicateRule(formData: FormData): Promise<void> {
     .returning({ id: rules.id });
   revalidatePath("/rules");
   redirect(`/rules/${created.id}`);
+}
+
+/** ย้ายกฎขึ้น/ลงหนึ่งลำดับในกลุ่มเดียวกัน (คอมเมนต์ / แชท) — ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนกว่า */
+export async function moveRule(formData: FormData): Promise<void> {
+  await requireAuth();
+  const id = Number(formData.get("id"));
+  const dir = formData.get("dir") === "up" ? "up" : "down";
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    const rule = Number.isInteger(id) ? await tx.query.rules.findFirst({ where: eq(rules.id, id), columns: { trigger: true } }) : undefined;
+    if (!rule) return;
+    const group = await tx
+      .select({ id: rules.id, priority: rules.priority })
+      .from(rules)
+      .where(eq(rules.trigger, rule.trigger))
+      .orderBy(asc(rules.priority), asc(rules.id))
+      .for("update");
+    const next = movedPriorities(
+      group.map((r) => r.id),
+      id,
+      dir,
+    );
+    if (!next) return;
+    const now = new Date();
+    for (const r of next) {
+      if (group.find((g) => g.id === r.id)?.priority === r.priority) continue;
+      await tx.update(rules).set({ priority: r.priority, updatedAt: now }).where(eq(rules.id, r.id));
+    }
+  });
+  revalidatePath("/rules");
 }
 
 export async function deleteRule(formData: FormData): Promise<void> {

@@ -5,14 +5,15 @@ import {
   useActionState,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
   useState,
   useSyncExternalStore,
-  type MouseEvent,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { ChevronUp, CircleAlert, ClipboardCheck, MessageSquareText, PanelRightClose, PanelRightOpen, Trash2, X, Zap } from "lucide-react";
 import { Dialog } from "@/components/dialog";
@@ -60,6 +61,11 @@ interface Props {
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
+/** ออกจากหน้าขณะยังไม่ได้บันทึก: กดลิงก์ไปหน้าอื่น หรือกดย้อนกลับของเบราว์เซอร์/มือถือ */
+type LeaveTarget = { kind: "link"; href: string } | { kind: "back" };
+/** ป้ายของรายการประวัติที่ใส่ไว้ดักปุ่มย้อนกลับ (ไว้ดูตอนดีบัก — Next อาจเขียนทับ state ของรายการนี้ จึงไม่ใช้ตัดสินใจ) */
+const GUARD_STATE = "__dmBuilderGuard";
+
 function useIsDesktop(): boolean {
   return useSyncExternalStore(
     (cb) => {
@@ -104,7 +110,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
   const [sheetOpen, setSheetOpen] = useState(false); // มือถือ: แผงด้านล่าง
   const [sheetHeight, setSheetHeight] = useState(0);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaveTo, setLeaveTo] = useState<LeaveTarget | null>(null);
   // เคยกดบันทึกแล้วไม่ผ่าน → แสดงข้อผิดพลาดทุกจุดเต็มๆ (ก่อนหน้านั้นเตือนแบบเบาๆ)
   const [showErrors, setShowErrors] = useState(false);
   const isDesktop = useIsDesktop();
@@ -137,16 +143,71 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     if (state.autoPlaced && allMeasured) dispatch({ type: "layout", layout: autoLayout(doc, sizes), history: false, keepClean: true });
   }, [state.autoPlaced, allMeasured, doc, sizes]);
 
+  /** กดยืนยันออกแล้ว → ไม่ต้องดัก/เตือนซ้ำ */
+  const leaving = useRef(false);
+  /** ใส่รายการประวัติดักปุ่มย้อนกลับไว้แล้วหรือยัง (true = รายการปัจจุบันคือรายการดัก) */
+  const guardPushed = useRef(false);
+
   // เตือนก่อนปิดแท็บ/รีเฟรชถ้ายังไม่ได้บันทึก
   useEffect(() => {
     if (!dirty) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (leaving.current) return;
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
+
+  // เปลี่ยนหน้าภายในแอป (เมนูด้านข้าง/โลโก้/ลิงก์ใดๆ และปุ่มย้อนกลับ/ปัดย้อนกลับบนมือถือ) ไม่ทำให้เกิด beforeunload
+  // → ดักเองแล้วถามก่อนว่าจะออกโดยไม่บันทึกไหม
+  useEffect(() => {
+    if (!dirty) {
+      // บันทึกแล้ว → เอารายการที่ใส่ไว้ดักปุ่มย้อนกลับออก (ไม่งั้นต้องกดย้อนกลับสองครั้ง)
+      if (guardPushed.current) window.history.back();
+      guardPushed.current = false;
+      return;
+    }
+    const pushGuard = () => {
+      // ไม่ส่ง URL → อยู่หน้าเดิม แค่เพิ่มรายการประวัติให้ปุ่มย้อนกลับมาเจอก่อน
+      window.history.pushState({ [GUARD_STATE]: true }, "");
+      guardPushed.current = true;
+    };
+    if (!guardPushed.current) pushGuard();
+
+    const onPopState = () => {
+      if (leaving.current) return;
+      pushGuard();
+      setLeaveTo({ kind: "back" });
+    };
+    const onClick = (e: globalThis.MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (!(a instanceof HTMLAnchorElement) || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+      const url = new URL(a.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaveTo({ kind: "link", href: url.pathname + url.search + url.hash });
+    };
+    window.addEventListener("popstate", onPopState);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [dirty]);
+
+  // มือถือ: ข้อความแจ้งเตือนอยู่ด้านบน → เลื่อนลงให้พ้นแถบบนของหน้านี้ (ชื่อกฎ/ปุ่มบันทึก)
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--toast-offset", "4rem");
+    return () => {
+      root.style.removeProperty("--toast-offset");
+    };
+  }, []);
 
   // ความสูงของแผงด้านล่าง (มือถือ) ใช้เลื่อนแผนผังให้การ์ดที่เลือกไม่โดนบัง
   useEffect(() => {
@@ -250,10 +311,13 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
       return;
     }
     const box = nodeBox(d, s, id);
-    const at = findFreeSpot(d, s, { x: box.x + 32, y: box.y + box.h + 32 }, box.h);
-    dispatch({ type: "duplicateStep", stepId: id, id: newId("s"), buttonIds: step.buttons.map(() => newId("b")), at });
+    // เว้นที่ให้แถบปุ่มเหนือการ์ดใหม่ (การ์ดใหม่ถูกเลือกทันที) ไม่ไปบังท้ายการ์ดเดิม
+    const at = findFreeSpot(d, s, { x: box.x + 32, y: box.y + box.h + 88 }, box.h);
+    const copyId = newId("s");
+    dispatch({ type: "duplicateStep", stepId: id, id: copyId, buttonIds: step.buttons.map(() => newId("b")), at });
+    reveal(copyId);
     toast("ทำสำเนาการ์ดแล้ว");
-  }, []);
+  }, [reveal]);
 
   const deleteToast = useRef<number | null>(null);
   const deleteNow = useCallback((id: string) => {
@@ -315,10 +379,21 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
 
   /* ------------------------------------------------------------ คีย์ลัด */
 
+  // อัปเดตใน layout effect → หลัง flushSync ด้านล่างได้ค่าล่าสุดทันที
   const keys = useRef({ save, selection, onDelete });
-  useEffect(() => {
+  useLayoutEffect(() => {
     keys.current = { save, selection, onDelete };
   });
+
+  /**
+   * ใช้ทั้งปุ่มบันทึกและ Ctrl+S: ช่องที่กำลังพิมพ์อยู่ (เช่น คำในช่องชิปที่ยังไม่ได้กด Enter) ต้องถูกเก็บก่อน
+   * — Ctrl+S ไม่ทำให้ช่องหลุดโฟกัส และ iOS ไม่ย้ายโฟกัสไปที่ปุ่มที่แตะ → blur เองแล้วรอให้ค่าอัปเดตก่อนบันทึก
+   */
+  const requestSave = useCallback(() => {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement && isTyping(el)) flushSync(() => el.blur());
+    keys.current.save();
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -328,7 +403,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
       const typing = isTyping(document.activeElement);
       if (mod && key === "s") {
         e.preventDefault();
-        keys.current.save();
+        requestSave();
       } else if (mod && key === "z") {
         e.preventDefault();
         dispatch({ type: e.shiftKey ? "redo" : "undo" });
@@ -352,14 +427,28 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [requestSave]);
 
   /* ------------------------------------------------------------ ออกจากหน้า */
 
-  function onLeave(e: MouseEvent<HTMLAnchorElement>) {
-    if (!dirty) return;
-    e.preventDefault();
-    setLeaveOpen(true);
+  function confirmLeave() {
+    const target = leaveTo;
+    setLeaveTo(null);
+    if (!target) return;
+    leaving.current = true;
+    if (target.kind === "link") {
+      // แทนที่รายการดักย้อนกลับ จะได้ไม่เหลือรายการซ้ำในประวัติ
+      if (guardPushed.current) router.replace(target.href);
+      else router.push(target.href);
+      return;
+    }
+    // ข้ามรายการดักย้อนกลับ + หน้านี้ → กลับไปหน้าก่อนหน้าจริงๆ
+    const here = window.location.href;
+    window.history.go(-2);
+    // เปิดหน้านี้ตรงๆ (ไม่มีหน้าก่อนหน้า) → ไปหน้ากฎทั้งหมดแทน
+    window.setTimeout(() => {
+      if (window.location.href === here) router.replace("/rules");
+    }, 500);
   }
 
   /* ------------------------------------------------------------ แผงด้านข้าง */
@@ -440,8 +529,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
         stats={ruleStats}
         onName={(name) => dispatch({ type: "patch", patch: { name }, key: "name", at: Date.now() })}
         onActive={(active) => dispatch({ type: "patch", patch: { active } })}
-        onSave={save}
-        onLeave={onLeave}
+        onSave={requestSave}
       />
 
       {/* มือถือ: แผงด้านล่างอ้างอิงความสูงกับทั้งหน้า (จึงไม่ใส่ relative ตรงนี้) */}
@@ -456,6 +544,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
             stepErrors={stepErrors}
             unreachable={unreachable}
             triggerProblem={triggerProblem}
+            showErrors={showErrors}
             stats={stepStats}
             ready={!state.autoPlaced}
             canUndo={state.past.length > 0}
@@ -491,8 +580,8 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
           aria-label={typeof panelTitle === "string" ? panelTitle : "แผงตั้งค่า"}
           inert={!panelVisible}
           className={cx(
-            // มือถือ: แผ่นเลื่อนขึ้นจากด้านล่าง (ใช้ CSS ล้วน หน้าแรกที่โหลดจึงไม่กระพริบ)
-            "absolute inset-x-0 bottom-0 z-30 flex max-h-[min(75dvh,calc(100%-13rem))] flex-col rounded-t-2xl border-t border-line bg-surface shadow-[var(--elev-lg)] transition-transform duration-300 ease-out",
+            // มือถือ: แผ่นเลื่อนขึ้นจากด้านล่าง (ใช้ CSS ล้วน หน้าแรกที่โหลดจึงไม่กระพริบ) · แท็บเล็ต: สูงไม่เกินครึ่งจอ ให้ยังเห็นแผนผัง
+            "absolute inset-x-0 bottom-0 z-30 flex max-h-[min(75dvh,calc(100%-13rem))] flex-col sm:max-h-[min(55%,calc(100%-13rem))] rounded-t-2xl border-t border-line bg-surface shadow-[var(--elev-lg)] transition-transform duration-300 ease-out",
             sheetOpen ? "translate-y-0" : "pointer-events-none translate-y-full",
             // เดสก์ท็อป: แผงด้านขวา
             "lg:pointer-events-auto lg:static lg:z-auto lg:max-h-none lg:w-[360px] lg:shrink-0 lg:translate-y-0 lg:rounded-none lg:border-t-0 lg:border-l lg:shadow-none lg:transition-none xl:w-[400px]",
@@ -528,7 +617,12 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
         className="flex h-14 shrink-0 items-center gap-3 border-t border-line bg-surface px-4 pb-[env(safe-area-inset-bottom)] text-left lg:hidden"
       >
         {blockingCount > 0 ? (
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-critical-soft text-critical-text">
+          <span
+            className={cx(
+              "flex h-8 w-8 items-center justify-center rounded-lg",
+              showErrors ? "bg-critical-soft text-critical-text" : "bg-warning-soft text-warning-text",
+            )}
+          >
             <CircleAlert size={17} aria-hidden="true" />
           </span>
         ) : (
@@ -540,8 +634,15 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
         )}
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{selection && selection.kind !== "edge" ? panelTitle : "ภาพรวมและสิ่งที่ต้องแก้"}</span>
-          <span className={cx("block text-xs", blockingCount ? "text-critical-text" : "text-fg-3")}>
-            {blockingCount ? `ต้องแก้อีก ${blockingCount} จุดก่อนบันทึก` : dirty || !ruleId ? "ครบแล้ว พร้อมบันทึก" : "บันทึกแล้ว"}
+          {/* ก่อนกดบันทึกครั้งแรก: บอกแบบนุ่มๆ ว่าเหลืออีกกี่ขั้น, กดบันทึกแล้วไม่ผ่าน: สีแดง */}
+          <span className={cx("block text-xs", blockingCount ? (showErrors ? "text-critical-text" : "text-fg-2") : "text-fg-3")}>
+            {blockingCount
+              ? showErrors
+                ? `ต้องแก้อีก ${blockingCount} จุดก่อนบันทึก`
+                : `เหลืออีก ${blockingCount} ขั้นก่อนบันทึก`
+              : dirty || !ruleId
+                ? "ครบแล้ว พร้อมบันทึก"
+                : "บันทึกแล้ว"}
           </span>
         </span>
         <ChevronUp size={18} className="text-fg-3" aria-hidden="true" />
@@ -576,25 +677,18 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
       />
 
       <Dialog
-        open={leaveOpen}
-        onClose={() => setLeaveOpen(false)}
+        open={!!leaveTo}
+        onClose={() => setLeaveTo(null)}
         size="sm"
         title="ออกโดยไม่บันทึก?"
         description="การแก้ไขที่ยังไม่ได้บันทึกจะหายไป"
         hideClose
         footer={
           <>
-            <Button variant="secondary" data-autofocus onClick={() => setLeaveOpen(false)} className="max-sm:w-full">
+            <Button variant="secondary" data-autofocus onClick={() => setLeaveTo(null)} className="max-sm:w-full">
               อยู่ต่อ
             </Button>
-            <Button
-              variant="destructive"
-              className="max-sm:w-full"
-              onClick={() => {
-                setLeaveOpen(false);
-                router.push("/rules");
-              }}
-            >
+            <Button variant="destructive" className="max-sm:w-full" onClick={confirmLeave}>
               ออกโดยไม่บันทึก
             </Button>
           </>

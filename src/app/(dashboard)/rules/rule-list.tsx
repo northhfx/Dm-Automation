@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { Fragment, useOptimistic, useTransition, type ReactNode } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
+  CalendarClock,
   ChevronRight,
   Copy,
-  Hourglass,
   Info,
+  Layers,
+  ListChecks,
   ListOrdered,
   MessageCircle,
   MessagesSquare,
   MousePointerClick,
-  Newspaper,
   Pencil,
-  Pin,
   Reply,
   Send,
   Trash2,
@@ -25,7 +27,7 @@ import { Switch } from "@/components/switch";
 import { Menu, MenuItem, MenuSeparator } from "@/components/menu";
 import { runAction, toFormData } from "@/components/action";
 import { toast } from "@/components/toast";
-import { deleteRule, duplicateRule, toggleRule } from "./actions";
+import { deleteRule, duplicateRule, moveRule, toggleRule } from "./actions";
 import { TemplateOptions } from "./template-chooser";
 
 /*
@@ -66,7 +68,7 @@ const GROUPS: { trigger: TriggerType; title: string; icon: ReactNode }[] = [
   { trigger: "dm", title: "เมื่อมีคนทักแชท", icon: <MessagesSquare /> },
 ];
 
-const CTR_HINT = "CTR = สัดส่วนคนที่กดปุ่มหรือลิงก์ จากคนที่ได้รับ DM";
+const CTR_HINT = "อัตราการกด = สัดส่วนคนที่กดปุ่มหรือลิงก์ จากคนที่ได้รับ DM";
 
 export function RuleList({ rules }: { rules: RuleListItem[] }) {
   const groups = GROUPS.map((g) => ({ ...g, rules: rules.filter((r) => r.trigger === g.trigger) })).filter((g) => g.rules.length > 0);
@@ -85,7 +87,7 @@ export function RuleList({ rules }: { rules: RuleListItem[] }) {
             {g.rules.length > 1 && (
               <p
                 className="flex items-center gap-1.5 text-xs leading-5 text-fg-3"
-                title="เปลี่ยนลำดับได้ที่ “ลำดับความสำคัญ” (ขั้นสูง) ในหน้าแก้ไขกฎ"
+                title="ย้ายกฎขึ้น/ลงได้จากปุ่ม ⋮ ของแต่ละกฎ"
               >
                 <ListOrdered className="size-3.5 shrink-0" aria-hidden />
                 ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนสุด
@@ -94,7 +96,7 @@ export function RuleList({ rules }: { rules: RuleListItem[] }) {
           </div>
           <ol className="space-y-3">
             {g.rules.map((r, i) => (
-              <RuleCard key={r.id} rule={r} rank={i + 1} />
+              <RuleCard key={r.id} rule={r} rank={i + 1} total={g.rules.length} />
             ))}
           </ol>
         </section>
@@ -103,14 +105,14 @@ export function RuleList({ rules }: { rules: RuleListItem[] }) {
       <p className="flex items-start gap-2 text-xs leading-5 text-fg-3">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
-          ตัวเลขนับตั้งแต่สร้างกฎ · {CTR_HINT} · เปลี่ยนลำดับกฎได้ที่ “ลำดับความสำคัญ” (ขั้นสูง) ในหน้าแก้ไขกฎ
+          ตัวเลขนับตั้งแต่สร้างกฎ · {CTR_HINT} · ย้ายกฎขึ้น/ลงได้จากปุ่ม ⋮ ของแต่ละกฎ
         </span>
       </p>
     </div>
   );
 }
 
-function RuleCard({ rule, rank }: { rule: RuleListItem; rank: number }) {
+function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; total: number }) {
   const [active, setActive] = useOptimistic(rule.active);
   const [pending, startTransition] = useTransition();
   const href = `/rules/${rule.id}`;
@@ -181,7 +183,7 @@ function RuleCard({ rule, rank }: { rule: RuleListItem; rank: number }) {
               {active ? "เปิดอยู่" : "ปิดอยู่"}
             </span>
             <Switch checked={active} onChange={toggle} busy={pending} label={`เปิดใช้กฎ ${rule.name}`} hideLabel />
-            <RuleMenu rule={rule} href={href} />
+            <RuleMenu rule={rule} href={href} rank={rank} total={total} />
           </div>
         </div>
 
@@ -201,7 +203,7 @@ function RuleCard({ rule, rank }: { rule: RuleListItem; rank: number }) {
   );
 }
 
-function RuleMenu({ rule, href }: { rule: RuleListItem; href: string }) {
+function RuleMenu({ rule, href, rank, total }: { rule: RuleListItem; href: string; rank: number; total: number }) {
   return (
     <Menu label={`ตัวเลือกของกฎ ${rule.name}`}>
       <MenuItem href={href} icon={<Pencil />}>
@@ -210,6 +212,30 @@ function RuleMenu({ rule, href }: { rule: RuleListItem; href: string }) {
       <MenuItem action={duplicateRule} fields={{ id: rule.id }} icon={<Copy />} successMessage="ทำสำเนาแล้ว (ปิดไว้ก่อน)">
         ทำสำเนา
       </MenuItem>
+      {total > 1 && (
+        <>
+          <MenuSeparator />
+          {/* ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนกว่า → ย้ายแทนการพิมพ์ "ลำดับความสำคัญ" เอง */}
+          <MenuItem
+            action={moveRule}
+            fields={{ id: rule.id, dir: "up" }}
+            icon={<ArrowUp />}
+            disabled={rank === 1}
+            successMessage={`ย้าย “${rule.name}” ขึ้นแล้ว`}
+          >
+            ย้ายขึ้น
+          </MenuItem>
+          <MenuItem
+            action={moveRule}
+            fields={{ id: rule.id, dir: "down" }}
+            icon={<ArrowDown />}
+            disabled={rank === total}
+            successMessage={`ย้าย “${rule.name}” ลงแล้ว`}
+          >
+            ย้ายลง
+          </MenuItem>
+        </>
+      )}
       <MenuSeparator />
       <MenuItem
         action={deleteRule}
@@ -232,27 +258,28 @@ function RuleMenu({ rule, href }: { rule: RuleListItem; href: string }) {
 const PLATFORM_NAME: Record<Platform, string> = { facebook: "Facebook", instagram: "Instagram" };
 
 /** ขอบเขตโพสต์ของกฎคอมเมนต์ → ไอคอน + ข้อความสั้น (+ คำอธิบายตอนชี้) */
+// ใช้คำและไอคอนชุดเดียวกับการ์ด "เมื่อ…" ในหน้าแก้กฎ
 function postScopeLabel(rule: RuleListItem): { icon: ReactNode; text: string; title: string; tone?: "warning" } {
   if (rule.postScope === "specific") {
     return rule.postCount > 0
-      ? { icon: <Pin />, text: `${formatNumber(rule.postCount)} โพสต์ที่เลือก`, title: "ใช้กับโพสต์ที่เลือกไว้เท่านั้น" }
-      : { icon: <Pin />, text: "ยังไม่ได้เลือกโพสต์", title: "เลือกโพสต์ในหน้าแก้ไขกฎ", tone: "warning" };
+      ? { icon: <ListChecks />, text: `${formatNumber(rule.postCount)} โพสต์/รีลที่เลือก`, title: "ใช้กับโพสต์หรือรีลที่เลือกไว้เท่านั้น" }
+      : { icon: <ListChecks />, text: "ยังไม่ได้เลือกโพสต์หรือรีล", title: "เลือกโพสต์หรือรีลในหน้าแก้ไขกฎ", tone: "warning" };
   }
   if (rule.postScope === "next") {
     const bound = rule.platforms.filter((p) => rule.boundPlatforms.includes(p));
     if (bound.length === 0) {
-      return { icon: <Hourglass />, text: "รอโพสต์ถัดไป", title: "ระบบจะผูกกฎนี้กับโพสต์หรือรีลถัดไปที่คุณลงให้อัตโนมัติ" };
+      return { icon: <CalendarClock />, text: "รอโพสต์หรือรีลถัดไป", title: "ระบบจะผูกกฎนี้กับโพสต์หรือรีลถัดไปที่คุณลงให้อัตโนมัติ" };
     }
     if (bound.length === rule.platforms.length) {
-      return { icon: <Pin />, text: "ผูกกับโพสต์ใหม่แล้ว", title: "ใช้กับโพสต์ใหม่ที่ระบบผูกไว้ให้แล้ว" };
+      return { icon: <CalendarClock />, text: "ผูกกับโพสต์/รีลใหม่แล้ว", title: "ใช้กับโพสต์หรือรีลใหม่ที่ระบบผูกไว้ให้แล้ว" };
     }
     return {
-      icon: <Pin />,
+      icon: <CalendarClock />,
       text: `ผูก ${bound.map((p) => PLATFORM_NAME[p]).join(", ")} แล้ว`,
-      title: "แพลตฟอร์มที่เหลือยังรอโพสต์ถัดไป",
+      title: "แพลตฟอร์มที่เหลือยังรอโพสต์หรือรีลถัดไป",
     };
   }
-  return { icon: <Newspaper />, text: "ทุกโพสต์", title: "ใช้กับทุกโพสต์และรีล" };
+  return { icon: <Layers />, text: "ทุกโพสต์และรีล", title: "ใช้กับทุกโพสต์และรีล" };
 }
 
 /** เงื่อนไข: แพลตฟอร์ม · คำที่ต้องมี · โพสต์ */
@@ -381,7 +408,7 @@ function FlowSummary({ rule, className }: { rule: RuleListItem; className?: stri
   );
 }
 
-/** สถิติย่อแบบ ManyChat: ทำงานกี่ครั้ง · CTR (คนที่กดปุ่ม/ลิงก์ ÷ คนที่ได้รับข้อความ) */
+/** สถิติย่อแบบ ManyChat: ทำงานกี่ครั้ง · อัตราการกด (คนที่กดปุ่ม/ลิงก์ จากคนที่ได้รับข้อความ) */
 function RuleStats({ rule, className }: { rule: RuleListItem; className?: string }) {
   return (
     <dl className={cx("flex items-center gap-4 text-xs leading-5", className)}>
@@ -392,8 +419,8 @@ function RuleStats({ rule, className }: { rule: RuleListItem; className?: string
           <span className="text-sm font-semibold text-fg tabular">{formatNumber(rule.runs)}</span> ครั้ง
         </dd>
       </div>
-      <div className="flex items-center gap-1.5" title={rule.hasButtons ? CTR_HINT : "กฎนี้ไม่มีปุ่ม จึงไม่มี CTR"}>
-        <dt className="text-fg-3">CTR</dt>
+      <div className="flex items-center gap-1.5" title={rule.hasButtons ? CTR_HINT : "กฎนี้ไม่มีปุ่ม จึงไม่มีอัตราการกด"}>
+        <dt className="text-fg-3">อัตราการกด</dt>
         <dd className="text-fg-2">
           <span className="text-sm font-semibold text-fg tabular">{rule.hasButtons ? formatPercent(rule.ctr) : "–"}</span>
           {!rule.hasButtons && <span className="ml-1 text-fg-3">(ไม่มีปุ่ม)</span>}

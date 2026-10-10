@@ -14,7 +14,8 @@ describe("nextPostState", () => {
 
   it("บันทึกซ้ำโดยไม่ได้เปลี่ยน → คงเวลาเริ่มรอและโพสต์ที่ผูกไว้ ยกเว้นกดเริ่มรอใหม่", () => {
     const prev = { postScope: "next" as const, nextPostSince: T0, boundPosts: bound };
-    expect(nextPostState(prev, "next", false, NOW)).toEqual({ nextPostSince: T0, boundPosts: bound });
+    // {} = ไม่เขียนทับค่าในฐานข้อมูล (worker อาจเพิ่งผูกโพสต์ไประหว่างนั้น)
+    expect(nextPostState(prev, "next", false, NOW)).toEqual({});
     expect(nextPostState(prev, "next", true, NOW)).toEqual({ nextPostSince: NOW, boundPosts: {} });
   });
 
@@ -67,5 +68,14 @@ describe("ฟอร์ม: ใช้กับโพสต์ไหน", () => {
     expect(next.ok && next.data).toMatchObject({ postScope: "next", postIds: [] });
     const dm = validateRule(formDataToValues(form({ postScope: "next", trigger: "dm" })));
     expect(dm.ok && dm.data.postScope).toBe("any");
+  });
+
+  it("ID ที่เป็นลิงก์หรือยาวเกิน → แจ้งเป็นภาษาไทย", () => {
+    const link = validateRule(formDataToValues(form({ postScope: "specific", postIdsManual: "https://www.instagram.com/reel/C8xYz12AbCd/" })));
+    expect(link).toMatchObject({ ok: false, error: expect.stringContaining("ไม่ใช่ลิงก์") });
+    const long = validateRule(formDataToValues(form({ postScope: "specific" }, ["1".repeat(101)])));
+    expect(long).toMatchObject({ ok: false, error: "ID โพสต์ยาวเกินไป" });
+    const ok = validateRule(formDataToValues(form({ postScope: "specific", postIdsManual: "123_456\n17912345678901234" })));
+    expect(ok.ok && ok.data.postIds).toEqual(["123_456", "17912345678901234"]);
   });
 });

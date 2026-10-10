@@ -28,6 +28,8 @@ interface KnownPost {
   createdMs: number;
   caption: string;
   permalink: string | null;
+  /** Facebook: id ของคนที่ลงโพสต์ (null = ไม่รู้) */
+  fromId: string | null;
 }
 
 const postCache = new Map<string, { post: KnownPost; expires: number }>();
@@ -71,7 +73,7 @@ async function lookupPost(platform: Platform, postId: string, token: string): Pr
   const createdMs = parseGraphTime(info.createdAt);
   if (createdMs === null) throw new Error("Meta ไม่ได้บอกเวลาที่ลงโพสต์นี้");
   // เก็บด้วย id ที่ได้จาก webhook เพื่อให้คอมเมนต์ถัดไปเจอในแคช
-  const post: KnownPost = { id: postId, createdMs, caption: info.caption, permalink: info.permalink };
+  const post: KnownPost = { id: postId, createdMs, caption: info.caption, permalink: info.permalink, fromId: info.fromId };
   remember(platform, post);
   return post;
 }
@@ -84,7 +86,8 @@ async function listRecent(platform: Platform, accountId: string, token: string):
   return list.flatMap((p) => {
     const createdMs = parseGraphTime(p.createdAt);
     if (createdMs === null) return [];
-    const post: KnownPost = { id: p.id, createdMs, caption: p.caption, permalink: p.permalink };
+    // รายการนี้มีแต่โพสต์ที่บัญชีลงเอง
+    const post: KnownPost = { id: p.id, createdMs, caption: p.caption, permalink: p.permalink, fromId: accountId };
     remember(platform, post);
     return [post];
   });
@@ -138,6 +141,12 @@ export async function resolveNextPost(
 
     const accountId = platform === "instagram" ? page.igUserId : page.id;
     const recent = accountId ? await listRecent(platform, accountId, page.token) : [];
+    // Facebook: คนอื่นโพสต์บนหน้าเพจได้ (visitor post) → ห้ามผูกกับโพสต์ที่เพจไม่ได้ลงเอง
+    // (ไม่งั้นใครก็แย่งกฎไปได้ด้วยการโพสต์บนหน้าเพจแล้วคอมเมนต์คำที่ตั้งไว้)
+    // Instagram ส่งคอมเมนต์มาเฉพาะโพสต์ของบัญชีเองอยู่แล้ว
+    const ownPost =
+      platform === "instagram" || commented.fromId === page.id || recent.some((p) => postIdMatches([p.id], postId));
+    if (!ownPost) return false;
     // โพสต์ที่เพิ่งลงอาจยังไม่โผล่ในรายการ จึงนับโพสต์ที่คอมเมนต์เป็นตัวเลือกด้วยเสมอ
     const candidates = [commented, ...recent.filter((p) => !postIdMatches([p.id], postId))].filter(
       (p) => p.createdMs >= sinceFloor(since),
@@ -237,7 +246,7 @@ export async function bindPublishedFacebookPost(
   post: { id: string; createdMs: number | null; caption: string },
 ): Promise<number> {
   const createdMs = post.createdMs ?? Date.now();
-  const known: KnownPost = { id: post.id, createdMs, caption: post.caption, permalink: null };
+  const known: KnownPost = { id: post.id, createdMs, caption: post.caption, permalink: null, fromId: pageId };
   remember("facebook", known);
 
   const waiting = await db.query.rules.findMany({

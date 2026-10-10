@@ -189,6 +189,31 @@ describe("กฎแบบ 'โพสต์/รีลถัดไป' — ผู�
     expect(sentMessages()).toHaveLength(1);
   });
 
+  it("คนอื่นมาโพสต์บนหน้าเพจ (visitor post) แล้วคอมเมนต์ → ไม่ผูก กฎยังรอโพสต์ของเพจเอง", async () => {
+    graph.setPosts([
+      // โพสต์ของคนอื่นบนหน้าเพจ: ดูรายละเอียดได้ แต่ไม่อยู่ในรายการโพสต์ของเพจ
+      { id: "PAGE1_VISITOR", platform: "facebook", createdAt: at(5), caption: "โพสต์ของคนอื่น", hidden: true, from: "ATTACKER" },
+      { id: "PAGE1_REAL", platform: "facebook", createdAt: at(30), caption: "รีลจริงของเพจ" },
+    ]);
+    const rule = await nextRule();
+    await deliver(fbComment({ postId: "PAGE1_VISITOR", commentId: "C1", fromId: "ATTACKER" }));
+    expect(sentMessages()).toHaveLength(0);
+    expect(await boundOf(rule.id)).toEqual({});
+    expect(await eventsOf("post_bound")).toHaveLength(0);
+
+    await deliver(fbComment({ postId: "PAGE1_REAL", commentId: "C2", fromId: "CUSTOMER" }));
+    expect((await boundOf(rule.id)).facebook?.id).toBe("PAGE1_REAL");
+    expect(sentMessages().map((c) => c.body!.recipient)).toEqual([{ comment_id: "C2" }]);
+  });
+
+  it("โพสต์ของเพจที่เพิ่งลง (ยังไม่อยู่ในรายการ) ยังผูกได้ เพราะ Meta บอกว่าเพจเป็นคนลง", async () => {
+    graph.setPosts([{ id: "PAGE1_FRESH", platform: "facebook", createdAt: at(1), hidden: true }]);
+    const rule = await nextRule();
+    await deliver(fbComment({ postId: "PAGE1_FRESH", commentId: "C1" }));
+    expect((await boundOf(rule.id)).facebook?.id).toBe("PAGE1_FRESH");
+    expect(sentMessages()).toHaveLength(1);
+  });
+
   it("ถาม Meta ไม่สำเร็จ → ไม่ผูก ไม่ส่ง และบันทึก 'ข้าม' พร้อมสาเหตุให้เห็นในหน้ากิจกรรม", async () => {
     graph.setPosts(POSTS());
     graph.failWhen((c) => c.path === "/PAGE1_NEW1");
@@ -285,7 +310,7 @@ describe("กฎแบบ 'โพสต์/รีลถัดไป' — ผู�
     expect(before.boundPosts.facebook?.id).toBe("PAGE1_NEW1");
 
     // แก้ข้อความโดยไม่ได้กดเริ่มรอใหม่ → คงการผูกไว้
-    expect(nextPostState(before, "next", false, new Date())).toEqual({ nextPostSince: before.nextPostSince, boundPosts: before.boundPosts });
+    expect(nextPostState(before, "next", false, new Date())).toEqual({});
 
     const rearmed = nextPostState(before, "next", true, new Date());
     expect(rearmed.boundPosts).toEqual({});

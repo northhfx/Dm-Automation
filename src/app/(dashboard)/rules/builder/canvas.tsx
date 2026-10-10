@@ -38,7 +38,7 @@ import {
   type Selection,
   type Sizes,
 } from "./model";
-import { MessageNode, TriggerNode } from "./nodes";
+import { MessageNode, NODE_TOOLBAR_W, TriggerNode } from "./nodes";
 
 export interface CanvasApi {
   /** ซูมให้เห็นการ์ดทั้งหมด */
@@ -58,6 +58,8 @@ interface Props {
   stepErrors: Map<string, string>;
   unreachable: Set<string>;
   triggerProblem: boolean;
+  /** เคยกดบันทึกแล้วไม่ผ่าน → สิ่งที่ต้องแก้เป็นสีแดง */
+  showErrors: boolean;
   stats?: Record<string, StepStats>;
   /** การ์ดจัดวางเสร็จแล้ว (พร้อมซูมให้พอดีจอ) */
   ready: boolean;
@@ -149,7 +151,8 @@ export function FlowCanvas(props: Props) {
       // เลื่อนน้อยที่สุดเท่าที่จำเป็นให้เห็นการ์ดทั้งใบ (การ์ดสูงมาก: ให้เห็นส่วนหัวก่อน)
       const margin = 24;
       const top = 64;
-      const bw = b.w * v.zoom;
+      // แถบปุ่ม แก้ไข/ทำสำเนา/ลบ เหนือการ์ดข้อความมีขนาดคงที่บนจอ (กว้างกว่าการ์ดตอนซูมออก) → เผื่อที่ให้เห็นครบ
+      const bw = Math.max(b.w * v.zoom, node === TRIGGER_NODE ? 0 : NODE_TOOLBAR_W);
       const bh = Math.min(b.h * v.zoom, h - top - margin);
       let dx = 0;
       let dy = 0;
@@ -509,7 +512,13 @@ export function FlowCanvas(props: Props) {
           )}
         </svg>
 
-        <TriggerNode doc={doc} selected={selection?.kind === "trigger"} problem={props.triggerProblem} onMeasure={props.onMeasure} />
+        <TriggerNode
+          doc={doc}
+          selected={selection?.kind === "trigger"}
+          problem={props.triggerProblem}
+          showErrors={props.showErrors}
+          onMeasure={props.onMeasure}
+        />
         {doc.steps.map((step) => {
           const pos = doc.positions[step.id] ?? { x: 0, y: 0 };
           return (
@@ -525,6 +534,7 @@ export function FlowCanvas(props: Props) {
               linking={!!link && (link.from.kind === "trigger" || link.from.stepId !== step.id)}
               unreachable={unreachable.has(step.id)}
               error={stepErrors.get(step.id)}
+              showErrors={props.showErrors}
               stat={stats?.[step.id]}
               stepIds={stepIds}
               zoom={selectedStep === step.id ? view.zoom : 1}
@@ -632,7 +642,7 @@ function ControlButton({ label, onClick, disabled, children }: { label: string; 
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="flex h-9 w-9 items-center justify-center rounded-lg text-fg-2 hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-35"
+      className="flex h-9 w-9 items-center justify-center rounded-lg text-fg-2 pointer-coarse:h-10 pointer-coarse:w-10 hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-35"
     >
       {children}
     </button>

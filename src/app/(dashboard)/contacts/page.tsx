@@ -273,7 +273,9 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                       <th className={tableClass.th}>เจอครั้งแรก</th>
                       <th className={tableClass.th}>ทักมาล่าสุด</th>
                       <th className={cx(tableClass.th, tableClass.num)}>DM ที่ได้รับ</th>
-                      <th className={cx(tableClass.th, tableClass.num)}>คลิก</th>
+                      <th className={cx(tableClass.th, tableClass.num)} title="จำนวนครั้งที่คลิกลิงก์ในข้อความ (ไม่รวมการกดปุ่มที่ส่งข้อความถัดไป)">
+                        คลิกลิงก์
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -319,7 +321,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                       </div>
                       <p className="truncate text-xs leading-5 text-fg-3">
                         {c.name && c.username ? `@${c.username} · ` : ""}
-                        DM {formatNumber(c.sent)} · คลิก {formatNumber(c.clicks)}
+                        DM {formatNumber(c.sent)} · คลิกลิงก์ {formatNumber(c.clicks)}
                       </p>
                     </div>
                   </li>

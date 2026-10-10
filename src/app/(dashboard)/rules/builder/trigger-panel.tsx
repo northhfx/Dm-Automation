@@ -252,7 +252,7 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
           <ChevronDown size={16} className="text-fg-3 transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <div className="px-5 pb-5">
-          <Field label="ลำดับความสำคัญ" htmlFor={`${ids}-prio`} hint="ถ้าข้อความตรงหลายกฎ ระบบใช้กฎที่เลขน้อยกว่า (1–1000)">
+          <Field label="ลำดับความสำคัญ" htmlFor={`${ids}-prio`} hint="ถ้าข้อความตรงหลายกฎ ระบบใช้กฎที่เลขน้อยกว่า (1–1000) · ง่ายกว่านั้น: กดย้ายขึ้น/ลงได้จากปุ่ม ⋮ ในหน้ากฎทั้งหมด">
             <input
               id={`${ids}-prio`}
               type="number"
@@ -485,7 +485,8 @@ function PostTile({ post, selected, onToggle }: { post: RecentPost; selected: bo
           aria-hidden="true"
           className={cx(
             "absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 shadow-xs transition-colors",
-            selected ? "border-accent bg-accent text-accent-fg" : "border-surface bg-surface/70 group-hover/post:bg-surface",
+            // ยังไม่เลือก: วงกลมทึบเกือบเต็ม + ขอบเข้ม ให้เห็นได้บนทุกรูป (รวมรูปสีอ่อน)
+            selected ? "border-accent bg-accent text-accent-fg" : "border-line-strong bg-surface/90 shadow-sm group-hover/post:bg-surface",
           )}
         >
           {selected && <Check size={13} strokeWidth={3} />}

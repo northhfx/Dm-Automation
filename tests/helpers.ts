@@ -23,6 +23,8 @@ export interface MockPost {
   caption?: string;
   /** true = ดูรายละเอียดได้ แต่ยังไม่โผล่ในรายการโพสต์ล่าสุด (เช่น เพิ่งลง) */
   hidden?: boolean;
+  /** Facebook: id ของคนที่ลงโพสต์ (ค่าเริ่มต้น = เพจ "PAGE1") ใช้จำลองโพสต์ของคนอื่นบนหน้าเพจ */
+  from?: string;
 }
 
 /** เวลาในรูปแบบที่ Meta ส่งมา เช่น 2026-10-10T08:00:00+0000 */
@@ -97,7 +99,13 @@ export async function startMockGraph() {
           200,
           post.platform === "instagram"
             ? { id: post.id, caption: post.caption, timestamp: metaTime(post.createdAt), permalink: `https://ig/${post.id}` }
-            : { id: post.id, message: post.caption, created_time: metaTime(post.createdAt), permalink_url: `https://fb/${post.id}` },
+            : {
+                id: post.id,
+                message: post.caption,
+                created_time: metaTime(post.createdAt),
+                permalink_url: `https://fb/${post.id}`,
+                from: { id: post.from ?? "PAGE1" },
+              },
         );
       }
       if (req.method === "GET" && /^\/[^/]+$/.test(path)) {

@@ -109,7 +109,7 @@ export function OverviewPanel({ doc, selection, problems, numbers, serverError, 
             {[
               ["ทำงาน", formatNumber(stats.triggers), "ครั้ง"],
               ["ส่ง DM", formatNumber(stats.sent), "ข้อความ"],
-              ["CTR", formatPercent(stats.ctr), "คนกด ÷ ได้รับ"],
+              ["อัตราการกด", formatPercent(stats.ctr), "จากคนที่ได้รับ"],
             ].map(([label, value, sub]) => (
               <div key={label} className="rounded-lg border border-line bg-surface p-2.5">
                 <dt className="text-xs text-fg-2">{label}</dt>

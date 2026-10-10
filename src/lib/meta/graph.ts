@@ -242,6 +242,8 @@ export interface PostInfo {
   createdAt: string | null;
   caption: string;
   permalink: string | null;
+  /** Facebook: ใครเป็นคนลงโพสต์ (id ของเพจ หรือของคนที่มาโพสต์บนหน้าเพจ) — Instagram เป็น null */
+  fromId: string | null;
 }
 
 /** ดูว่าโพสต์/รีลนี้ลงเมื่อไหร่ (ใช้กับกฎแบบ "โพสต์ถัดไป") */
@@ -251,13 +253,31 @@ export async function getPostInfo(platform: "facebook" | "instagram", postId: st
       token,
       query: { fields: "id,timestamp,caption,permalink" },
     });
-    return { id: data.id ?? postId, createdAt: data.timestamp ?? null, caption: data.caption ?? "", permalink: data.permalink ?? null };
+    return {
+      id: data.id ?? postId,
+      createdAt: data.timestamp ?? null,
+      caption: data.caption ?? "",
+      permalink: data.permalink ?? null,
+      fromId: null,
+    };
   }
-  const data = await graphRequest<{ id?: string; created_time?: string; message?: string; permalink_url?: string }>(`/${postId}`, {
+  const data = await graphRequest<{
+    id?: string;
+    created_time?: string;
+    message?: string;
+    permalink_url?: string;
+    from?: { id?: string };
+  }>(`/${postId}`, {
     token,
-    query: { fields: "id,created_time,message,permalink_url" },
+    query: { fields: "id,created_time,message,permalink_url,from" },
   });
-  return { id: data.id ?? postId, createdAt: data.created_time ?? null, caption: data.message ?? "", permalink: data.permalink_url ?? null };
+  return {
+    id: data.id ?? postId,
+    createdAt: data.created_time ?? null,
+    caption: data.message ?? "",
+    permalink: data.permalink_url ?? null,
+    fromId: data.from?.id ?? null,
+  };
 }
 
 /** แปลงเวลาที่ Meta ส่งมา ("+0000" ไม่มีโคลอน) เป็น ms — อ่านไม่ออกคืน null */

@@ -115,7 +115,8 @@ function OutHandle({ handle, connected, label, className }: { handle: string; co
       aria-label={label}
       title={connected ? "ลากไปการ์ดอื่นเพื่อเปลี่ยน · แตะเพื่อเลือกเส้น" : "ลากไปวางเพื่อสร้าง/เชื่อมข้อความถัดไป · แตะเพื่อสร้างข้อความใหม่"}
       className={cx(
-        "group/handle absolute top-[calc(50%-14px)] flex h-7 w-7 cursor-crosshair items-center justify-center rounded-full focus-visible:outline-none",
+        // จอสัมผัส: ขยายพื้นที่แตะรอบจุด (before) — ตอนซูมออกจุดจะเล็กมาก
+        "group/handle absolute top-[calc(50%-14px)] flex h-7 w-7 cursor-crosshair items-center justify-center rounded-full pointer-coarse:before:absolute pointer-coarse:before:-inset-2 pointer-coarse:before:rounded-full focus-visible:outline-none",
         className,
       )}
     >
@@ -128,6 +129,9 @@ function OutHandle({ handle, connected, label, className }: { handle: string; co
     </button>
   );
 }
+
+/** ความกว้างโดยประมาณของแถบปุ่มเหนือการ์ด (px บนจอ ไม่ขึ้นกับการซูม) */
+export const NODE_TOOLBAR_W = 232;
 
 function NodeToolbar({ zoom, children }: { zoom: number; children: ReactNode }) {
   return (
@@ -149,7 +153,7 @@ function ToolbarButton({ onClick, icon, label, danger }: { onClick: () => void; 
       type="button"
       onClick={onClick}
       className={cx(
-        "inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none",
+        "inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium pointer-coarse:h-10 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none",
         danger ? "text-critical-text hover:bg-critical-soft" : "text-fg-2 hover:bg-surface-2 hover:text-fg",
       )}
     >
@@ -164,8 +168,14 @@ const cardBase =
 
 /* ---------------------------------------------------------------- การ์ด "เมื่อ…" */
 
+/**
+ * สีของสิ่งที่ยังไม่ครบ: ก่อนกดบันทึกครั้งแรกใช้สีเตือน (กฎใหม่ยังไม่ได้กรอกเป็นเรื่องปกติ)
+ * กดบันทึกแล้วไม่ผ่าน (strict) → สีแดง
+ */
+const missingText = (strict: boolean) => (strict ? "text-critical-text" : "text-warning-text");
+
 /** บรรทัดสรุปว่ากฎใช้กับโพสต์/รีลไหน */
-function PostScopeLine({ doc }: { doc: BuilderDoc }) {
+function PostScopeLine({ doc, strict }: { doc: BuilderDoc; strict: boolean }) {
   const row = "flex items-start gap-2";
   const icon = "mt-px shrink-0 text-fg-3";
   if (doc.postScope === "specific") {
@@ -173,7 +183,7 @@ function PostScopeLine({ doc }: { doc: BuilderDoc }) {
     return (
       <li className={row}>
         <ListChecks size={14} className={icon} aria-hidden="true" />
-        {count ? <span>โพสต์/รีลที่เลือก ({count})</span> : <span className="font-medium text-critical-text">ยังไม่ได้เลือกโพสต์หรือรีล</span>}
+        {count ? <span>โพสต์/รีลที่เลือก ({count})</span> : <span className={cx("font-medium", missingText(strict))}>ยังไม่ได้เลือกโพสต์หรือรีล</span>}
       </li>
     );
   }
@@ -221,12 +231,14 @@ interface TriggerNodeProps {
   doc: BuilderDoc;
   selected: boolean;
   problem: boolean;
+  /** เคยกดบันทึกแล้วไม่ผ่าน → แสดงสิ่งที่ต้องแก้เป็นสีแดง */
+  showErrors: boolean;
   onMeasure: (id: string, m: MeasuredNode) => void;
 }
 
 const KEYWORD_LIMIT = 6;
 
-export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, onMeasure }: TriggerNodeProps) {
+export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, showErrors, onMeasure }: TriggerNodeProps) {
   const ref = useMeasure(TRIGGER_NODE, onMeasure);
   const { trigger, platforms, matchType, keywords, triggerPos } = doc;
   const replies = doc.publicReplies.filter((r) => r.trim()).length;
@@ -253,8 +265,13 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, o
         </span>
         <span className="text-sm font-semibold">เมื่อ…</span>
         {problem && (
-          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-critical-soft px-2 py-0.5 text-[11px] font-medium text-critical-text">
-            <CircleAlert size={12} aria-hidden="true" /> ต้องแก้ไข
+          <span
+            className={cx(
+              "ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+              showErrors ? "bg-critical-soft text-critical-text" : "bg-warning-soft text-warning-text",
+            )}
+          >
+            <CircleAlert size={12} aria-hidden="true" /> {showErrors ? "ต้องแก้ไข" : "ยังไม่ครบ"}
           </span>
         )}
       </div>
@@ -267,7 +284,7 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, o
               {platforms.length ? (
                 platforms.map((p) => <PlatformMark key={p} platform={p} withLabel />)
               ) : (
-                <span className="text-critical-text">ยังไม่ได้เลือกแพลตฟอร์ม</span>
+                <span className={missingText(showErrors)}>ยังไม่ได้เลือกแพลตฟอร์ม</span>
               )}
             </div>
           </div>
@@ -291,7 +308,7 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, o
                   )}
                 </div>
               ) : (
-                <div className="text-xs font-medium text-critical-text">ยังไม่ได้ใส่คำ</div>
+                <div className={cx("text-xs font-medium", missingText(showErrors))}>ยังไม่ได้ใส่คำ</div>
               )}
             </>
           )}
@@ -299,7 +316,7 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, o
 
         {trigger === "comment" && (
           <ul className="space-y-1.5 text-xs text-fg-2">
-            <PostScopeLine doc={doc} />
+            <PostScopeLine doc={doc} strict={showErrors} />
             <li className="flex items-center gap-2">
               {replies ? (
                 <MessageSquareReply size={14} className="shrink-0 text-fg-3" aria-hidden="true" />
@@ -312,9 +329,9 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, o
         )}
       </div>
       <div className="relative flex h-11 items-center justify-end gap-2 border-t border-line px-3.5 text-xs">
-        {!connected && <span className="mr-auto font-medium text-critical-text">ยังไม่ได้เชื่อมข้อความแรก</span>}
-        <span className="font-medium text-fg-2">แล้ว</span>
-        <OutHandle handle="out" connected={connected} label="จุดต่อ แล้ว — ลากไปที่ข้อความแรก" className="-right-[15px]" />
+        {!connected && <span className={cx("mr-auto font-medium", missingText(showErrors))}>ยังไม่ได้เชื่อมข้อความแรก</span>}
+        <span className="font-medium text-fg-2">แล้วส่ง</span>
+        <OutHandle handle="out" connected={connected} label="จุดต่อ แล้วส่ง — ลากไปที่ข้อความแรก" className="-right-[15px]" />
       </div>
     </div>
   );
@@ -335,6 +352,8 @@ interface MessageNodeProps {
   linking: boolean;
   unreachable: boolean;
   error?: string;
+  /** เคยกดบันทึกแล้วไม่ผ่าน → ขอบการ์ดที่มีปัญหาเป็นสีแดง (ก่อนหน้านั้นสีเตือน) */
+  showErrors: boolean;
   stat?: StepStats;
   /** id ของข้อความที่มีอยู่จริง (ไว้ดูว่าปุ่มเชื่อมแล้วหรือยัง) */
   stepIds: Set<string>;
@@ -346,7 +365,7 @@ interface MessageNodeProps {
 }
 
 export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
-  const { step, number, isStart, x, y, selected, dropTarget, linking, unreachable, error, stat, stepIds, zoom } = props;
+  const { step, number, isStart, x, y, selected, dropTarget, linking, unreachable, error, showErrors, stat, stepIds, zoom } = props;
   const ref = useMeasure(step.id, props.onMeasure);
   const text = step.text.trim();
   const ctr = stepCtr(stat);
@@ -365,7 +384,9 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
           : selected
             ? "border-accent ring-[3px] ring-accent/25"
             : error
-              ? "border-critical/60 hover:border-critical"
+              ? showErrors
+                ? "border-critical/60 hover:border-critical"
+                : "border-warning/70 hover:border-warning"
               : unreachable
                 ? "border-dashed border-fg-3/60 hover:border-fg-3"
                 : "border-line hover:border-fg-3/50",
@@ -442,7 +463,7 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
       {((error && text) || unreachable) && (
         <div className="space-y-1 border-t border-line px-3.5 py-2">
           {error && text && (
-            <div className="flex items-start gap-1.5 text-xs font-medium text-critical-text" title={error}>
+            <div className={cx("flex items-start gap-1.5 text-xs font-medium", missingText(showErrors))} title={error}>
               <CircleAlert size={13} className="mt-px shrink-0" aria-hidden="true" />
               <span className="line-clamp-2">{error.replace(/^ข้อความที่ \d+\s*/, "").replace(/^:\s*/, "")}</span>
             </div>
@@ -465,7 +486,7 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
             <>
               <span aria-hidden="true">·</span>
               <span>
-                CTR <span className="font-semibold text-fg">{formatPercent(ctr)}</span>
+                อัตราการกด <span className="font-semibold text-fg">{formatPercent(ctr)}</span>
               </span>
             </>
           )}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { MouseEvent, Ref } from "react";
+import type { Ref } from "react";
 import { ArrowLeft, Check, Copy, Save, Trash2 } from "lucide-react";
 import { Menu, MenuItem, MenuSeparator } from "@/components/menu";
 import { Switch } from "@/components/switch";
@@ -21,16 +21,13 @@ interface Props {
   onName: (name: string) => void;
   onActive: (active: boolean) => void;
   onSave: () => void;
-  /** กดกลับขณะมีการแก้ที่ยังไม่บันทึก */
-  onLeave: (e: MouseEvent<HTMLAnchorElement>) => void;
 }
 
-export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pending, stats, onName, onActive, onSave, onLeave }: Props) {
+export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pending, stats, onName, onActive, onSave }: Props) {
   return (
     <header className="relative z-20 flex h-16 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 sm:gap-3 sm:px-4">
       <Link
         href="/rules"
-        onClick={onLeave}
         aria-label="กลับไปหน้ากฎทั้งหมด"
         title="กฎทั้งหมด"
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-fg-2 transition-colors hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
@@ -55,7 +52,7 @@ export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pend
         />
         {stats && (
           <p className="hidden truncate px-2 text-xs text-fg-3 tabular sm:block">
-            ทำงาน {formatNumber(stats.triggers)} ครั้ง · CTR {formatPercent(stats.ctr)}
+            ทำงาน {formatNumber(stats.triggers)} ครั้ง · อัตราการกด {formatPercent(stats.ctr)}
           </p>
         )}
       </div>
@@ -64,8 +61,12 @@ export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pend
         <span className="hidden md:block">
           <Switch checked={active} onChange={onActive} label="เปิดใช้งาน" size="sm" />
         </span>
-        <span className="md:hidden">
+        {/* จอเล็ก: บอกสถานะสั้นๆ ข้างสวิตช์ (ไม่งั้นดูไม่ออกว่าสวิตช์นี้คืออะไร) */}
+        <span className="flex items-center gap-1 md:hidden">
           <Switch checked={active} onChange={onActive} label="เปิดใช้งาน" hideLabel size="sm" />
+          <span aria-hidden="true" className={cx("text-xs font-medium", active ? "text-good-text" : "text-fg-3")}>
+            {active ? "เปิด" : "ปิด"}
+          </span>
         </span>
 
         <span
@@ -92,6 +93,17 @@ export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pend
               fields={{ id: ruleId }}
               icon={<Copy />}
               hint={dirty ? "ฉบับที่บันทึกล่าสุด" : undefined}
+              // ทำสำเนาแล้วจะไปหน้าของสำเนาทันที → ถามก่อนถ้ายังมีการแก้ที่ไม่ได้บันทึก
+              confirm={
+                dirty
+                  ? {
+                      title: "ทำสำเนาจากฉบับที่บันทึกล่าสุด?",
+                      description: "การแก้ที่ยังไม่ได้บันทึกในกฎนี้จะหายไป ถ้าต้องการเก็บไว้ ให้กดบันทึกก่อน",
+                      confirmLabel: "ทำสำเนา",
+                      tone: "primary",
+                    }
+                  : undefined
+              }
               successMessage="ทำสำเนาแล้ว (ปิดไว้ก่อน)"
             >
               ทำสำเนา

@@ -11,6 +11,13 @@ export function postIdMatches(ruleIds: string[], postId: string | null | undefin
   });
 }
 
+/** ID ของโพสต์/รีลมีแค่ตัวเลข ตัวอักษร _ และ - (ลิงก์ เช่น https://www.instagram.com/reel/… ใช้แทนไม่ได้) */
+export function isPostId(id: string): boolean {
+  return /^[A-Za-z0-9_-]{1,100}$/.test(id);
+}
+
+export const INVALID_POST_ID_MESSAGE = "ใส่ ID ของโพสต์ ไม่ใช่ลิงก์ — เลือกจากรายการโพสต์ล่าสุดด้านบนแทนได้";
+
 export const POST_SCOPES: readonly PostScope[] = ["specific", "next", "any"];
 
 export function isPostScope(value: unknown): value is PostScope {
@@ -27,6 +34,7 @@ interface PostScopeState {
  * สถานะ "โพสต์ถัดไป" หลังบันทึกกฎ:
  * - เพิ่งเปลี่ยนมาใช้ "โพสต์ถัดไป" (หรือกฎใหม่ หรือกด "เริ่มรอใหม่") → เริ่มรอโพสต์ที่ลงตั้งแต่ตอนนี้
  * - ใช้ "โพสต์ถัดไป" อยู่แล้ว → คงเวลาเริ่มรอและโพสต์ที่ผูกไว้ (แก้ข้อความทีหลังไม่ทำให้เริ่มนับใหม่)
+ *   คืน {} = ไม่ต้องเขียนสองช่องนี้เลย (worker อาจเพิ่งผูกโพสต์ระหว่างที่อ่านกับบันทึก → ห้ามเขียนค่าเก่าทับ)
  * - แบบอื่น → ล้างทิ้ง
  */
 export function nextPostState(
@@ -34,12 +42,12 @@ export function nextPostState(
   postScope: PostScope,
   rearm: boolean,
   now: Date,
-): Pick<PostScopeState, "nextPostSince" | "boundPosts"> {
+): Partial<Pick<PostScopeState, "nextPostSince" | "boundPosts">> {
   if (postScope !== "next") return { nextPostSince: null, boundPosts: {} };
   if (!previous || previous.postScope !== "next" || rearm || !previous.nextPostSince) {
     return { nextPostSince: now, boundPosts: {} };
   }
-  return { nextPostSince: previous.nextPostSince, boundPosts: previous.boundPosts ?? {} };
+  return {};
 }
 
 export interface ScopedRule {

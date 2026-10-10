@@ -56,7 +56,7 @@ const TEMPLATES: TemplateOption[] = [
   },
   {
     id: "dm",
-    title: "ตอบแชทตาม keyword",
+    title: "ตอบแชทตามคำที่ลูกค้าพิมพ์",
     description: "ลูกค้าทักแชทว่า “ราคา” ระบบตอบกลับพร้อมลิงก์ให้ทันที",
     icon: <MessagesSquare />,
     flow: [
