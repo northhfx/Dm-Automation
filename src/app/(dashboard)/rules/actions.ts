@@ -12,7 +12,7 @@ export async function saveRule(prev: RuleFormState, formData: FormData): Promise
   await requireAuth();
   const values = formDataToValues(formData);
   const result = validateRule(values);
-  if (!result.ok) return { error: result.error, values, attempt: (prev.attempt ?? 0) + 1 };
+  if (!result.ok) return { error: result.error, errorStepId: result.stepId, values, attempt: (prev.attempt ?? 0) + 1 };
 
   const db = getDb();
   if (values.id) {
@@ -32,6 +32,23 @@ export async function toggleRule(formData: FormData): Promise<void> {
     .set({ active: not(rules.active), updatedAt: new Date() })
     .where(eq(rules.id, id));
   revalidatePath("/rules");
+}
+
+/** ทำสำเนากฎ (ปิดไว้ก่อน จะได้ไม่ตอบซ้ำกับกฎเดิม) */
+export async function duplicateRule(formData: FormData): Promise<void> {
+  await requireAuth();
+  const id = Number(formData.get("id"));
+  const db = getDb();
+  const rule = Number.isInteger(id) ? await db.query.rules.findFirst({ where: eq(rules.id, id) }) : undefined;
+  if (!rule) return;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ไม่คัดลอก id/วันที่
+  const { id: _id, createdAt, updatedAt, ...copy } = rule;
+  const [created] = await db
+    .insert(rules)
+    .values({ ...copy, name: `${rule.name} (สำเนา)`.slice(0, 100), active: false })
+    .returning({ id: rules.id });
+  revalidatePath("/rules");
+  redirect(`/rules/${created.id}`);
 }
 
 export async function deleteRule(formData: FormData): Promise<void> {

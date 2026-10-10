@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { layoutFlow } from "@/lib/flows/layout";
-import { validateSteps } from "@/lib/flows/validate";
+import { sanitizeCanvas, validateSteps } from "@/lib/flows/validate";
 import { fitText, measuredLength, type FlowStep } from "@/lib/flows/types";
 
 const good: FlowStep[] = [
@@ -41,12 +41,17 @@ describe("validateSteps", () => {
   });
 
   it("ปุ่มส่งข้อความถัดไปต้องชี้ไปข้อความอื่นที่มีอยู่จริง", () => {
-    expect(errorOf([{ ...good[0], buttons: [{ ...good[0].buttons[0], nextStepId: "missing" }] }, good[1]])).toContain("เลือกว่ากดแล้ว");
-    expect(errorOf([{ ...good[0], buttons: [{ ...good[0].buttons[0], nextStepId: "s1" }] }, good[1]])).toContain("เลือกว่ากดแล้ว");
+    expect(errorOf([{ ...good[0], buttons: [{ ...good[0].buttons[0], nextStepId: "missing" }] }, good[1]])).toContain("ยังไม่ได้เชื่อม");
+    expect(errorOf([{ ...good[0], buttons: [{ ...good[0].buttons[0], nextStepId: "s1" }] }, good[1]])).toContain("ยังไม่ได้เชื่อม");
   });
 
-  it("ข้อความที่ไม่มีปุ่มไหนพาไปถึง ไม่ให้บันทึก", () => {
-    expect(errorOf([{ ...good[0], buttons: [] }, good[1]])).toContain("ข้อความที่ 2: ยังไม่มีปุ่มไหนพามา");
+  it("บอกว่าข้อความไหนมีปัญหา เพื่อให้หน้าแก้ไขเลือกการ์ดนั้น", () => {
+    const result = validateSteps([good[0], { ...good[1], text: "" }]);
+    expect(result).toMatchObject({ ok: false, stepId: "s2" });
+  });
+
+  it("ข้อความที่ยังไม่มีปุ่มพาไปถึงบันทึกได้ (การ์ดร่าง)", () => {
+    expect(validateSteps([{ ...good[0], buttons: [] }, good[1]]).ok).toBe(true);
   });
 
   it("ไม่เกิน 3 ปุ่มต่อข้อความ และกัน id ซ้ำ/แปลก", () => {
@@ -93,5 +98,23 @@ describe("layoutFlow (แผนผัง)", () => {
     ];
     expect(layoutFlow(steps)).toEqual({ columns: [["s1"]], unreachable: ["s2"] });
     expect(layoutFlow([])).toEqual({ columns: [], unreachable: [] });
+  });
+});
+
+describe("sanitizeCanvas", () => {
+  it("เก็บเฉพาะตำแหน่งที่ถูกต้องของการ์ดที่มีอยู่จริง และปัดเป็นจำนวนเต็ม", () => {
+    expect(
+      sanitizeCanvas(
+        { trigger: { x: 10.4, y: -3.6 }, steps: { s1: { x: 1, y: 2 }, gone: { x: 5, y: 5 }, s2: { x: "a", y: 1 }, s3: { x: null, y: 0 } } },
+        ["s1", "s2", "s3"],
+      ),
+    ).toEqual({ trigger: { x: 10, y: -4 }, steps: { s1: { x: 1, y: 2 } } });
+  });
+
+  it("ข้อมูลผิดรูปแบบไม่ทำให้พัง และตัดค่าที่ใหญ่ผิดปกติ", () => {
+    expect(sanitizeCanvas(null, ["s1"])).toEqual({});
+    expect(sanitizeCanvas("x", ["s1"])).toEqual({});
+    expect(sanitizeCanvas({ steps: { s1: { x: 1e12, y: -1e12 } } }, ["s1"])).toEqual({ steps: { s1: { x: 100000, y: -100000 } } });
+    expect(sanitizeCanvas({ steps: { __proto__: { x: 1, y: 1 } } }, ["__proto__"])).toEqual({});
   });
 });

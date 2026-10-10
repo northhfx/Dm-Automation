@@ -1,4 +1,4 @@
-import type { FlowStep } from "@/lib/flows/types";
+import type { FlowCanvas, FlowStep } from "@/lib/flows/types";
 import {
   bigserial,
   boolean,
@@ -43,6 +43,8 @@ export const rules = pgTable("rules", {
   publicReplies: text("public_replies").array().notNull().default([]),
   /** ข้อความที่จะส่ง ข้อความแรกคือข้อความเริ่มต้น ข้อความถัดไปส่งเมื่อลูกค้ากดปุ่ม */
   steps: jsonb("steps").$type<FlowStep[]>().notNull().default([]),
+  /** ตำแหน่งการ์ดบนแผนผังที่ผู้ใช้จัดเอง (null = จัดเรียงอัตโนมัติ) */
+  canvas: jsonb("canvas").$type<FlowCanvas>(),
   oncePerUser: boolean("once_per_user").notNull().default(true),
   priority: integer("priority").notNull().default(100),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

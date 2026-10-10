@@ -21,9 +21,21 @@ export interface FlowStep {
   buttons: FlowButton[];
 }
 
+/** ตำแหน่งการ์ดบนแผนผัง (หน่วยเป็นพิกเซลของแผนผังตอนซูม 100%) */
+export interface CanvasPoint {
+  x: number;
+  y: number;
+}
+
+/** ตำแหน่งการ์ดที่ผู้ใช้ลากจัดไว้เอง — ใช้แสดงผลเท่านั้น ไม่มีผลกับการส่งข้อความ */
+export interface FlowCanvas {
+  trigger?: CanvasPoint;
+  steps?: Record<string, CanvasPoint>;
+}
+
 /** ลิมิตของ Messenger / Instagram */
 export const FLOW_LIMITS = {
-  maxSteps: 10,
+  maxSteps: 20,
   maxButtons: 3,
   buttonTitle: 20,
   textWithButtons: 640,
