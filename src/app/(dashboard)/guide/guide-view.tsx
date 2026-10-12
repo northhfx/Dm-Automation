@@ -391,11 +391,28 @@ export function GuideView({ status, pages }: { status: SetupStatus; pages: Conne
                 </p>
               </SubStep>
             </SubSteps>
-            {status.lastWebhookAt ? (
+            {status.badSignatureAt ? (
+              <Notice tone="critical" title="Meta ส่งข้อมูลมาแล้ว แต่ App Secret ในระบบไม่ตรงกับใน Meta" actions={<RefreshButton />}>
+                ระบบเลยไม่รับข้อมูล (ครั้งล่าสุด {formatDateTime(status.badSignatureAt)}) — มักเกิดจากกด <B>รีเซ็ต</B> App Secret ใน Meta
+                หลังบันทึกในระบบ วิธีแก้: หน้าแอปใน Meta → <B>การตั้งค่าแอป → ข้อมูลพื้นฐาน</B> → คัดลอก <B>ข้อมูลลับของแอป</B> ล่าสุด
+                แล้ววางใหม่ใน{" "}
+                <Link href="/settings#meta-app" className="font-medium text-accent underline-offset-2 hover:underline">
+                  ตั้งค่า → Meta App
+                </Link>{" "}
+                จากนั้นลองคอมเมนต์อีกครั้ง
+              </Notice>
+            ) : status.lastWebhookAt ? (
               <Notice tone="good">ระบบได้รับข้อมูลจาก Meta แล้ว (ล่าสุด {formatDateTime(status.lastWebhookAt)})</Notice>
             ) : (
-              <Notice tone="neutral" actions={<RefreshButton />}>
-                ยังไม่เคยได้รับข้อมูลจาก Meta — ถ้าทดสอบแล้วยังไม่ขึ้น ตรวจขั้นที่ 3 ว่ากด Subscribe ครบทุกแถว
+              <Notice tone="neutral" title="ยังไม่เคยได้รับข้อมูลจาก Meta" actions={<RefreshButton />}>
+                <ol className="mt-1 list-decimal space-y-1 pl-5">
+                  <li>คอมเมนต์ด้วยบัญชีส่วนตัวที่เป็นแอดมินของแอป ไม่ใช่คอมเมนต์ในนามเพจ</li>
+                  <li>
+                    ลองเช็กการเชื่อมต่อ: หน้า Webhooks ใน Meta เลือก <B>Page</B> → กด <B>ทดสอบ</B> ที่แถว <B>feed</B> แล้วกด
+                    &quot;ตรวจสอบอีกครั้ง&quot; ที่นี่ ถ้าขึ้นว่าได้รับแล้ว แปลว่าการเชื่อมต่อใช้ได้
+                  </li>
+                  <li>ตรวจขั้นที่ 3 ว่าเปิดสวิตช์ (Subscribe) ครบทุกแถว</li>
+                </ol>
               </Notice>
             )}
           </StepCard>

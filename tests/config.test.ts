@@ -9,6 +9,7 @@ import {
   getPublicBaseUrl,
   getSetupStatus,
   isPasswordSet,
+  markWebhookBadSignature,
   rememberBaseUrlFromHeaders,
   saveMetaApp,
   setPassword,
@@ -18,7 +19,7 @@ import {
 import { getAuthSecret } from "@/lib/env";
 import { listConnectedPages } from "@/lib/pages";
 import { drainQueue } from "@/lib/queue/worker";
-import { GET as verifyWebhook } from "@/app/api/webhooks/meta/route";
+import { GET as verifyWebhook, POST as receiveWebhook } from "@/app/api/webhooks/meta/route";
 import { createRule, resetDatabase, startMockGraph } from "./helpers";
 import { fbComment } from "./fixtures";
 
@@ -108,6 +109,27 @@ describe("URL ของระบบ", () => {
 });
 
 describe("สถานะคู่มือตั้งค่า", () => {
+  it("Meta ส่งข้อมูลมาแต่ App Secret ไม่ตรง → เตือน แล้วหายเมื่อใส่ App Secret ใหม่หรือรับข้อมูลได้ตามปกติ", async () => {
+    await saveMetaApp(db, "1234567890", "secret-old");
+    const res = await receiveWebhook(
+      new NextRequest("https://dm.example.com/api/webhooks/meta", {
+        method: "POST",
+        body: "{}",
+        headers: { "x-hub-signature-256": "sha256=deadbeef" },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect((await getSetupStatus(db)).badSignatureAt).not.toBeNull();
+
+    await saveMetaApp(db, "1234567890", "secret-new");
+    expect((await getSetupStatus(db)).badSignatureAt).toBeNull();
+
+    await markWebhookBadSignature(db);
+    await new Promise((r) => setTimeout(r, 20));
+    await ingestWebhook(db, fbComment({ commentId: "SIG1" }));
+    expect((await getSetupStatus(db)).badSignatureAt).toBeNull();
+  });
+
   it("นับขั้นที่เสร็จแล้ว", async () => {
     await db.delete(pages);
     expect(setupProgress(await getSetupStatus(db))).toEqual({ done: 0, total: 6 });

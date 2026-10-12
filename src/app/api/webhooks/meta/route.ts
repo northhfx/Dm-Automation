@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getDb } from "@/db/client";
 import { ingestWebhook } from "@/lib/automation/ingest";
-import { getMetaConfig, markWebhookVerified } from "@/lib/config";
+import { getMetaConfig, markWebhookBadSignature, markWebhookVerified } from "@/lib/config";
 import { safeEqual, verifyMetaSignature } from "@/lib/crypto";
 import { wakeWorker } from "@/lib/queue/worker";
 
@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
   }
   if (!verifyMetaSignature(raw, request.headers.get("x-hub-signature-256"), appSecret)) {
     console.warn("[webhook] ลายเซ็นไม่ถูกต้อง — ตรวจสอบ App Secret ในหน้าตั้งค่า");
+    await markWebhookBadSignature(db).catch(() => {});
     return new Response("Invalid signature", { status: 401 });
   }
 

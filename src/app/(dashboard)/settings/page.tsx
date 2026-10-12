@@ -214,6 +214,20 @@ export default async function SettingsPage() {
             description="ค่าที่ใส่ในเมนู Webhooks ของแอปใน Meta เพื่อให้ Meta ส่งคอมเมนต์และข้อความใหม่มาที่ระบบ"
           >
             <div className="space-y-5">
+              {status.badSignatureAt && (
+                <Notice
+                  tone="critical"
+                  title="Meta ส่งข้อมูลมาแล้ว แต่ App Secret ไม่ตรงกัน"
+                  actions={
+                    <ButtonLink href="#meta-app" variant="secondary" size="sm">
+                      ใส่ App Secret ใหม่
+                    </ButtonLink>
+                  }
+                >
+                  ครั้งล่าสุด {formatDateTime(status.badSignatureAt)} — คัดลอกข้อมูลลับของแอปล่าสุดจาก Meta (การตั้งค่าแอป → ข้อมูลพื้นฐาน)
+                  มาวางในหัวข้อ Meta App ด้านบน
+                </Notice>
+              )}
               {!status.webhookVerifiedAt && (
                 <Notice
                   tone="warning"

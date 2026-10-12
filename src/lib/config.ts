@@ -20,6 +20,7 @@ type SettingKey =
   | "meta_verify_token"
   | "public_base_url"
   | "webhook_verified_at"
+  | "webhook_bad_signature_at"
   | "app_review_done";
 
 async function loadSettings(db: Db): Promise<Map<string, string>> {
@@ -101,7 +102,11 @@ export async function getMetaConfig(db: Db): Promise<MetaConfig> {
 /** บันทึก App ID / App Secret (ถ้าเว้น secret ว่างไว้ จะใช้ค่าเดิม) */
 export async function saveMetaApp(db: Db, appId: string, appSecret: string): Promise<void> {
   await setSetting(db, "meta_app_id", appId);
-  if (appSecret) await setSetting(db, "meta_app_secret", encrypt(appSecret, env.authSecret));
+  if (appSecret) {
+    await setSetting(db, "meta_app_secret", encrypt(appSecret, env.authSecret));
+    // ใส่ App Secret ใหม่แล้ว → ล้างคำเตือน "ลายเซ็นไม่ตรง" รอดูข้อมูลชุดถัดไป
+    await deleteSetting(db, "webhook_bad_signature_at");
+  }
 }
 
 // ---------------- URL ของระบบ ----------------
@@ -137,6 +142,14 @@ export async function markWebhookVerified(db: Db): Promise<void> {
   await setSetting(db, "webhook_verified_at", new Date().toISOString());
 }
 
+/**
+ * Meta ส่งข้อมูลมาแต่ลายเซ็นไม่ตรงกับ App Secret ที่บันทึกไว้ (เช่น กดรีเซ็ต App Secret ใน Meta หลังบันทึกในระบบ)
+ * จำเวลาไว้เพื่อแสดงคำเตือนในหน้าคู่มือ/ตั้งค่า — ไม่งั้นผู้ใช้จะเห็นแค่ว่า "ไม่มีอะไรเกิดขึ้น"
+ */
+export async function markWebhookBadSignature(db: Db): Promise<void> {
+  await setSetting(db, "webhook_bad_signature_at", new Date().toISOString());
+}
+
 export async function setAppReviewDone(db: Db, done: boolean): Promise<void> {
   if (done) await setSetting(db, "app_review_done", "1");
   else await deleteSetting(db, "app_review_done");
@@ -149,6 +162,8 @@ export interface SetupStatus {
   pagesConnected: number;
   pagesSubscribed: number;
   lastWebhookAt: Date | null;
+  /** ครั้งล่าสุดที่ Meta ส่งข้อมูลมาแต่ App Secret ไม่ตรง (null = ไม่มีปัญหา หรือรับข้อมูลได้ตามปกติหลังจากนั้นแล้ว) */
+  badSignatureAt: string | null;
   ruleCount: number;
   appReviewDone: boolean;
 }
@@ -169,9 +184,15 @@ export async function getSetupStatus(db: Db): Promise<SetupStatus> {
     pagesConnected: Number(pageRows[0]?.total ?? 0),
     pagesSubscribed: Number(pageRows[0]?.subscribed ?? 0),
     lastWebhookAt: lastLog[0]?.at ?? null,
+    badSignatureAt: newerThan(s.get("webhook_bad_signature_at"), lastLog[0]?.at ?? null),
     ruleCount: Number(ruleRows[0]?.n ?? 0),
     appReviewDone: s.get("app_review_done") === "1",
   };
+}
+
+function newerThan(iso: string | undefined, other: Date | null): string | null {
+  if (!iso) return null;
+  return !other || new Date(iso).getTime() > other.getTime() ? iso : null;
 }
 
 /** ขั้นตอนที่จำเป็นก่อนใช้งานได้ (ไม่รวม App Review ซึ่งรอ Meta นาน) */
