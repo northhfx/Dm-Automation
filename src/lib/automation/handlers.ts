@@ -23,6 +23,7 @@ import { INSTAGRAM_ERRORS, markInstagramLoginDelivery, updateInstagramAccountSta
 import {
   buildMessage,
   errorInfo,
+  fetchMessengerParticipantName,
   fetchProfile,
   GraphApiError,
   replyToComment,
@@ -34,7 +35,7 @@ import {
 import type { CommentJob, DmJob, PagePostJob, ReadJob } from "@/lib/meta/webhook";
 import { enqueue, postponePendingJobs, rescheduleJob, updateJobPayload } from "@/lib/queue/queue";
 import { findMatchingRule } from "@/lib/rules/match";
-import { bindPublishedFacebookPost, resolveNextPost } from "@/lib/rules/next-post";
+import { bindPublishedFacebookPost, checkNextPost } from "@/lib/rules/next-post";
 import { postScopeMatches } from "@/lib/rules/post-scope";
 import { firstName, pickRandom, renderTemplate } from "@/lib/rules/template";
 
@@ -78,6 +79,21 @@ type EventInsert = typeof events.$inferInsert;
 
 async function logEvent(db: Db, e: EventInsert): Promise<void> {
   await db.insert(events).values(e);
+}
+
+/**
+ * ข้อความเข้า (คอมเมนต์ / DM) ที่ไม่ตรงกฎไหนเลย → บันทึกแค่ว่ามีข้อความเข้ามา ไว้นับสถิติ "ข้อความเข้า"
+ * ไม่เก็บว่าใครส่ง (actorId / contactId) ข้อความ ชื่อ หรือ comment id — เก็บข้อมูลเฉพาะคนที่พิมพ์ตรง keyword
+ * (migration 0007_keyword_only_contacts ล้างข้อมูลเก่าให้อยู่ในรูปเดียวกันนี้)
+ */
+function anonymousReceived(
+  type: "comment_received" | "dm_received",
+  platform: Platform,
+  pageId: string,
+  via: WebhookVia,
+  postId: string | null = null,
+): EventInsert {
+  return { type, platform, pageId, postId, meta: { via, matched: false } };
 }
 
 /** งานที่เข้าคิวก่อนมีฟิลด์ via ถือว่ามาทาง Facebook Login */
@@ -196,17 +212,22 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
   const token = conn.token;
   const via = viaOf(job);
 
-  await logEvent(db, {
-    type: "comment_received",
-    platform: job.platform,
-    pageId: conn.id,
-    actorId: job.fromId,
-    postId: job.postId,
-    text: job.text,
-    meta: { commentId: job.commentId, fromName: job.fromName, via },
-  });
+  // บันทึกว่ามีคอมเมนต์เข้ามาก่อนหากฎ (ลำดับในหน้ากิจกรรมจะได้มาก่อน "กฎเริ่มใช้กับโพสต์ใหม่แล้ว")
+  // แต่ยังไม่เก็บว่าใครคอมเมนต์ / พิมพ์อะไร — ใส่ให้ทีหลังเฉพาะคอมเมนต์ที่ตรงกฎ
+  const [received] = await db
+    .insert(events)
+    .values(anonymousReceived("comment_received", job.platform, conn.id, via, job.postId))
+    .returning({ id: events.id });
 
-  const rule = await findCommentRule(db, conn, job);
+  const { rule, lookupFailed } = await findCommentRule(db, conn, job);
+  // ตรงกฎ หรือตรง keyword ของกฎ "โพสต์ถัดไป" แต่ถาม Meta ไม่สำเร็จ (คนนี้พิมพ์คำที่ตั้งไว้ และกิจกรรม "ข้าม"
+  // ที่บันทึกไว้มีชื่อ/ข้อความของเขา ให้เจ้าของร้านตามตอบเองได้) → เก็บว่าใครคอมเมนต์ / พิมพ์อะไร
+  if (rule || lookupFailed) {
+    await db
+      .update(events)
+      .set({ actorId: job.fromId, text: job.text, meta: { commentId: job.commentId, fromName: job.fromName, via } })
+      .where(eq(events.id, received.id));
+  }
   if (!rule) return;
   const firstStep = rule.steps[0];
   if (!firstStep) return;
@@ -301,24 +322,27 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
  * หากฎคอมเมนต์ตามลำดับ priority แบบเดียวกับ findMatchingRule
  * แต่กฎ "โพสต์ถัดไป" ที่ยังไม่ได้ผูกโพสต์ของแพลตฟอร์มนี้ จะถาม Meta ว่าโพสต์นี้คือโพสต์ถัดไปหรือเปล่า
  * (เช็คข้อความก่อนเสมอ คอมเมนต์ที่ไม่ตรง keyword จะไม่ทำให้ต้องเรียก Graph API)
+ * lookupFailed = ไม่มีกฎไหนตรง แต่มีกฎ "โพสต์ถัดไป" ที่ keyword ตรงและถาม Meta ไม่สำเร็จ (บันทึก "ข้าม" ไว้แล้ว)
  */
 async function findCommentRule(db: Db, conn: Connection, job: CommentJob) {
   const incoming = { trigger: "comment" as const, platform: job.platform, text: job.text, postId: job.postId };
   const sorted = (await loadActiveRules(db, "comment")).sort((a, b) => a.priority - b.priority || a.id - b.id);
+  let lookupFailed = false;
   for (const rule of sorted) {
-    if (findMatchingRule([rule], incoming)) return rule;
+    if (findMatchingRule([rule], incoming)) return { rule, lookupFailed };
     if (postScopeMatches(rule, job.platform, job.postId) !== "resolve") continue;
     // เงื่อนไขอื่น (เปิดอยู่, แพลตฟอร์ม, keyword) ต้องผ่านก่อน — เช็คโดยมองข้ามเรื่องโพสต์ไปชั่วคราว
     if (!findMatchingRule([{ ...rule, postScope: "any" as const }], incoming)) continue;
     // conn.api ทำให้ถามข้อมูลโพสต์ผ่าน API เดียวกับที่ใช้ตอบ (Instagram Login → graph.instagram.com)
-    const isNextPost = await resolveNextPost(db, rule, job.platform, conn, job.postId, {
+    const check = await checkNextPost(db, rule, job.platform, conn, job.postId, {
       commentId: job.commentId,
       actorId: job.fromId,
       text: job.text,
     });
-    if (isNextPost) return rule;
+    if (check === "match") return { rule, lookupFailed };
+    if (check === "lookup_failed") lookupFailed = true;
   }
-  return null;
+  return { rule: null, lookupFailed };
 }
 
 // ---------------------------------------------------------------------------
@@ -334,8 +358,60 @@ export async function handlePagePost(db: Db, job: PagePostJob): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// มีคนทัก DM มา → บันทึก contact → หา rule → ตอบกลับ
+// มีคนทัก DM มา → หา rule → ตรง keyword (หรือกดปุ่มของเรา) ค่อยบันทึก contact → ตอบกลับ
 // ---------------------------------------------------------------------------
+
+/**
+ * contact ที่ยังไม่รู้ชื่อ → ดึงชื่อจากโปรไฟล์ (ไม่ได้ก็ไม่เป็นไร ส่งข้อความต่อได้ตามปกติ)
+ * Facebook: Meta ให้ดูโปรไฟล์เฉพาะคนที่มีบทบาทในแอป ถ้ายังไม่ได้ Advanced Access
+ * → ดึงไม่ได้/ไม่ได้ชื่อ ลองหาชื่อจากห้องแชท Messenger ของเพจแทน (Instagram ไม่ใช้ทางนี้)
+ */
+async function fillContactName(
+  db: Db,
+  conn: Connection,
+  job: DmJob,
+  contact: { id: number; name: string | null; username: string | null },
+): Promise<{ name: string | null; username: string | null }> {
+  let { name, username } = contact;
+  if (name || username || !conn.token) return { name, username };
+  try {
+    const profile = await fetchProfile(job.platform, job.senderId, conn.token, conn.api);
+    name = profile.name;
+    username = profile.username;
+  } catch (err) {
+    await noteRejectedToken(db, conn, err);
+  }
+  if (!name && job.platform === "facebook" && conn.api === "facebook") {
+    try {
+      name = await fetchMessengerParticipantName(conn.id, job.senderId, conn.token);
+    } catch (err) {
+      // ไม่ได้ชื่อก็ส่งข้อความต่อได้ตามปกติ
+      console.warn("[dm] หาชื่อลูกค้าจากห้องแชทของเพจไม่สำเร็จ:", (err as Error).message);
+    }
+  }
+  if (name || username) {
+    await db
+      .update(contacts)
+      .set({ name: sql`coalesce(${contacts.name}, ${name})`, username: sql`coalesce(${contacts.username}, ${username})` })
+      .where(eq(contacts.id, contact.id));
+  }
+  return { name, username };
+}
+
+/**
+ * คนที่พิมพ์ตรง keyword หรือกดปุ่มในข้อความของเรา → บันทึก/อัปเดต contact (เวลาทักล่าสุด + ชื่อ)
+ * คืน id และชื่อที่ใช้แทน {name} ในข้อความ (Facebook ใช้ชื่อต้น, Instagram ใช้ username)
+ */
+async function saveKeywordContact(db: Db, conn: Connection, job: DmJob): Promise<{ id: number; actorName: string | null }> {
+  const contact = await upsertContact(db, {
+    platform: job.platform,
+    platformUserId: job.senderId,
+    pageId: conn.id,
+    inbound: true,
+  });
+  const { name, username } = await fillContactName(db, conn, job, contact);
+  return { id: contact.id, actorName: job.platform === "facebook" ? firstName(name) : (username ?? name) };
+}
 
 export async function handleDm(db: Db, job: DmJob): Promise<void> {
   const conn = await findConnection(db, job.platform, job.accountId);
@@ -345,36 +421,31 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
   if (!(await claimOnce(db, `dm:${job.mid}`))) return;
   const via = viaOf(job);
 
-  const contact = await upsertContact(db, {
-    platform: job.platform,
-    platformUserId: job.senderId,
-    pageId: conn.id,
-    inbound: true,
-  });
-
-  let name = contact.name;
-  let username = contact.username;
-  if (!name && !username && conn.token) {
-    try {
-      const profile = await fetchProfile(job.platform, job.senderId, conn.token, conn.api);
-      name = profile.name;
-      username = profile.username;
-      await db.update(contacts).set({ name, username }).where(eq(contacts.id, contact.id));
-    } catch (err) {
-      // ไม่มีสิทธิ์ดึงโปรไฟล์ก็ส่งข้อความต่อได้ตามปกติ
-      await noteRejectedToken(db, conn, err);
-    }
-  }
-
-  const actorName = job.platform === "facebook" ? firstName(name) : (username ?? name);
-
-  // ลูกค้ากดปุ่มในข้อความของเรา → ส่งข้อความถัดไป (ไม่ต้องเอาไปจับ keyword ซ้ำ)
+  // ลูกค้ากดปุ่มในข้อความของเรา (เคยได้ DM จากกฎแล้ว) → ส่งข้อความถัดไป (ไม่ต้องเอาไปจับ keyword ซ้ำ)
   const tap = parseFlowPayload(job.payload);
   if (tap) {
-    await handleButtonTap(db, conn, job, contact.id, actorName, tap);
+    const contact = await saveKeywordContact(db, conn, job);
+    await handleButtonTap(db, conn, job, contact.id, contact.actorName, tap);
     return;
   }
 
+  const rule = findMatchingRule(await loadActiveRules(db, "dm"), {
+    trigger: "dm",
+    platform: job.platform,
+    text: job.text || job.payload || "",
+  });
+  if (!rule) {
+    // ไม่ตรง keyword → ไม่สร้าง contact และไม่เก็บว่าใครทัก/ทักว่าอะไร
+    // (ถ้าเป็นลูกค้าที่เคยพิมพ์ keyword อยู่แล้ว แค่อัปเดตเวลา "ทักมาล่าสุด")
+    await db
+      .update(contacts)
+      .set({ lastInboundAt: new Date() })
+      .where(and(eq(contacts.platform, job.platform), eq(contacts.platformUserId, job.senderId)));
+    await logEvent(db, anonymousReceived("dm_received", job.platform, conn.id, via));
+    return;
+  }
+
+  const contact = await saveKeywordContact(db, conn, job);
   await logEvent(db, {
     type: "dm_received",
     platform: job.platform,
@@ -385,12 +456,6 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
     meta: { mid: job.mid, payload: job.payload, via },
   });
 
-  const rule = findMatchingRule(await loadActiveRules(db, "dm"), {
-    trigger: "dm",
-    platform: job.platform,
-    text: job.text || job.payload || "",
-  });
-  if (!rule) return;
   const firstStep = rule.steps[0];
   if (!firstStep) return;
   if (!conn.token) {
@@ -418,7 +483,7 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
     source: "dm",
     recipient: { id: job.senderId },
     actorId: job.senderId,
-    actorName,
+    actorName: contact.actorName,
     postId: null,
     api: conn.api,
   };
@@ -828,6 +893,23 @@ async function recordSent(
     text,
     meta: { mid: res.message_id, source: data.source, stepId },
   });
+  // Private Reply: ตอนคอมเมนต์เข้ามายังไม่รู้ว่าเป็น contact ไหน (ได้ PSID/IGSID ตอนส่ง DM สำเร็จ)
+  // → ผูก "ตรงกับกฎ" ของคอมเมนต์นี้กับ contact หน้ารายชื่อลูกค้าจะแสดงคอมเมนต์ล่าสุดของคนที่ไม่รู้ชื่อได้
+  // (ทำหลังบันทึก dm_sent — ถ้าขั้นนี้พลาด สถิติการส่งยังครบ)
+  if (contact && "comment_id" in data.recipient) {
+    await db
+      .update(events)
+      .set({ contactId: contact.id })
+      .where(
+        and(
+          eq(events.ruleId, ruleId),
+          gte(events.createdAt, new Date(Date.now() - 7 * 24 * HOUR_MS)), // ใช้ index (rule_id, created_at)
+          eq(events.type, "rule_triggered"),
+          isNull(events.contactId),
+          sql`${events.meta}->>'commentId' = ${data.recipient.comment_id}`,
+        ),
+      );
+  }
 }
 
 /** ใช้บอก worker ว่างานถูกเลื่อนเวลาแล้ว ไม่ต้องทำเครื่องหมายว่าเสร็จ */

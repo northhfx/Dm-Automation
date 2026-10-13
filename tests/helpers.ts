@@ -52,6 +52,14 @@ export interface MockPost {
   from?: string;
 }
 
+/** ห้องแชท Messenger ของเพจปลอม (GET /{page-id}/conversations) — name ไม่กำหนด = Meta ไม่ส่งชื่อมา */
+export interface MockConversation {
+  userId: string;
+  name?: string;
+  /** ค่าเริ่มต้น "PAGE1" */
+  pageId?: string;
+}
+
 /** เวลาในรูปแบบที่ Meta ส่งมา เช่น 2026-10-10T08:00:00+0000 */
 function metaTime(iso: string): string {
   return new Date(iso).toISOString().replace(/\.\d{3}Z$/, "+0000");
@@ -63,6 +71,8 @@ function metaTime(iso: string): string {
  * - ข้อความที่มีคำว่า FAIL_TRANSIENT → error ชั่วคราว (ควรลองใหม่)
  * - setPosts() กำหนดโพสต์ของเพจ (GET /{post-id}, /PAGE1/posts, /IG1/media)
  * - failWhen() ให้ request ที่ตรงเงื่อนไขตอบ error
+ * - setProfiles() กำหนดผลของ GET /{user-id} (โปรไฟล์ลูกค้า) รายคน — ไม่กำหนด = Mint Chan / mint.ig
+ * - setConversations() กำหนดห้องแชท Messenger ของเพจ (GET /{page-id}/conversations?user_id=...&fields=participants)
  * - Instagram Login (graph.instagram.com) อยู่ใต้ /ig ของเซิร์ฟเวอร์เดียวกัน:
  *   GET /me (token ขึ้นต้น EAA → code 3, IG_EXPIRED → code 190, ไม่งั้นตอบ setInstagramMe()),
  *   POST/DELETE /me/subscribed_apps, GET /access_token (ไม่มีเวอร์ชัน; token ขึ้นต้น IGSHORT เท่านั้นที่แลกได้),
@@ -75,6 +85,8 @@ export async function startMockGraph() {
   let failWhen: ((call: GraphCall) => boolean) | null = null;
   let instagramMe: Record<string, unknown> = { ...DEFAULT_INSTAGRAM_ME };
   let wrapInstagramMe = false;
+  let profiles: Record<string, Record<string, unknown>> = {};
+  let conversations: MockConversation[] = [];
   const server: Server = createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
@@ -157,6 +169,23 @@ export async function startMockGraph() {
       if (req.method === "POST" && (path.endsWith("/comments") || path.endsWith("/replies"))) {
         return send(200, { id: `reply_${++counter}` });
       }
+      const conversationsOf = api === "facebook" && req.method === "GET" ? /^\/([^/]+)\/conversations$/.exec(path) : null;
+      if (conversationsOf) {
+        const pageId = conversationsOf[1];
+        const userId = url.searchParams.get("user_id");
+        const list = conversations.filter((c) => (c.pageId ?? "PAGE1") === pageId && (!userId || c.userId === userId));
+        return send(200, {
+          data: list.map((c) => ({
+            id: `t_${c.userId}`,
+            participants: {
+              data: [
+                { id: c.userId, ...(c.name !== undefined && { name: c.name }), email: `${c.userId}@facebook.com` },
+                { id: pageId, name: "ร้านทดสอบ", email: `${pageId}@facebook.com` },
+              ],
+            },
+          })),
+        });
+      }
       if (req.method === "GET" && /^\/[^/]+\/(posts|media)$/.test(path)) {
         const platform = path.endsWith("/media") ? "instagram" : "facebook";
         const list = posts
@@ -187,6 +216,8 @@ export async function startMockGraph() {
         );
       }
       if (req.method === "GET" && /^\/[^/]+$/.test(path)) {
+        const profile = profiles[path.slice(1)];
+        if (profile) return send(200, profile);
         return send(200, { first_name: "Mint", last_name: "Chan", name: "Mint Chan", username: "mint.ig" });
       }
       return send(404, { error: { message: `mock: unknown ${req.method} ${path}`, code: 803 } });
@@ -207,12 +238,22 @@ export async function startMockGraph() {
       failWhen = null;
       instagramMe = { ...DEFAULT_INSTAGRAM_ME };
       wrapInstagramMe = false;
+      profiles = {};
+      conversations = [];
     },
     setPosts: (list: MockPost[]) => {
       posts = [...list];
     },
     failWhen: (fn: ((call: GraphCall) => boolean) | null) => {
       failWhen = fn;
+    },
+    /** ผลของ GET /{user-id} รายคน เช่น { PSID1: { id: "PSID1" } } = ดึงโปรไฟล์ได้แต่ไม่มีชื่อ */
+    setProfiles: (map: Record<string, Record<string, unknown>>) => {
+      profiles = { ...map };
+    },
+    /** ห้องแชท Messenger ของเพจ (ผู้ร่วมสนทนาคือลูกค้า userId และเพจเอง) */
+    setConversations: (list: MockConversation[]) => {
+      conversations = [...list];
     },
     /** กำหนดผลของ GET /me บน Instagram Login (wrap = ตอบแบบ {data:[me]}) */
     setInstagramMe: (me: Record<string, unknown>, o: { wrap?: boolean } = {}) => {

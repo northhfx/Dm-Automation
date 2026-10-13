@@ -13,7 +13,8 @@ import {
 } from "@/lib/instagram/accounts";
 import { failureSummary } from "@/app/(dashboard)/activity/failure-summary";
 import { AppShell, type ShellData } from "@/app/(dashboard)/app-shell";
-import { errorHint } from "@/app/(dashboard)/activity/timeline";
+import type { TimelineEvent } from "@/app/(dashboard)/activity/load-events";
+import { errorHint, TimelineItem, TimelineItemCompact } from "@/app/(dashboard)/activity/timeline";
 import { GuideView } from "@/app/(dashboard)/guide/guide-view";
 import { instagramStepStatus } from "@/app/(dashboard)/guide/instagram-step";
 import { openStepFromHash } from "@/app/(dashboard)/guide/open-step-from-hash";
@@ -332,6 +333,50 @@ describe("แถบแจ้งเตือนในหน้ากิจกร�
     expect(both.title).toBe("มีรายการไม่สำเร็จ 2 รายการ ใน 24 ชั่วโมงที่ผ่านมา");
     expect(both.description).toContain("ส่งข้อความไม่สำเร็จ 1 รายการ");
     expect(both.description).toContain("ต่ออายุ token Instagram ไม่สำเร็จ 1 ครั้ง");
+  });
+});
+
+describe("หน้ากิจกรรม: ข้อความเข้าที่ไม่ตรงกฎ (ไม่เก็บชื่อ/ข้อความ)", () => {
+  const now = new Date("2026-10-13T10:00:00Z");
+  function unmatched(type: "comment_received" | "dm_received"): TimelineEvent {
+    return {
+      id: 1,
+      type,
+      platform: "facebook",
+      createdAt: new Date(now.getTime() - 60_000),
+      ruleId: null,
+      ruleName: null,
+      person: null,
+      text: null,
+      buttons: [],
+      error: null,
+      skipReason: null,
+      unmatched: true,
+    };
+  }
+  const full = (e: TimelineEvent) => textOf(render(createElement(TimelineItem, { event: e, now })));
+  const compact = (e: TimelineEvent) => textOf(render(createElement(TimelineItemCompact, { event: e, now })));
+
+  it("ไม่บอกว่าคำไม่ตรง — คอมเมนต์อาจไม่ตรงเพราะโพสต์/แพลตฟอร์มที่ตั้งไว้ก็ได้", () => {
+    for (const html of [full(unmatched("comment_received")), compact(unmatched("comment_received"))]) {
+      expect(html).toContain("มีคนคอมเมนต์ (ไม่ตรงกฎ)");
+      expect(html).toContain("ไม่ได้เก็บชื่อและข้อความ เพราะไม่ตรงกับกฎไหนเลย (คำ โพสต์ หรือแพลตฟอร์มที่ตั้งไว้)");
+      expect(html).not.toContain("ไม่ตรงกับคำที่ตั้งไว้");
+    }
+  });
+
+  it("แชทไม่มีเรื่องโพสต์ → ไม่พูดถึงโพสต์", () => {
+    for (const html of [full(unmatched("dm_received")), compact(unmatched("dm_received"))]) {
+      expect(html).toContain("มีคนทักแชท (ไม่ตรงกฎ)");
+      expect(html).toContain("ไม่ได้เก็บชื่อและข้อความ เพราะไม่ตรงกับกฎไหนเลย (คำหรือแพลตฟอร์มที่ตั้งไว้)");
+      expect(html).not.toContain("โพสต์");
+    }
+  });
+
+  it("ข้อความเข้าที่ตรงกฎ → ไม่มีป้าย/คำอธิบายนี้", () => {
+    const html = full({ ...unmatched("comment_received"), unmatched: false, person: "Somchai", text: "สนใจ" });
+    expect(html).not.toContain("ไม่ตรงกฎ");
+    expect(html).not.toContain("ไม่ได้เก็บชื่อ");
   });
 });
 

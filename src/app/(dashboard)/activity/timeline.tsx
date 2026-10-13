@@ -144,6 +144,21 @@ function Expandable({ text, className, lines = 3 }: { text: string; className?: 
   );
 }
 
+/**
+ * คอมเมนต์ / แชทที่ไม่ตรงกฎ: ระบบไม่เก็บว่าใครส่ง ส่งว่าอะไร จึงไม่มีชื่อและข้อความให้แสดง
+ * ไม่ตรงได้หลายสาเหตุ (คำ, โพสต์ที่เลือกไว้, แพลตฟอร์ม, กฎปิดอยู่) — ห้ามบอกว่าเป็นเพราะคำไม่ตรงอย่างเดียว
+ * ไม่งั้นเจ้าของร้านที่ลองคอมเมนต์ผิดโพสต์จะไปแก้คำในกฎแทนที่จะดูว่าเลือกโพสต์ไว้ถูกหรือเปล่า
+ */
+export function unmatchedNote(type: string): string {
+  const where = type === "comment_received" ? "คำ โพสต์ หรือแพลตฟอร์มที่ตั้งไว้" : "คำหรือแพลตฟอร์มที่ตั้งไว้";
+  return `ไม่ได้เก็บชื่อและข้อความ เพราะไม่ตรงกับกฎไหนเลย (${where})`;
+}
+
+function UnmatchedTag({ event }: { event: TimelineEvent }) {
+  if (!event.unmatched) return null;
+  return <span className="font-normal text-fg-3"> (ไม่ตรงกฎ)</span>;
+}
+
 function Person({ event }: { event: TimelineEvent }) {
   if (!event.person) return null;
   return (
@@ -186,6 +201,7 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
         <div className="flex items-start gap-3">
           <p className="min-w-0 flex-1 text-sm leading-6">
             <span className={cx("font-semibold", t.tone === "critical" ? "text-critical-text" : "text-fg")}>{t.label}</span>
+            <UnmatchedTag event={event} />
             {isButton && event.text && <span className="text-fg"> “{event.text}”</span>} <Person event={event} />
           </p>
           <RelativeTime date={event.createdAt} now={now} className="mt-0.5 hidden shrink-0 text-xs leading-5 text-fg-3 sm:block" />
@@ -199,6 +215,7 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
               <span className="truncate">กฎ: {event.ruleName}</span>
             </Link>
           )}
+          {event.unmatched && <span>{unmatchedNote(event.type)}</span>}
         </div>
 
         {!isButton && (event.text || event.buttons.length > 0) && (
@@ -256,15 +273,17 @@ export function TimelineItemCompact({ event, now }: { event: TimelineEvent; now:
       ? `“${event.text}”`
       : event.error
         ? event.error.message
-        : (event.text ?? (event.ruleName ? `กฎ: ${event.ruleName}` : null));
+        : event.unmatched
+          ? unmatchedNote(event.type)
+          : (event.text ?? (event.ruleName ? `กฎ: ${event.ruleName}` : null));
   return (
     <li className="flex items-start gap-3 px-5 py-3">
       <EventMark event={event} size="sm" className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           <p className="min-w-0 flex-1 truncate text-sm leading-6">
-            <span className={cx("font-medium", t.tone === "critical" ? "text-critical-text" : "text-fg")}>{t.label}</span>{" "}
-            <Person event={event} />
+            <span className={cx("font-medium", t.tone === "critical" ? "text-critical-text" : "text-fg")}>{t.label}</span>
+            <UnmatchedTag event={event} /> <Person event={event} />
           </p>
           <RelativeTime date={event.createdAt} now={now} className="mt-0.5 shrink-0 text-xs leading-5 text-fg-3" />
         </div>

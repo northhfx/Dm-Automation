@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { FlowCanvas, FlowStep } from "@/lib/flows/types";
 import {
   bigserial,
@@ -90,7 +91,10 @@ export const rules = pgTable("rules", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** คนที่เคยคุยกับเพจ (PSID สำหรับ Facebook, IGSID สำหรับ Instagram) */
+/**
+ * ลูกค้าที่คอมเมนต์/ทักตรง keyword ของกฎ หรือกดปุ่มในข้อความของเรา (PSID สำหรับ Facebook, IGSID สำหรับ Instagram)
+ * คนที่ทักเรื่องอื่นไม่ถูกเก็บที่นี่ — ดู lib/automation/handlers.ts และ migration 0007_keyword_only_contacts
+ */
 export const contacts = pgTable(
   "contacts",
   {
@@ -181,6 +185,9 @@ export const events = pgTable(
     index("events_type_created_idx").on(t.type, t.createdAt),
     index("events_rule_created_idx").on(t.ruleId, t.createdAt),
     index("events_created_idx").on(t.createdAt),
+    // ข้อความล่าสุดของลูกค้าแต่ละคน (หน้ารายชื่อลูกค้า) — เฉพาะแถวที่ผูกกับ contact
+    // ข้อความเข้าที่ไม่ตรงกฎ (ส่วนใหญ่ของตาราง) ไม่มี contact_id จึงไม่เพิ่มขนาด index
+    index("events_contact_created_idx").on(t.contactId, t.createdAt).where(sql`${t.contactId} IS NOT NULL`),
   ],
 );
 

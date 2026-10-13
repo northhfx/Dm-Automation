@@ -109,12 +109,21 @@ export interface NextPostPage {
   api?: GraphApi;
 }
 
-/** ข้อมูลคอมเมนต์ที่ทำให้ต้องเช็ค (ใช้บันทึกในหน้ากิจกรรมเมื่อเช็คไม่สำเร็จ) */
+/**
+ * ข้อมูลคอมเมนต์ที่ทำให้ต้องเช็ค (ใช้บันทึกในหน้ากิจกรรมเมื่อเช็คไม่สำเร็จ)
+ * มาถึงตรงนี้ได้เฉพาะคอมเมนต์ที่ตรง keyword แล้ว — handleComment จึงเก็บข้อมูลคนคอมเมนต์ไว้ด้วย (ไม่ขัดกัน)
+ */
 export interface CommentContext {
   commentId?: string;
   actorId?: string | null;
   text?: string | null;
 }
+
+/**
+ * ผลการเช็คโพสต์ถัดไป: "match" = คือโพสต์ของกฎ, "no_match" = ไม่ใช่,
+ * "lookup_failed" = ถาม Meta ไม่สำเร็จ ยังไม่รู้ว่าใช่หรือเปล่า (บันทึก "ข้าม" ไว้แล้ว)
+ */
+export type NextPostCheck = "match" | "no_match" | "lookup_failed";
 
 /**
  * คอมเมนต์ใต้โพสต์ postId เข้ากฎ "โพสต์ถัดไป" ที่ยังไม่ได้ผูกโพสต์ของแพลตฟอร์มนี้หรือเปล่า
@@ -131,10 +140,23 @@ export async function resolveNextPost(
   postId: string | null | undefined,
   ctx: CommentContext = {},
 ): Promise<boolean> {
+  return (await checkNextPost(db, rule, platform, page, postId, ctx)) === "match";
+}
+
+/** เหมือน resolveNextPost แต่แยก "ถาม Meta ไม่สำเร็จ" ออกจาก "ไม่ใช่โพสต์ของกฎ" */
+export async function checkNextPost(
+  db: Db,
+  rule: NextPostRule,
+  platform: Platform,
+  page: NextPostPage,
+  postId: string | null | undefined,
+  ctx: CommentContext = {},
+): Promise<NextPostCheck> {
+  const matchIf = (matched: boolean): NextPostCheck => (matched ? "match" : "no_match");
   const since = rule.nextPostSince;
-  if (rule.postScope !== "next" || !since || !postId) return false;
+  if (rule.postScope !== "next" || !since || !postId) return "no_match";
   const already = rule.boundPosts?.[platform];
-  if (already) return postIdMatches([already.id], postId);
+  if (already) return matchIf(postIdMatches([already.id], postId));
 
   let target: KnownPost;
   try {
@@ -146,7 +168,7 @@ export async function resolveNextPost(
       );
     }
     const commented = await lookupPost(platform, postId, page.token, page.api);
-    if (commented.createdMs < sinceFloor(since)) return false; // โพสต์เก่า ลงก่อนเริ่มรอ
+    if (commented.createdMs < sinceFloor(since)) return "no_match"; // โพสต์เก่า ลงก่อนเริ่มรอ
 
     const accountId = platform === "instagram" ? page.igUserId : page.id;
     const recent = accountId ? await listRecent(platform, accountId, page.token, page.api) : [];
@@ -155,7 +177,7 @@ export async function resolveNextPost(
     // Instagram ส่งคอมเมนต์มาเฉพาะโพสต์ของบัญชีเองอยู่แล้ว
     const ownPost =
       platform === "instagram" || commented.fromId === page.id || recent.some((p) => postIdMatches([p.id], postId));
-    if (!ownPost) return false;
+    if (!ownPost) return "no_match";
     // โพสต์ที่เพิ่งลงอาจยังไม่โผล่ในรายการ จึงนับโพสต์ที่คอมเมนต์เป็นตัวเลือกด้วยเสมอ
     const candidates = [commented, ...recent.filter((p) => !postIdMatches([p.id], postId))].filter(
       (p) => p.createdMs >= sinceFloor(since),
@@ -172,7 +194,7 @@ export async function resolveNextPost(
       text: ctx.text ?? null,
       meta: { reason: "next_post_lookup_failed", commentId: ctx.commentId, error: errorInfo(err) },
     });
-    return false;
+    return "lookup_failed";
   }
 
   const boundId = await bindNextPost(db, {
@@ -184,7 +206,7 @@ export async function resolveNextPost(
     via: "comment",
     commentId: ctx.commentId,
   });
-  return boundId !== null && postIdMatches([boundId], postId);
+  return matchIf(boundId !== null && postIdMatches([boundId], postId));
 }
 
 /**

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { ChevronLeft, ChevronRight, Search, SearchX, Users, X } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight, MessageCircle, MessagesSquare, Search, SearchX, Users, X } from "lucide-react";
 import { getDb } from "@/db/client";
 import type { Platform } from "@/db/schema";
 import { SegmentedControl } from "@/components/segmented-control";
@@ -18,12 +18,15 @@ import {
   tableClass,
 } from "@/components/ui";
 import { RelativeTime } from "../activity/timeline";
+import { loadPreviews, type Preview } from "./load-previews";
 
 const PAGE_SIZE = 50;
 
 interface ContactRow {
   id: number;
   platform: Platform;
+  page_id: string;
+  platform_user_id: string;
   name: string | null;
   username: string | null;
   first_seen_at: Date | string;
@@ -34,8 +37,71 @@ interface ContactRow {
 
 const PLATFORM_LABEL: Record<Platform, string> = { facebook: "Facebook", instagram: "Instagram" };
 
+function hasName(c: ContactRow): boolean {
+  return Boolean(c.name || c.username);
+}
+
+/** Meta ไม่ส่งชื่อมาให้ (แอปยังไม่ผ่าน App Review) → เรียกว่า "ผู้ใช้ Facebook" แทน */
 function displayName(c: ContactRow): string {
-  return c.name ?? (c.username ? `@${c.username}` : "ไม่ทราบชื่อ");
+  return c.name ?? (c.username ? `@${c.username}` : `ผู้ใช้ ${PLATFORM_LABEL[c.platform]}`);
+}
+
+/**
+ * ลิงก์ไปคุยต่อในแอปของ Meta: Facebook เปิดห้องแชทใน Meta Business Suite ได้ตรงๆ
+ * Instagram ไม่มีลิงก์เข้าห้องแชท จึงเปิดหน้าโปรไฟล์ (ต้องรู้ username) ให้กดส่งข้อความต่อเอง
+ */
+function chatLink(c: ContactRow): { href: string; where: string; hint: string } | null {
+  if (c.platform === "facebook") {
+    const page = encodeURIComponent(c.page_id);
+    const user = encodeURIComponent(c.platform_user_id);
+    return {
+      href: `https://business.facebook.com/latest/inbox/all?asset_id=${page}&mailbox_id=${page}&selected_item_id=${user}&thread_type=FB_MESSAGE`,
+      where: "Meta Business Suite",
+      hint: "เปิดแชทนี้ในกล่องข้อความของเพจ (Meta Business Suite)",
+    };
+  }
+  if (c.username) {
+    return {
+      href: `https://www.instagram.com/${encodeURIComponent(c.username)}/`,
+      where: "Instagram",
+      hint: "เปิดหน้าโปรไฟล์ Instagram ของลูกค้า แล้วกดส่งข้อความเพื่อคุยต่อ",
+    };
+  }
+  return null;
+}
+
+/** ปุ่มเล็ก "เปิดแชท" (เปิดแท็บใหม่) — ไม่แสดงถ้าไม่มีที่ให้ลิงก์ไป */
+function ChatLink({ contact, size = "md" }: { contact: ContactRow; size?: "sm" | "md" }) {
+  const link = chatLink(contact);
+  if (!link) return null;
+  return (
+    <a
+      href={link.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`เปิดแชทกับ ${displayName(contact)} ใน ${link.where} (เปิดแท็บใหม่)`}
+      title={link.hint}
+      className={cx(
+        "inline-flex shrink-0 items-center gap-1 rounded-md font-medium whitespace-nowrap text-accent transition-colors hover:bg-accent-soft active:bg-accent-soft-hover",
+        size === "sm" ? "-mr-1.5 h-6 px-1.5 text-xs [&_svg]:size-3.5" : "h-8 px-2.5 text-[13px] [&_svg]:size-4",
+      )}
+    >
+      เปิดแชท
+      <ArrowUpRight aria-hidden />
+    </a>
+  );
+}
+
+/** ข้อความล่าสุดของลูกค้า บรรทัดเดียว */
+function PreviewLine({ preview }: { preview: Preview }) {
+  const Icon = preview.via === "comment" ? MessageCircle : MessagesSquare;
+  return (
+    <p className="flex min-w-0 items-center gap-1.5 text-xs leading-5 text-fg-2" title={preview.text}>
+      <Icon className="size-3.5 shrink-0 text-fg-3" aria-hidden />
+      <span className="sr-only">{preview.via === "comment" ? "คอมเมนต์ล่าสุด:" : "ข้อความแชทล่าสุด:"}</span>
+      <span className="truncate">{preview.text}</span>
+    </p>
+  );
 }
 
 /** รูปโปรไฟล์ตัวอักษรย่อ + ไอคอนแพลตฟอร์มที่มุม */
@@ -67,11 +133,16 @@ function ShortLabel({ short, full }: { short: string; full: string }) {
   );
 }
 
-function NameCell({ contact: c }: { contact: ContactRow }) {
+function NameText({ contact: c }: { contact: ContactRow }) {
+  return <p className={cx("truncate", hasName(c) ? "font-medium text-fg" : "text-fg-3")}>{displayName(c)}</p>;
+}
+
+function NameCell({ contact: c, preview }: { contact: ContactRow; preview?: Preview }) {
   return (
     <div className="min-w-0">
-      <p className={cx("truncate font-medium", c.name || c.username ? "text-fg" : "text-fg-3")}>{displayName(c)}</p>
+      <NameText contact={c} />
       {c.name && c.username && <p className="truncate text-xs text-fg-3">@{c.username}</p>}
+      {!hasName(c) && preview && <PreviewLine preview={preview} />}
     </div>
   );
 }
@@ -89,7 +160,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
   const platformFilter = platform ? sql`c.platform = ${platform}` : sql`true`;
   const [rows, countRows] = await Promise.all([
     db.execute<Record<string, unknown>>(sql`
-      SELECT c.id, c.platform, c.name, c.username, c.first_seen_at, c.last_inbound_at,
+      SELECT c.id, c.platform, c.page_id, c.platform_user_id, c.name, c.username, c.first_seen_at, c.last_inbound_at,
         (SELECT count(*)::int FROM messages m WHERE m.contact_id = c.id AND m.status = 'sent') AS sent,
         (SELECT coalesce(sum(l.clicks), 0)::int FROM links l WHERE l.contact_id = c.id) AS clicks
       FROM contacts c WHERE ${search} AND ${platformFilter}
@@ -100,6 +171,8 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
     db.execute<Record<string, unknown>>(sql`SELECT c.platform, count(*)::int AS n FROM contacts c WHERE ${search} GROUP BY c.platform`),
   ]);
   const contacts = rows.rows as unknown as ContactRow[];
+  // ข้อความล่าสุดใช้แทนชื่อ จึงดึงเฉพาะคนที่ Meta ไม่ให้ชื่อมา
+  const previews = await loadPreviews(db, contacts.filter((c) => !hasName(c)).map((c) => c.id));
   const counts: Record<Platform, number> = { facebook: 0, instagram: 0 };
   for (const r of countRows.rows) {
     if (r.platform === "facebook" || r.platform === "instagram") counts[r.platform] = Number(r.n ?? 0);
@@ -152,7 +225,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
       <PageHeader
         title="รายชื่อลูกค้า"
         badge={all > 0 && !q ? <Badge size="md">{formatNumber(all)} คน</Badge> : undefined}
-        description="คนที่เคยคุยกับเพจ หรือได้รับ DM จากระบบ เรียงตามคนที่ทักมาล่าสุด"
+        description="เฉพาะคนที่คอมเมนต์หรือทักแชทตรงกับคำที่ตั้งไว้ในกฎ เรียงตามคนที่ทักมาล่าสุด"
       />
 
       {all === 0 && !q ? (
@@ -165,7 +238,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
             </ButtonLink>
           }
         >
-          เมื่อระบบส่ง DM หรือมีคนทักแชทเพจ รายชื่อจะแสดงที่นี่โดยอัตโนมัติ
+          เมื่อมีคนคอมเมนต์หรือทักแชทตรงกับคำที่ตั้งไว้ในกฎ รายชื่อจะแสดงที่นี่ คนที่ทักเรื่องอื่นจะไม่ถูกเก็บไว้
         </EmptyState>
       ) : (
         <div className="space-y-4">
@@ -276,6 +349,9 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                       <th className={cx(tableClass.th, tableClass.num)} title="จำนวนครั้งที่คลิกลิงก์ในข้อความ (ไม่รวมการกดปุ่มที่ส่งข้อความถัดไป)">
                         คลิกลิงก์
                       </th>
+                      <th className={tableClass.th}>
+                        <span className="sr-only">เปิดแชท</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -284,7 +360,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                         <td className={cx(tableClass.td, "max-w-80")}>
                           <div className="flex items-center gap-3">
                             <ContactAvatar contact={c} badge={false} />
-                            <NameCell contact={c} />
+                            <NameCell contact={c} preview={previews.get(c.id)} />
                           </div>
                         </td>
                         <td className={cx(tableClass.td, "text-fg-2")}>
@@ -303,6 +379,9 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                         <td className={cx(tableClass.td, tableClass.num, c.clicks > 0 ? "font-medium text-fg" : "text-fg-3")}>
                           {formatNumber(c.clicks)}
                         </td>
+                        <td className={cx(tableClass.td, "text-right")}>
+                          <ChatLink contact={c} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -311,21 +390,28 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
 
               {/* มือถือ: รายการ */}
               <ul className="divide-y divide-line md:hidden">
-                {contacts.map((c) => (
-                  <li key={c.id} className="flex items-center gap-3 px-4 py-3">
-                    <ContactAvatar contact={c} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <p className={cx("truncate font-medium", c.name || c.username ? "text-fg" : "text-fg-3")}>{displayName(c)}</p>
-                        <RelativeTime date={c.last_inbound_at ?? c.first_seen_at} now={now} className="shrink-0 text-xs text-fg-3" />
+                {contacts.map((c) => {
+                  const preview = hasName(c) ? undefined : previews.get(c.id);
+                  return (
+                    <li key={c.id} className="flex items-center gap-3 px-4 py-3">
+                      <ContactAvatar contact={c} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <NameText contact={c} />
+                          <RelativeTime date={c.last_inbound_at ?? c.first_seen_at} now={now} className="shrink-0 text-xs text-fg-3" />
+                        </div>
+                        {preview && <PreviewLine preview={preview} />}
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="min-w-0 truncate text-xs leading-5 text-fg-3">
+                            {c.name && c.username ? `@${c.username} · ` : ""}
+                            DM {formatNumber(c.sent)} · คลิกลิงก์ {formatNumber(c.clicks)}
+                          </p>
+                          <ChatLink contact={c} size="sm" />
+                        </div>
                       </div>
-                      <p className="truncate text-xs leading-5 text-fg-3">
-                        {c.name && c.username ? `@${c.username} · ` : ""}
-                        DM {formatNumber(c.sent)} · คลิกลิงก์ {formatNumber(c.clicks)}
-                      </p>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             </Card>
           )}

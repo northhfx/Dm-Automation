@@ -50,6 +50,20 @@
       "when": 1791874088909,
       "tag": "0006_instagram_login",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791918952827,
+      "tag": "0007_keyword_only_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791920986479,
+      "tag": "0008_events_contact_idx",
+      "breakpoints": true
     }
   ]
 }

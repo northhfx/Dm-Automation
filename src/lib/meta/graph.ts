@@ -174,6 +174,30 @@ export async function fetchProfile(
   return { name, username: data.username ?? null };
 }
 
+interface ConversationParticipant {
+  id?: string | number;
+  name?: string;
+}
+
+/**
+ * ชื่อลูกค้า Facebook จากห้องแชท Messenger ของเพจ (ใช้แทนเมื่อ fetchProfile ไม่ได้ชื่อ —
+ * Meta ไม่ให้ดูโปรไฟล์ของคนที่ไม่มีบทบาทในแอป ถ้ายังไม่ได้ Advanced Access ของ "Business Asset User Profile Access")
+ * GET /{pageId}/conversations?platform=messenger&user_id={psid}&fields=participants → ผู้ร่วมสนทนาที่ id ตรงกับ PSID
+ * ไม่เจอห้องแชท/ไม่มีชื่อ → null, Meta ตอบ error → throw GraphApiError
+ */
+export async function fetchMessengerParticipantName(pageId: string, psid: string, token: string): Promise<string | null> {
+  const data = await graphRequest<{ data?: { participants?: { data?: ConversationParticipant[] } }[] }>(
+    `/${pageId}/conversations`,
+    { token, query: { platform: "messenger", user_id: psid, fields: "participants" } },
+  );
+  for (const conversation of data.data ?? []) {
+    const person = (conversation.participants?.data ?? []).find((p) => String(p.id) === psid);
+    const name = person?.name?.trim();
+    if (name) return name;
+  }
+  return null;
+}
+
 // ---------- การเชื่อมต่อเพจ ----------
 
 export async function exchangeForLongLivedUserToken(shortLivedToken: string): Promise<string> {

@@ -1,0 +1,1 @@
+CREATE INDEX "events_contact_created_idx" ON "events" USING btree ("contact_id","created_at") WHERE "events"."contact_id" IS NOT NULL;

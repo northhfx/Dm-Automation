@@ -19,6 +19,11 @@ export interface TimelineEvent {
   error: { message: string; code: string | null } | null;
   /** เหตุผลที่ข้าม (เฉพาะ type = skipped) */
   skipReason: string | null;
+  /**
+   * คอมเมนต์ / แชทที่ไม่ตรงกฎ (meta.matched = false) — ระบบเก็บแค่ว่ามีข้อความเข้ามา
+   * ไม่เก็บว่าใครส่ง ส่งว่าอะไร (ดู anonymousReceived ใน lib/automation/handlers.ts)
+   */
+  unmatched: boolean;
 }
 
 type ErrorMeta = { message?: unknown; code?: unknown; subcode?: unknown };
@@ -130,6 +135,9 @@ export async function loadEvents(
       buttons: body.buttons,
       error: readError(meta),
       skipReason: event.type === "skipped" && typeof reason === "string" ? reason : null,
+      unmatched:
+        (event.type === "comment_received" || event.type === "dm_received") &&
+        (meta as { matched?: unknown } | null)?.matched === false,
     };
   });
 

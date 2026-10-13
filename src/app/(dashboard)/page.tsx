@@ -98,7 +98,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             tone="neutral"
             href="/contacts"
             value={formatNumber(t.newContacts)}
-            detail="คนที่เพิ่งคุยกับเพจครั้งแรก"
+            detail="คนใหม่ที่คอมเมนต์หรือทักแชทตรงกับคำในกฎ"
           />
         </div>
 

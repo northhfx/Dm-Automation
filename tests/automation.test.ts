@@ -156,6 +156,13 @@ describe("คอมเมนต์ → ตอบคอมเมนต์ + ส�
     await deliver(fbComment({ text: "สวยมาก", commentId: "C2" }));
     expect(graph.calls).toHaveLength(0);
     expect(await eventTypes()).toEqual(["comment_received", "comment_received"]);
+    // ไม่ทำให้กฎทำงาน → ไม่เก็บว่าใครคอมเมนต์ / คอมเมนต์ว่าอะไร
+    const received = await db.select().from(events).orderBy(events.id);
+    expect(received.map((e) => [e.actorId, e.text, e.meta])).toEqual([
+      [null, null, { via: "facebook_login", matched: false }],
+      [null, null, { via: "facebook_login", matched: false }],
+    ]);
+    expect(await db.select().from(contacts)).toHaveLength(0);
   });
 
   it("webhook ซ้ำ (Meta ส่งมาสองรอบ) ประมวลผลครั้งเดียว", async () => {
@@ -194,11 +201,14 @@ describe("DM keyword → ตอบกลับอัตโนมัติ", () =
     expect(await eventTypes()).toEqual(["dm_received", "rule_triggered", "dm_sent"]);
   });
 
-  it("ข้อความที่ไม่ตรง keyword ถูกบันทึกแต่ไม่ตอบ", async () => {
+  it("ข้อความที่ไม่ตรง keyword ถูกนับแต่ไม่ตอบ และไม่เก็บว่าใครทัก (ไม่สร้าง contact ไม่ดึงโปรไฟล์)", async () => {
     await createRule({ trigger: "dm", keywords: ["ราคา"] });
     await deliver(igDm({ text: "สวัสดี" }));
-    expect(graph.calls.filter((c) => c.method === "POST")).toHaveLength(0);
+    expect(graph.calls).toHaveLength(0);
     expect(await eventTypes()).toEqual(["dm_received"]);
+    const [received] = await db.select().from(events);
+    expect(received).toMatchObject({ platform: "instagram", contactId: null, actorId: null, text: null });
+    expect(await db.select().from(contacts)).toHaveLength(0);
   });
 });
 
