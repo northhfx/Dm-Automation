@@ -540,8 +540,11 @@ export function GuideView({
               </SubStep>
               <SubStep n={11}>
                 <p>
-                  สวิตช์ด้านบนของหน้าแอป: เปลี่ยนเป็น <B>เปิดใช้งาน (Live)</B>{" "}
-                  <span className="text-fg-2">— ถ้ากดไม่ได้ ตรวจข้อ 2 ว่ากรอกครบ (ลิงก์ 2 อัน, App icon, Category แล้วกด Save changes)</span>
+                  เผยแพร่แอป: เมนูซ้าย <B>เผยแพร่</B> (Publish — ตอนแรกขึ้นว่า &quot;ไม่ได้เผยแพร่&quot;) → กดปุ่ม <B>เผยแพร่</B>{" "}
+                  <span className="text-fg-2">
+                    (แอปหน้าตาแบบเก่าใช้สวิตช์ด้านบน เปลี่ยนเป็น <B>เปิดใช้งาน (Live)</B>) — ถ้ากดไม่ได้ ตรวจข้อ 2 ว่ากรอกครบ (ลิงก์ 2 อัน, App
+                    icon, Category แล้วกด Save changes)
+                  </span>
                 </p>
               </SubStep>
             </SubSteps>
