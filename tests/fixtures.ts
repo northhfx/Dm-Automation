@@ -28,7 +28,11 @@ export function fbComment(o: { text?: string; fromId?: string; commentId?: strin
   };
 }
 
-export function igComment(o: { text?: string; fromId?: string; commentId?: string; mediaId?: string } = {}) {
+/** คอมเมนต์ Instagram (noId = ส่ง comment_id มาแทน id) */
+export function igComment(
+  o: { text?: string; fromId?: string; fromUsername?: string; commentId?: string; mediaId?: string; noId?: boolean } = {},
+) {
+  const commentId = o.commentId ?? "IGC1";
   return {
     object: "instagram",
     entry: [
@@ -39,10 +43,34 @@ export function igComment(o: { text?: string; fromId?: string; commentId?: strin
           {
             field: "comments",
             value: {
-              from: { id: o.fromId ?? "IGUSER1", username: "mint.shop" },
+              from: { id: o.fromId ?? "IGUSER1", username: o.fromUsername ?? "mint.shop" },
               media: { id: o.mediaId ?? "MEDIA1", media_product_type: "FEED" },
-              id: o.commentId ?? "IGC1",
+              ...(o.noId ? { comment_id: commentId } : { id: commentId }),
               text: o.text ?? "สนใจ",
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** คอมเมนต์ของบัญชีร้านเอง (Instagram Login แนบ from.self_ig_scoped_id มาด้วย) */
+export function igSelfComment(o: { fromId?: string; commentId?: string; text?: string } = {}) {
+  return {
+    object: "instagram",
+    entry: [
+      {
+        id: "IG1",
+        time: 1700000000,
+        changes: [
+          {
+            field: "comments",
+            value: {
+              from: { id: o.fromId ?? "IG1", username: "test.shop", self_ig_scoped_id: "IGSCOPED_SELF1" },
+              media: { id: "MEDIA1", media_product_type: "FEED" },
+              id: o.commentId ?? "IGC_SELF1",
+              text: o.text ?? "ส่งรายละเอียดให้ทาง DM แล้วนะคะ",
             },
           },
         ],
@@ -85,6 +113,27 @@ export function igDm(o: { text?: string; mid?: string; senderId?: string } = {})
             recipient: { id: "IG1" },
             timestamp: 1700000000000,
             message: { mid: o.mid ?? "igmid.1", text: o.text ?? "ราคา" },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** ลูกค้ากด quick reply → มาเป็น event messages ที่มี message.quick_reply.payload */
+export function igQuickReply(payload: string, o: { text?: string; mid?: string; senderId?: string } = {}) {
+  return {
+    object: "instagram",
+    entry: [
+      {
+        id: "IG1",
+        time: 1700000000,
+        messaging: [
+          {
+            sender: { id: o.senderId ?? "IGSID1" },
+            recipient: { id: "IG1" },
+            timestamp: Date.now(),
+            message: { mid: o.mid ?? "igqr.1", text: o.text ?? "ใช่ ฉันสนใจ", quick_reply: { payload } },
           },
         ],
       },

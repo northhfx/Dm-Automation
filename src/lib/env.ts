@@ -42,11 +42,30 @@ export const env = {
   get graphApiVersion() {
     return process.env.GRAPH_API_VERSION || "v23.0";
   },
-  /** จำนวน DM อัตโนมัติสูงสุดต่อชั่วโมง (0 = ไม่จำกัด) */
-  get instagramDmPerHour() {
-    return numberOr("INSTAGRAM_DM_PER_HOUR", 180);
+  /** Instagram Login ใช้อีกโดเมน (graph.instagram.com) — เทสชี้ไปที่ Graph API ปลอมได้ */
+  get instagramGraphApiBase(): string {
+    return (process.env.INSTAGRAM_GRAPH_API_BASE || "https://graph.instagram.com").replace(/\/+$/, "");
   },
-  get facebookDmPerHour() {
+  get instagramGraphApiVersion(): string {
+    return process.env.INSTAGRAM_GRAPH_API_VERSION || process.env.GRAPH_API_VERSION || "v23.0";
+  },
+  /*
+   * ลิมิตการส่งต่อชั่วโมงของแต่ละบัญชี (0 = ไม่จำกัด) — ส่วนที่เกินจะรอคิวส่งทีหลัง ไม่ถูกทิ้ง
+   * ตัวเลขอิงจากเอกสารของ Meta:
+   * - Private Reply (DM แรกที่ตอบคอมเมนต์): Instagram ให้ 750 ครั้ง/ชม. ต่อบัญชี → ตั้งไว้ 720 เผื่อไว้นิดหน่อย
+   * - DM ทั่วไป (Send API): 100 ครั้ง/วินาที จึงไม่ต้องจำกัดรายชั่วโมง
+   *   (ตัวเลข "200 DM/ชม." ที่เล่าต่อกันมาไม่ใช่กฎของ Meta) ถ้าตั้ง *_DM_PER_HOUR ไว้ จะใช้กับ DM ทุกแบบ
+   */
+  get instagramPrivateReplyPerHour(): number {
+    return numberOr("INSTAGRAM_PRIVATE_REPLY_PER_HOUR", 720);
+  },
+  get facebookPrivateReplyPerHour(): number {
+    return numberOr("FACEBOOK_PRIVATE_REPLY_PER_HOUR", 0);
+  },
+  get instagramDmPerHour(): number {
+    return numberOr("INSTAGRAM_DM_PER_HOUR", 0);
+  },
+  get facebookDmPerHour(): number {
     return numberOr("FACEBOOK_DM_PER_HOUR", 0);
   },
   /** เขตเวลาที่ใช้แบ่งสถิติรายวัน */

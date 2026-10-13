@@ -34,6 +34,7 @@ export function StepCard({
   state,
   title,
   summary,
+  optionalLabel,
   children,
 }: {
   n: number;
@@ -41,6 +42,8 @@ export function StepCard({
   title: string;
   /** บรรทัดใต้ชื่อ: ยังไม่เสร็จ = ขั้นนี้ทำอะไร, เสร็จแล้ว = สรุปผล */
   summary?: ReactNode;
+  /** ป้ายของขั้นที่ไม่บังคับ เช่น "ถ้าใช้ Instagram" (ค่าเริ่มต้น "ทำเมื่อพร้อม") */
+  optionalLabel?: string;
   children: ReactNode;
 }) {
   const current = state === "current";
@@ -64,7 +67,8 @@ export function StepCard({
                 </Badge>
               )}
               {current && <Badge tone="accent">ขั้นต่อไป</Badge>}
-              {state === "optional" && <Badge tone="neutral">ทำเมื่อพร้อม</Badge>}
+              {state === "optional" && <Badge tone="neutral">{optionalLabel ?? "ทำเมื่อพร้อม"}</Badge>}
+              {current && optionalLabel && <Badge tone="neutral">{optionalLabel}</Badge>}
             </div>
             <h2 className="mt-0.5 text-base leading-6 font-semibold text-fg">{title}</h2>
             {summary && <p className="mt-0.5 text-sm leading-6 break-words text-fg-2">{summary}</p>}
@@ -86,9 +90,10 @@ export function SubSteps({ children, start = 1 }: { children: ReactNode; start?:
   );
 }
 
-export function SubStep({ n, children }: { n: number; children: ReactNode }) {
+/** id = จุดที่ลิงก์จากหน้าอื่นชี้มาได้ตรงๆ เช่น /guide#step-5-token (ต้องขึ้นต้นด้วย step-N- การ์ดที่พับไว้จะเปิดให้เอง) */
+export function SubStep({ n, id, children }: { n: number; id?: string; children: ReactNode }) {
   return (
-    <li value={n} className="flex gap-3">
+    <li value={n} id={id} className={cx("flex gap-3", id && "scroll-mt-[calc(var(--app-topbar-h)+16px)] lg:scroll-mt-10")}>
       <span
         aria-hidden
         className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold text-fg-2 tabular ring-1 ring-line ring-inset"
@@ -132,7 +137,7 @@ export function CodeChips({ items }: { items: string[] }) {
   return (
     <span className="flex flex-wrap gap-1.5">
       {items.map((f) => (
-        <code key={f} className="rounded-md border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-xs leading-5 text-fg">
+        <code key={f} className="max-w-full rounded-md border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-xs leading-5 break-all text-fg">
           {f}
         </code>
       ))}
@@ -149,4 +154,9 @@ export function FormPanel({ id, title, description, children }: { id?: string; t
       <div className="mt-4">{children}</div>
     </div>
   );
+}
+
+/** หัวข้อย่อยในขั้นที่ยาว (เลขขั้นย่อยยังนับต่อกันข้ามหัวข้อ) */
+export function SubHeading({ children }: { children: ReactNode }) {
+  return <h3 className="border-t border-line pt-5 text-sm leading-6 font-semibold text-fg first:border-t-0 first:pt-0">{children}</h3>;
 }

@@ -1,6 +1,6 @@
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { events, rules, type Platform, type Rule } from "@/db/schema";
+import { events, rules, type GraphApi, type Platform, type Rule } from "@/db/schema";
 import {
   errorInfo,
   getPostInfo,
@@ -66,10 +66,10 @@ function sinceFloor(since: Date): number {
   return Math.floor(since.getTime() / 1000) * 1000;
 }
 
-async function lookupPost(platform: Platform, postId: string, token: string): Promise<KnownPost> {
+async function lookupPost(platform: Platform, postId: string, token: string, api?: GraphApi): Promise<KnownPost> {
   const hit = cached(platform, postId);
   if (hit) return hit;
-  const info = await getPostInfo(platform, postId, token);
+  const info = await getPostInfo(platform, postId, token, api);
   const createdMs = parseGraphTime(info.createdAt);
   if (createdMs === null) throw new Error("Meta ไม่ได้บอกเวลาที่ลงโพสต์นี้");
   // เก็บด้วย id ที่ได้จาก webhook เพื่อให้คอมเมนต์ถัดไปเจอในแคช
@@ -78,10 +78,10 @@ async function lookupPost(platform: Platform, postId: string, token: string): Pr
   return post;
 }
 
-async function listRecent(platform: Platform, accountId: string, token: string): Promise<KnownPost[]> {
+async function listRecent(platform: Platform, accountId: string, token: string, api?: GraphApi): Promise<KnownPost[]> {
   const list =
     platform === "instagram"
-      ? await listRecentInstagramPosts(accountId, token, RECENT_LIMIT)
+      ? await listRecentInstagramPosts(accountId, token, RECENT_LIMIT, api)
       : await listRecentFacebookPosts(accountId, token, RECENT_LIMIT);
   return list.flatMap((p) => {
     const createdMs = parseGraphTime(p.createdAt);
@@ -100,10 +100,13 @@ export interface NextPostRule {
   boundPosts: Rule["boundPosts"];
 }
 
+/** เพจ หรือบัญชี Instagram Login (Connection ใช้แทนได้เลย) */
 export interface NextPostPage {
   id: string;
   igUserId: string | null;
   token: string | null;
+  /** ช่องทาง API ของ token (ไม่ระบุ = "facebook") */
+  api?: GraphApi;
 }
 
 /** ข้อมูลคอมเมนต์ที่ทำให้ต้องเช็ค (ใช้บันทึกในหน้ากิจกรรมเมื่อเช็คไม่สำเร็จ) */
@@ -135,12 +138,18 @@ export async function resolveNextPost(
 
   let target: KnownPost;
   try {
-    if (!page.token) throw new Error("token ของเพจใช้ไม่ได้ — ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่");
-    const commented = await lookupPost(platform, postId, page.token);
+    if (!page.token) {
+      throw new Error(
+        page.api === "instagram"
+          ? "token ของ Instagram ใช้ไม่ได้ — ไปที่ ตั้งค่า → บัญชี Instagram แล้ววาง token ใหม่"
+          : "token ของเพจใช้ไม่ได้ — ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่",
+      );
+    }
+    const commented = await lookupPost(platform, postId, page.token, page.api);
     if (commented.createdMs < sinceFloor(since)) return false; // โพสต์เก่า ลงก่อนเริ่มรอ
 
     const accountId = platform === "instagram" ? page.igUserId : page.id;
-    const recent = accountId ? await listRecent(platform, accountId, page.token) : [];
+    const recent = accountId ? await listRecent(platform, accountId, page.token, page.api) : [];
     // Facebook: คนอื่นโพสต์บนหน้าเพจได้ (visitor post) → ห้ามผูกกับโพสต์ที่เพจไม่ได้ลงเอง
     // (ไม่งั้นใครก็แย่งกฎไปได้ด้วยการโพสต์บนหน้าเพจแล้วคอมเมนต์คำที่ตั้งไว้)
     // Instagram ส่งคอมเมนต์มาเฉพาะโพสต์ของบัญชีเองอยู่แล้ว

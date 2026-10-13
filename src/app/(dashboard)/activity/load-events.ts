@@ -104,6 +104,16 @@ export async function loadEvents(
   const items = page.map(({ event, ruleName, contactName, contactUsername }): TimelineEvent => {
     const meta = event.meta ?? null;
     const reason = (meta as { reason?: unknown } | null)?.reason;
+    // กิจกรรมระดับบัญชี (ไม่มีลูกค้าเกี่ยวข้อง) → แสดงชื่อบัญชีร้านแทน
+    //  token_refresh_failed: meta.username (ไม่มี @) / dm_rate_limited: meta.accountName (ชื่อเพจหรือ "@username")
+    const account = (meta as { username?: unknown } | null)?.username;
+    const accountLabel = (meta as { accountName?: unknown } | null)?.accountName;
+    const accountName =
+      event.type === "token_refresh_failed" && typeof account === "string" && account.trim()
+        ? `@${account.trim()}`
+        : event.type === "dm_rate_limited" && typeof accountLabel === "string" && accountLabel.trim()
+          ? accountLabel.trim()
+          : null;
     const body = splitButtons(event.type, event.text?.trim() || null);
     return {
       id: event.id,
@@ -112,7 +122,10 @@ export async function loadEvents(
       createdAt: event.createdAt,
       ruleId: event.ruleId,
       ruleName: ruleName ?? null,
-      person: displayName(contactName, contactUsername) ?? (event.actorId ? (byActor.get(`${event.platform}:${event.actorId}`) ?? null) : null),
+      person:
+        accountName ??
+        displayName(contactName, contactUsername) ??
+        (event.actorId ? (byActor.get(`${event.platform}:${event.actorId}`) ?? null) : null),
       text: body.text,
       buttons: body.buttons,
       error: readError(meta),

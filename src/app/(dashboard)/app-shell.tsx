@@ -8,6 +8,8 @@ import { ChevronRight, LogOut, Menu as MenuIcon, Rocket, TriangleAlert, X } from
 import { Avatar, cx, IconButton, PlatformIcon, ProgressBar, Spinner } from "@/components/ui";
 import { Dialog } from "@/components/dialog";
 import { LogoMark } from "@/components/logo";
+import { ThemeToggle } from "@/components/theme-toggle";
+import type { ThemePref } from "@/lib/theme";
 import { logout } from "../login/actions";
 import { currentNavLabel, NavLinks } from "./nav-links";
 
@@ -19,10 +21,21 @@ export interface ShellPage {
   hasError: boolean;
 }
 
+/** บัญชี Instagram ที่เชื่อมผ่าน Instagram Login */
+export interface ShellInstagram {
+  id: string;
+  username: string;
+  /** critical = ระบบตอบบัญชีนี้ไม่ได้, warning = ยังใช้ได้แต่ควรตรวจสอบ (instagramHealthLevel) */
+  status: "critical" | "warning" | "ok";
+}
+
 export interface ShellData {
   /** null = อ่านสถานะไม่ได้ (ไม่แสดงการ์ดความคืบหน้า) */
   setup: { done: number; total: number } | null;
   pages: ShellPage[];
+  instagram: ShellInstagram[];
+  /** ธีมที่ผู้ใช้เลือกไว้ (จาก cookie) */
+  theme: ThemePref;
 }
 
 /** หน้าที่เป็นผืนผ้าใบเต็มจอ (ตัวสร้างกฎ): ไม่มีกรอบ/ระยะขอบ และหน้าไม่เลื่อน */
@@ -115,7 +128,7 @@ function SidebarContent({ data, onNavigate, closeButton }: { data: ShellData; on
       </div>
 
       <div className="px-3 pb-4">
-        <PageChip pages={data.pages} onNavigate={onNavigate} />
+        <PageChip pages={data.pages} instagram={data.instagram} onNavigate={onNavigate} />
       </div>
 
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 pb-4">
@@ -145,6 +158,10 @@ function SidebarContent({ data, onNavigate, closeButton }: { data: ShellData; on
             </p>
           </Link>
         )}
+        <div className="flex items-center gap-3 px-3">
+          <span className="shrink-0 text-xs font-medium text-fg-3">ธีม</span>
+          <ThemeToggle initial={data.theme} variant="compact" className="flex-1" />
+        </div>
         <form action={logout}>
           <LogoutButton />
         </form>
@@ -167,9 +184,9 @@ function LogoutButton() {
   );
 }
 
-/** เพจที่เชื่อมต่ออยู่ (กดเพื่อไปหน้าตั้งค่า) */
-function PageChip({ pages, onNavigate }: { pages: ShellPage[]; onNavigate?: () => void }) {
-  if (pages.length === 0) {
+/** เพจ / บัญชี Instagram ที่เชื่อมต่ออยู่ (กดเพื่อไปหน้าตั้งค่า) */
+function PageChip({ pages, instagram, onNavigate }: { pages: ShellPage[]; instagram: ShellInstagram[]; onNavigate?: () => void }) {
+  if (pages.length === 0 && instagram.length === 0) {
     return (
       <Link
         href="/settings"
@@ -186,38 +203,47 @@ function PageChip({ pages, onNavigate }: { pages: ShellPage[]; onNavigate?: () =
       </Link>
     );
   }
-  const page = pages[0];
-  const anyError = pages.some((p) => p.hasError);
+  const page = pages[0] as ShellPage | undefined;
+  const ig = instagram[0] as ShellInstagram | undefined;
+  const anyError = pages.some((p) => p.hasError) || instagram.some((a) => a.status === "critical");
+  const anyWarning = !anyError && instagram.some((a) => a.status === "warning");
+  // เพจหลัก: ชื่อเพจ + IG (บัญชีที่เชื่อมผ่าน Instagram Login ก่อน ไม่มีค่อยใช้ IG ที่ผูกกับเพจ)
+  // ไม่มีเพจ (ใช้แค่ Instagram): @username + "Instagram"
+  const title = page ? page.name : `@${ig?.username}`;
+  const igUsername = ig?.username ?? page?.igUsername ?? null;
+  const extra = page ? (pages.length > 1 ? `+${pages.length - 1} เพจ` : null) : instagram.length > 1 ? `+${instagram.length - 1} บัญชี` : null;
   return (
     <Link
       href="/settings"
       onClick={onNavigate}
-      title="เพจที่เชื่อมต่อ — กดเพื่อจัดการ"
+      title="เพจและบัญชีที่เชื่อมต่อ — กดเพื่อจัดการ"
       className="flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5 shadow-xs transition hover:border-line-strong hover:shadow-sm"
     >
       <span className="relative shrink-0">
-        <Avatar name={page.name} size="md" />
+        <Avatar name={page ? page.name : ig?.username} size="md" />
         <span className="absolute -right-1 -bottom-1 rounded-full ring-2 ring-surface">
-          <PlatformIcon platform="facebook" size={14} />
+          <PlatformIcon platform={page ? "facebook" : "instagram"} size={14} />
         </span>
       </span>
       <span className="min-w-0 flex-1 leading-tight">
-        <span className="block truncate text-sm font-medium text-fg">{page.name}</span>
+        <span className="block truncate text-sm font-medium text-fg">{title}</span>
         <span className="mt-0.5 flex items-center gap-1 truncate text-xs text-fg-3">
-          {anyError ? (
+          {anyError || anyWarning ? (
             <>
               <TriangleAlert className="size-3 shrink-0 text-warning-text" aria-hidden />
-              <span className="text-warning-text">ยังไม่พร้อมใช้งาน</span>
+              <span className="text-warning-text">{anyError ? "ยังไม่พร้อมใช้งาน" : "ต้องตรวจสอบ"}</span>
             </>
-          ) : page.igUsername ? (
+          ) : !page ? (
+            "Instagram"
+          ) : igUsername ? (
             <>
               <PlatformIcon platform="instagram" size={12} />
-              <span className="truncate">@{page.igUsername}</span>
+              <span className="truncate">@{igUsername}</span>
             </>
           ) : (
             "Facebook เพจ"
           )}
-          {pages.length > 1 && <span className="shrink-0">· +{pages.length - 1} เพจ</span>}
+          {extra && <span className="shrink-0">· {extra}</span>}
         </span>
       </span>
     </Link>

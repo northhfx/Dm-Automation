@@ -164,7 +164,7 @@ function ToolbarButton({ onClick, icon, label, danger }: { onClick: () => void; 
 }
 
 const cardBase =
-  "absolute rounded-xl border bg-surface text-left outline-none focus-visible:ring-[3px] focus-visible:ring-accent/40 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_12px_-4px_rgba(0,0,0,0.08)] transition-[border-color,box-shadow]";
+  "absolute rounded-xl border bg-surface text-left outline-none focus-visible:ring-[3px] focus-visible:ring-accent/40 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_12px_-4px_rgba(0,0,0,0.08)] dark:shadow-sm transition-[border-color,box-shadow]";
 
 /* ---------------------------------------------------------------- การ์ด "เมื่อ…" */
 

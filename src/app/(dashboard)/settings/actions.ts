@@ -5,7 +5,18 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "@/db/client";
 import { pages } from "@/db/schema";
 import { requireAuth } from "@/lib/auth";
-import { saveMetaApp, savePublicBaseUrl, setAppReviewDone, setPassword, verifyPassword } from "@/lib/config";
+import {
+  getInstagramConfig,
+  getMetaConfig,
+  saveInstagramApp,
+  saveMetaApp,
+  savePublicBaseUrl,
+  setAppReviewDone,
+  setPassword,
+  verifyPassword,
+} from "@/lib/config";
+import { connectInstagramWithToken, disconnectInstagram, InstagramConnectError, resubscribeInstagram } from "@/lib/instagram/connect";
+import { refreshInstagramAccountToken } from "@/lib/instagram/token";
 import { exchangeForLongLivedUserToken, listManagedPages, subscribePageToApp } from "@/lib/meta/graph";
 import { getPageById, savePage } from "@/lib/pages";
 
@@ -158,4 +169,99 @@ export async function changePasswordAction(_prev: FormResult, formData: FormData
   if (next.length < 8) return { error: "รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร", field: "next" };
   await setPassword(db, next);
   return { ok: true };
+}
+
+// ---------------- Instagram (เชื่อมผ่าน Instagram Login) ----------------
+
+function revalidateSetup() {
+  revalidatePath("/settings");
+  revalidatePath("/guide");
+}
+
+export interface InstagramConnectState {
+  ok?: boolean;
+  error?: string;
+  field?: "token" | "appSecret";
+  message?: string;
+  /** ข้อความแจ้งจากการเชื่อมต่อ (ไม่ทำให้เชื่อมไม่สำเร็จ) */
+  notices?: string[];
+  /** subscribe webhook สำเร็จไหม */
+  subscribed?: boolean;
+  /** ชื่อเพจ Facebook ที่ผูกบัญชีนี้ไว้ด้วย (บัญชีเดียวกัน → แจ้งแบบให้สบายใจ ไม่ใช่คำเตือน) */
+  linkedPage?: string;
+}
+
+/** วาง token จากหน้า API setup with Instagram login → ตรวจ + บันทึก + subscribe webhook */
+export async function connectInstagramAction(_prev: InstagramConnectState, formData: FormData): Promise<InstagramConnectState> {
+  await requireAuth();
+  const db = getDb();
+  try {
+    const result = await connectInstagramWithToken(db, String(formData.get("token") ?? ""));
+    const linked = await db.query.pages.findFirst({ where: eq(pages.igUserId, result.accountId), columns: { name: true } });
+    revalidateSetup();
+    return {
+      ok: true,
+      message: `เชื่อมต่อ @${result.username} แล้ว`,
+      notices: result.notices,
+      subscribed: result.subscribed,
+      linkedPage: linked?.name,
+    };
+  } catch (err) {
+    if (err instanceof InstagramConnectError) return { error: err.message, field: err.field ?? undefined };
+    console.error("[instagram] เชื่อมต่อไม่สำเร็จ:", err);
+    return { error: `เชื่อมต่อไม่สำเร็จ: ${(err as Error)?.message ?? String(err)}` };
+  }
+}
+
+const IG_SECRET_PATTERN = /^[A-Za-z0-9]{20,64}$/;
+
+/** บันทึก Instagram app secret (หน้า API setup with Instagram login) + App secret ของแอป IG ที่แยก (ไม่บังคับ) */
+export async function saveInstagramAppAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
+  await requireAuth();
+  const db = getDb();
+  const current = await getInstagramConfig(db);
+  if (current.fromEnv) return { error: "ตั้งค่าไว้ใน Railway (INSTAGRAM_APP_SECRET) — แก้ที่นั่น" };
+
+  const appSecret = String(formData.get("igAppSecret") ?? "").trim();
+  const metaAppSecret = String(formData.get("igMetaAppSecret") ?? "").trim();
+  if (!appSecret && !current.appSecret) {
+    return { error: "วาง Instagram app secret จากหน้า API setup with Instagram login", field: "igAppSecret" };
+  }
+  if (appSecret && !IG_SECRET_PATTERN.test(appSecret)) {
+    return { error: "Instagram app secret ไม่ถูกต้อง (ควรเป็นตัวอักษรและตัวเลขติดกัน — กด Show ก่อนคัดลอก)", field: "igAppSecret" };
+  }
+  if (metaAppSecret && !IG_SECRET_PATTERN.test(metaAppSecret)) {
+    return { error: "App secret ไม่ถูกต้อง (ควรเป็นตัวอักษรและตัวเลขติดกัน — กด Show ก่อนคัดลอก)", field: "igMetaAppSecret" };
+  }
+  if (appSecret && appSecret === (await getMetaConfig(db)).appSecret) {
+    return {
+      error: "นี่คือ App Secret ของ Facebook (App settings → Basic) — ต้องใช้ Instagram app secret จากหน้า API setup with Instagram login",
+      field: "igAppSecret",
+    };
+  }
+  await saveInstagramApp(db, { appSecret, metaAppSecret });
+  revalidateSetup();
+  return { ok: true };
+}
+
+/** ปุ่ม "ลองใหม่": ให้ Meta ส่ง webhook ของบัญชีนี้มาอีกครั้ง */
+export async function resubscribeInstagramAction(formData: FormData): Promise<FormResult> {
+  await requireAuth();
+  const result = await resubscribeInstagram(getDb(), String(formData.get("accountId") ?? ""));
+  revalidateSetup();
+  return result.ok ? { ok: true } : { error: result.error };
+}
+
+/** ปุ่ม "ต่ออายุ token" (ปกติระบบต่ออายุให้เอง — ปุ่มนี้ไว้ลองทันที) */
+export async function refreshInstagramTokenAction(formData: FormData): Promise<FormResult> {
+  await requireAuth();
+  const result = await refreshInstagramAccountToken(getDb(), String(formData.get("accountId") ?? ""), { manual: true });
+  revalidateSetup();
+  return result.ok ? { ok: true } : { error: result.error };
+}
+
+export async function disconnectInstagramAction(formData: FormData): Promise<void> {
+  await requireAuth();
+  await disconnectInstagram(getDb(), String(formData.get("accountId") ?? ""));
+  revalidateSetup();
 }

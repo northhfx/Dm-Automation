@@ -19,7 +19,7 @@ function setupSteps(s: SetupStatus): { done: boolean; label: string; href: strin
     { done: Boolean(s.baseUrl), label: "ยืนยันที่อยู่เว็บของระบบ", href: "/guide" },
     { done: Boolean(s.meta.appId && s.meta.appSecret), label: "ใส่ข้อมูลแอปจาก Meta for Developers", href: "/guide" },
     { done: Boolean(s.webhookVerifiedAt), label: "ตั้งค่าให้ Meta ส่งคอมเมนต์และแชทเข้าระบบ", href: "/guide" },
-    { done: s.pagesSubscribed > 0, label: "เชื่อมต่อเพจ Facebook และ Instagram", href: "/guide" },
+    { done: s.pagesSubscribed > 0 || s.instagram.subscribed > 0, label: "เชื่อมต่อเพจ Facebook หรือบัญชี Instagram", href: "/guide" },
     { done: s.ruleCount > 0, label: "สร้างกฎอัตโนมัติอันแรก", href: "/rules/new" },
     { done: Boolean(s.lastWebhookAt), label: "ทดสอบโดยคอมเมนต์ที่โพสต์ของเพจ", href: "/guide" },
   ];

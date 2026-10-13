@@ -108,14 +108,11 @@ export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: str
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-fg">{p.name}</span>
                   <span className="mt-0.5 flex items-center gap-1.5 text-xs text-fg-2">
-                    {p.igUsername ? (
-                      <>
-                        <PlatformIcon platform="instagram" size={12} />
-                        <span className="truncate">Instagram @{p.igUsername}</span>
-                      </>
-                    ) : (
-                      <span className="text-fg-3">ไม่มี Instagram ที่ผูกไว้ (ใช้ได้เฉพาะ Facebook)</span>
-                    )}
+                    <PlatformIcon platform="facebook" size={12} />
+                    <span className="truncate">
+                      Facebook
+                      {p.igUsername && <span className="text-fg-3"> (IG @{p.igUsername} ผ่านเพจ)</span>}
+                    </span>
                   </span>
                 </span>
                 {connected.has(p.id) && (

@@ -1,11 +1,11 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { LockKeyhole } from "lucide-react";
+import { ChevronRight, LockKeyhole } from "lucide-react";
 import { Field, inputClass, Notice } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { toast } from "@/components/toast";
-import { changePasswordAction, saveBaseUrlAction, saveMetaAppAction, type FormResult } from "./actions";
+import { changePasswordAction, saveBaseUrlAction, saveInstagramAppAction, saveMetaAppAction, type FormResult } from "./actions";
 
 /** แสดง toast เมื่อบันทึกสำเร็จ (ข้อผิดพลาดแสดงใต้ช่องในฟอร์มแทน) */
 function useSuccessToast(state: FormResult, message: string) {
@@ -95,6 +95,134 @@ export function MetaAppForm({ appId, hasSecret, fromEnv }: { appId: string | nul
         </Field>
       </div>
       <FormError state={state} fields={["appId", "appSecret"]} />
+      <div className="flex justify-end">
+        <SubmitButton pendingText="กำลังบันทึก…" className="max-sm:w-full">
+          บันทึก
+        </SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+/** ป้าย "บันทึกไว้แล้ว" ข้างชื่อช่อง secret */
+function SavedMark() {
+  return (
+    <span className="inline-flex items-center gap-1 text-good-text">
+      <LockKeyhole className="size-3.5" aria-hidden />
+      บันทึกไว้แล้ว
+    </span>
+  );
+}
+
+/**
+ * Instagram app secret จากหน้า API setup with Instagram login + App secret (App settings → Basic) ของแอป Instagram ที่แยกไว้
+ * Meta อาจใช้ secret ตัวไหนก็ได้ลงลายเซ็น webhook ระบบจึงตรวจกับทั้งสองตัว
+ * separateApp = คู่มือขั้นที่ 5 (สร้างแอปแยกเสมอ): แสดงช่องที่สองเลยและต้องกรอก
+ * ไม่งั้น (หน้าตั้งค่า) ช่องที่สองพับไว้ เพราะถ้าใช้แอป Facebook เดิม ไม่ต้องกรอก
+ */
+export function InstagramAppForm({
+  hasSecret,
+  hasMetaAppSecret,
+  fromEnv,
+  separateApp,
+}: {
+  hasSecret: boolean;
+  hasMetaAppSecret: boolean;
+  fromEnv: boolean;
+  separateApp?: boolean;
+}) {
+  const [state, action] = useActionState<FormResult, FormData>(saveInstagramAppAction, {});
+  const [secret, setSecret] = useState("");
+  const [metaSecret, setMetaSecret] = useState("");
+  const [moreOpen, setMoreOpen] = useState(hasMetaAppSecret);
+  // บันทึกสำเร็จ → ล้างช่อง (ค่าถูกเก็บแล้ว) / ช่องที่ซ่อนอยู่ผิด → เปิดให้เห็น
+  const [handled, setHandled] = useState(state);
+  if (handled !== state) {
+    setHandled(state);
+    if (state.ok) {
+      setSecret("");
+      setMetaSecret("");
+    }
+    if (state.field === "igMetaAppSecret") setMoreOpen(true);
+  }
+  useSuccessToast(state, "บันทึก Instagram app secret แล้ว");
+
+  if (fromEnv) {
+    return (
+      <Notice tone="neutral" title="ตั้งค่าไว้ใน Railway แล้ว">
+        Instagram app secret อยู่ใน Variables ของ Railway (INSTAGRAM_APP_SECRET) — แก้ไขที่นั่น
+      </Notice>
+    );
+  }
+
+  const secretError = fieldError(state, "igAppSecret");
+  const metaError = fieldError(state, "igMetaAppSecret");
+  const metaField = (
+    <Field
+      label="App secret ของแอป Instagram (App settings → Basic)"
+      htmlFor="igMetaAppSecret"
+      optional={!separateApp}
+      aside={hasMetaAppSecret ? <SavedMark /> : undefined}
+      hint={
+        hasMetaAppSecret
+          ? "ซ่อนไว้เพื่อความปลอดภัย — เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน"
+          : separateApp
+            ? "แอป Instagram ที่สร้างในข้อ 1 → App settings → Basic → กด Show ที่ App secret ก่อนคัดลอก"
+            : "ใส่เมื่อสร้างแอปแยกสำหรับ Instagram — Meta อาจใช้ค่านี้ลงลายเซ็น webhook (ถ้าใช้แอป Facebook เดิม เว้นว่างได้)"
+      }
+      error={metaError}
+    >
+      <input
+        id="igMetaAppSecret"
+        name="igMetaAppSecret"
+        type="password"
+        required={separateApp && !hasMetaAppSecret}
+        value={metaSecret}
+        onChange={(e) => setMetaSecret(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder={hasMetaAppSecret ? "••••••••••••••••••••••••" : "ตัวอักษรและตัวเลข 32 ตัว"}
+        aria-invalid={Boolean(metaError) || undefined}
+        className={`${inputClass} font-mono`}
+      />
+    </Field>
+  );
+  return (
+    <form action={action} className="space-y-5">
+      <Field
+        label={separateApp ? "Instagram app secret (API setup with Instagram login)" : "Instagram app secret"}
+        htmlFor="igAppSecret"
+        aside={hasSecret ? <SavedMark /> : undefined}
+        hint={hasSecret ? "ซ่อนไว้เพื่อความปลอดภัย — เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน" : "กด Show ข้างช่อง Instagram app secret ก่อนคัดลอก"}
+        error={secretError}
+      >
+        <input
+          id="igAppSecret"
+          name="igAppSecret"
+          type="password"
+          required={!hasSecret}
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={hasSecret ? "••••••••••••••••••••••••" : "ตัวอักษรและตัวเลข"}
+          aria-invalid={Boolean(secretError) || undefined}
+          className={`${inputClass} font-mono`}
+        />
+      </Field>
+      {separateApp ? (
+        metaField
+      ) : (
+        <details open={moreOpen} onToggle={(e) => setMoreOpen(e.currentTarget.open)} className="group/more rounded-lg border border-line">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium text-fg hover:bg-surface-2/60 [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="size-4 shrink-0 text-fg-3 transition-transform group-open/more:rotate-90" aria-hidden />
+            <span className="flex-1">สร้างแอปแยกสำหรับ Instagram? (ทำตามคู่มือขั้นที่ 5)</span>
+            {hasMetaAppSecret && <span className="text-xs font-normal text-good-text">บันทึกไว้แล้ว</span>}
+          </summary>
+          <div className="border-t border-line p-3.5">{metaField}</div>
+        </details>
+      )}
+      <FormError state={state} fields={["igAppSecret", "igMetaAppSecret"]} />
       <div className="flex justify-end">
         <SubmitButton pendingText="กำลังบันทึก…" className="max-sm:w-full">
           บันทึก

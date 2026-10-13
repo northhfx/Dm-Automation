@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { contacts, events, jobs, links, messages, rules } from "@/db/schema";
+import { contacts, events, jobs, links, messages, rules, webhookLogs } from "@/db/schema";
 import { ingestWebhook } from "@/lib/automation/ingest";
 import { flowPayload } from "@/lib/flows/types";
 import { drainQueue } from "@/lib/queue/worker";
@@ -59,11 +59,17 @@ describe("คอมเมนต์ → ตอบคอมเมนต์ + ส�
       buttons: [{ type: "postback", title: "ใช่ ฉันสนใจ", payload: flowPayload(rule.id, "s1", "b1") }],
     });
     expect(dm.query.appsecret_proof).toBeTruthy();
+    expect(dm.api).toBe("facebook");
 
     const reply = graph.calls.find((c) => c.path === "/POST1_C1/comments")!;
     expect(reply.body).toEqual({ message: "ส่งรายละเอียดให้ทาง DM แล้วนะคะ Somchai" });
+    expect(reply.api).toBe("facebook");
 
     expect(await eventTypes()).toEqual(["comment_received", "rule_triggered", "public_reply_sent", "dm_sent"]);
+    const received = (await db.select().from(events).where(eq(events.type, "comment_received")))[0];
+    expect(received.meta).toMatchObject({ via: "facebook_login" });
+    const [sendJob] = await db.select().from(jobs).where(eq(jobs.type, "send_dm"));
+    expect(sendJob.payload).toMatchObject({ pageId: "PAGE1", api: "facebook" });
     const [contact] = await db.select().from(contacts);
     expect(contact).toMatchObject({ platform: "facebook", platformUserId: "PSID_FROM_POST1_C1", name: "Somchai" });
     const [msg] = await db.select().from(messages);
@@ -140,6 +146,8 @@ describe("คอมเมนต์ → ตอบคอมเมนต์ + ส�
     await deliver(igComment({ text: "สนใจ" }));
     expect(graph.calls.find((c) => c.path === "/IGC1/replies")).toBeTruthy();
     expect(templateOf(sentMessages()[0]).text).toBe("สวัสดีค่ะ mint.shop สนใจรับรายละเอียดไหมคะ");
+    // Instagram ที่ผูกกับเพจ (ไม่ได้เชื่อม Instagram Login) ยังใช้ graph.facebook.com ทั้งหมด
+    expect(graph.calls.every((c) => c.api === "facebook")).toBe(true);
   });
 
   it("ไม่ทำอะไรถ้าไม่ตรง keyword หรือไม่ใช่โพสต์ที่เลือกไว้", async () => {
@@ -239,6 +247,8 @@ describe("ข้อผิดพลาดและลิมิต", () => {
     expect(msg.status).toBe("failed");
     expect(msg.error).toContain("isn't available");
     expect((await eventTypes()).at(-1)).toBe("dm_failed");
+    const failed = (await db.select().from(events).where(eq(events.type, "dm_failed")))[0];
+    expect(failed.meta).toMatchObject({ api: "facebook" });
     expect(await db.select().from(jobs).where(eq(jobs.status, "pending"))).toHaveLength(0);
     expect(await db.select().from(links)).toHaveLength(0);
   });
@@ -290,6 +300,7 @@ describe("ข้อผิดพลาดและลิมิต", () => {
     });
     await drainQueue(db);
     expect(templateOf(sentMessages()[0]).text).toBe("สวัสดีค่ะ Nok สนใจรับรายละเอียดไหมคะ");
+    expect(sentMessages()[0].api).toBe("facebook");
     expect(await db.select().from(links).where(eq(links.code, "legacy01"))).toHaveLength(0);
   });
 
@@ -344,6 +355,9 @@ describe("Webhook endpoint", () => {
     expect((await post(sig)).status).toBe(200);
     const queued = await db.select().from(jobs);
     expect(queued.map((j) => j.type)).toEqual(["comment"]);
+    expect(queued[0].payload).toMatchObject({ via: "facebook_login" });
+    const logs = await db.select().from(webhookLogs);
+    expect(logs.map((l) => l.source)).toEqual(["facebook_login"]);
   });
 });
 

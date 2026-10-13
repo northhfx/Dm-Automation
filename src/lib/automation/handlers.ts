@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import {
   contacts,
@@ -7,15 +7,19 @@ import {
   links,
   messages,
   rules,
+  type GraphApi,
   type Job,
   type MessageSource,
   type Platform,
   type TriggerType,
+  type WebhookVia,
 } from "@/db/schema";
 import { getPublicBaseUrl } from "@/lib/config";
+import { findConnection, getConnection, type Connection, type LoginKind } from "@/lib/connections";
 import { randomCode } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { fitText, FLOW_LIMITS, flowPayload, parseFlowPayload } from "@/lib/flows/types";
+import { INSTAGRAM_ERRORS, markInstagramLoginDelivery, updateInstagramAccountStatus } from "@/lib/instagram/accounts";
 import {
   buildMessage,
   errorInfo,
@@ -28,8 +32,7 @@ import {
   type SendResult,
 } from "@/lib/meta/graph";
 import type { CommentJob, DmJob, PagePostJob, ReadJob } from "@/lib/meta/webhook";
-import { findPageByAccount, getPageById, type ConnectedPage } from "@/lib/pages";
-import { enqueue, rescheduleJob, updateJobPayload } from "@/lib/queue/queue";
+import { enqueue, postponePendingJobs, rescheduleJob, updateJobPayload } from "@/lib/queue/queue";
 import { findMatchingRule } from "@/lib/rules/match";
 import { bindPublishedFacebookPost, resolveNextPost } from "@/lib/rules/next-post";
 import { postScopeMatches } from "@/lib/rules/post-scope";
@@ -38,6 +41,7 @@ import { firstName, pickRandom, renderTemplate } from "@/lib/rules/template";
 export interface SendDmJob {
   type: "send_dm";
   platform: Platform;
+  /** Connection.id: Page ID (Facebook และ Instagram ผ่านเพจ) หรือ IG account ID (Instagram Login) */
   pageId: string;
   ruleId: number;
   /** ข้อความไหนในกฎที่จะส่ง */
@@ -49,12 +53,90 @@ export interface SendDmJob {
   postId: string | null;
   /** ลิงก์ติดตามของแต่ละปุ่ม (buttonId → code) สร้างครั้งแรกแล้วเก็บไว้ ถ้างานถูกลองใหม่จะได้ใช้ลิงก์เดิม */
   linkCodes?: Record<string, string>;
+  /** ส่งผ่าน API ไหน — งานที่เข้าคิวก่อนมีฟิลด์นี้ไม่มีค่า (pageId เป็น Page ID เสมอ) */
+  api?: GraphApi;
+  /** Meta ขอให้ชะลอ (rate limit) งานนี้มาแล้วกี่รอบ — ครบ RATE_LIMIT_MAX_WAITS แล้วยังไม่ผ่านจะเลิกส่ง */
+  rateLimitHits?: number;
 }
+
+/**
+ * ช่องทาง Instagram Login ถือว่า "ใช้ได้จริง" สำหรับ DM ถ้าส่ง DM ของบัญชีนั้นมาภายในช่วงนี้
+ * ระหว่างนั้น DM ที่มาทาง Facebook Login จะถูกข้าม (ไม่งั้นใช้เป็นทางสำรอง) — คอมเมนต์ไม่ใช้กติกานี้ ดู handleComment
+ */
+export const LOGIN_CHANNEL_FRESH_MS = 7 * 24 * 60 * 60_000;
+
+/** ข้อความธรรมดา (ไม่มีปุ่ม) ผ่าน Instagram Login ยาวได้ไม่เกิน 1000 ไบต์ UTF-8 (ภาษาไทยตัวละ 3 ไบต์) */
+const INSTAGRAM_TEXT_MAX_BYTES = 1000;
+
+/** token ใช้ไม่ได้ → บอกวิธีแก้ให้ตรงกับช่องทางที่เชื่อมไว้ */
+const TOKEN_PROBLEM_MESSAGE: Record<GraphApi, string> = {
+  facebook: "token ของเพจใช้ไม่ได้ — ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่",
+  instagram: INSTAGRAM_ERRORS.tokenRejected,
+};
 
 type EventInsert = typeof events.$inferInsert;
 
 async function logEvent(db: Db, e: EventInsert): Promise<void> {
   await db.insert(events).values(e);
+}
+
+/** งานที่เข้าคิวก่อนมีฟิลด์ via ถือว่ามาทาง Facebook Login */
+function viaOf(job: { via?: WebhookVia }): WebhookVia {
+  return job.via ?? "facebook_login";
+}
+
+/** จดว่าช่องทาง Instagram Login ส่งเหตุการณ์ประเภทนี้ (คอมเมนต์ / DM) ของบัญชีนี้มาแล้ว — หน้าตั้งค่าแสดงเวลาล่าสุด */
+async function noteInstagramLoginDelivery(
+  db: Db,
+  conn: Connection,
+  via: WebhookVia | undefined,
+  kind: LoginKind,
+): Promise<void> {
+  if (via === "instagram_login" && conn.api === "instagram") await markInstagramLoginDelivery(db, conn.id, kind);
+}
+
+/**
+ * DM ที่มาทาง Facebook Login ของบัญชีที่ใช้ Instagram Login อยู่ → ข้าม เมื่อช่องทาง Instagram Login ส่ง DM
+ * ของบัญชีนี้มาแล้วภายใน 7 วัน ก่อนหน้านั้นยังประมวลผล (ส่งออกทาง Instagram Login) เผื่อ Meta ยังไม่ส่งทาง Instagram Login ให้
+ * (ต้องเรียกก่อน claimOnce — สำเนาที่ข้ามจะได้ไม่จองคีย์กันซ้ำไว้)
+ */
+function skipFacebookDmCopy(conn: Connection, via: WebhookVia | undefined, mid: string, now = Date.now()): boolean {
+  if ((via ?? "facebook_login") !== "facebook_login" || conn.api !== "instagram") return false;
+  const at = conn.loginChannel?.messagingAt;
+  if (at == null || now - at.getTime() >= LOGIN_CHANNEL_FRESH_MS) return false;
+  console.info(`[webhook] ข้ามข้อความ ${mid} ที่มาทาง Facebook Login — @${conn.username} ใช้ Instagram Login แล้ว`);
+  return true;
+}
+
+/** คอมเมนต์ของบัญชี Instagram ร้านเอง (เช่น คำตอบที่ระบบโพสต์) → ข้าม กันตอบตัวเองวนไปเรื่อยๆ */
+function isOwnInstagramComment(conn: Connection, job: CommentJob): boolean {
+  if (job.platform !== "instagram") return false;
+  if (conn.igUserId && job.fromId === conn.igUserId) return true;
+  return Boolean(conn.username && job.fromName?.toLowerCase() === conn.username.toLowerCase());
+}
+
+/** Instagram ปฏิเสธ token (code 190) → บันทึกไว้ที่บัญชี ให้หน้าตั้งค่าบอกว่าต้องวาง token ใหม่ */
+async function noteRejectedToken(db: Db, conn: Connection, err: unknown): Promise<void> {
+  if (conn.api !== "instagram" || !(err instanceof GraphApiError) || err.code !== 190) return;
+  try {
+    await updateInstagramAccountStatus(db, conn.id, { lastError: TOKEN_PROBLEM_MESSAGE.instagram });
+  } catch (e) {
+    console.error(`[instagram] บันทึกว่า token ของ @${conn.username} ใช้ไม่ได้ ไม่สำเร็จ:`, e);
+  }
+}
+
+/** ตัดข้อความให้ไม่เกิน maxBytes ไบต์ (UTF-8) โดยไม่ตัดกลางตัวอักษร แล้วต่อท้ายด้วย "…" */
+function fitUtf8Bytes(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
+  let budget = maxBytes - Buffer.byteLength("…", "utf8");
+  let out = "";
+  for (const ch of text) {
+    const size = Buffer.byteLength(ch, "utf8");
+    if (size > budget) break;
+    out += ch;
+    budget -= size;
+  }
+  return `${out}…`;
 }
 
 /** true = เพิ่งเห็นครั้งแรก, false = เคยประมวลผลแล้ว */
@@ -103,27 +185,33 @@ async function upsertContact(
 // ---------------------------------------------------------------------------
 
 export async function handleComment(db: Db, job: CommentJob): Promise<void> {
-  const page = await findPageByAccount(db, job.platform, job.accountId);
-  if (!page) return; // webhook ของเพจที่ยังไม่ได้เชื่อมต่อ
+  const conn = await findConnection(db, job.platform, job.accountId);
+  if (!conn) return; // webhook ของเพจ/บัญชีที่ยังไม่ได้เชื่อมต่อ
+  // คอมเมนต์ของร้านเอง (เช่น คำตอบที่ระบบโพสต์) ไม่นับว่าช่องทาง Instagram Login ส่งคอมเมนต์ลูกค้ามาแล้ว
+  if (isOwnInstagramComment(conn, job)) return;
+  await noteInstagramLoginDelivery(db, conn, job.via, "comments");
+  // คอมเมนต์ไม่ข้ามสำเนาจาก Facebook Login ตามเวลาแบบ DM: comment id เป็น ID เดียวกันทั้งสองช่องทาง claimOnce จึงกันตอบซ้ำได้พอดี
+  // และถ้า Meta ส่งคอมเมนต์ทาง Instagram Login ให้เฉพาะบัญชีที่มีชื่อในแอป คอมเมนต์ลูกค้าจะยังมาทาง Facebook Login ได้ไม่หาย
   if (!(await claimOnce(db, `comment:${job.commentId}`))) return;
-  const token = page.token;
+  const token = conn.token;
+  const via = viaOf(job);
 
   await logEvent(db, {
     type: "comment_received",
     platform: job.platform,
-    pageId: page.id,
+    pageId: conn.id,
     actorId: job.fromId,
     postId: job.postId,
     text: job.text,
-    meta: { commentId: job.commentId, fromName: job.fromName },
+    meta: { commentId: job.commentId, fromName: job.fromName, via },
   });
 
-  const rule = await findCommentRule(db, page, job);
+  const rule = await findCommentRule(db, conn, job);
   if (!rule) return;
   const firstStep = rule.steps[0];
   if (!firstStep) return;
   if (!token) {
-    await logTokenProblem(db, job.platform, page.id, rule.id, job.fromId);
+    await logTokenProblem(db, job.platform, conn.id, rule.id, job.fromId, conn.api);
     return;
   }
 
@@ -141,7 +229,7 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
       await logEvent(db, {
         type: "skipped",
         platform: job.platform,
-        pageId: page.id,
+        pageId: conn.id,
         ruleId: rule.id,
         actorId: job.fromId,
         postId: job.postId,
@@ -155,18 +243,18 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
   await logEvent(db, {
     type: "rule_triggered",
     platform: job.platform,
-    pageId: page.id,
+    pageId: conn.id,
     ruleId: rule.id,
     actorId: job.fromId,
     postId: job.postId,
     text: job.text,
-    meta: { commentId: job.commentId, trigger: "comment" },
+    meta: { commentId: job.commentId, trigger: "comment", via },
   });
 
   const sendJob: SendDmJob = {
     type: "send_dm",
     platform: job.platform,
-    pageId: page.id,
+    pageId: conn.id,
     ruleId: rule.id,
     stepId: firstStep.id,
     source: "comment",
@@ -174,6 +262,7 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
     actorId: job.fromId,
     actorName: job.platform === "facebook" ? firstName(job.fromName) : job.fromName,
     postId: job.postId,
+    api: conn.api,
   };
   await enqueue(db, "send_dm", { ...sendJob });
 
@@ -181,11 +270,11 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
   if (publicReply) {
     const message = renderTemplate(publicReply, { name: sendJob.actorName });
     try {
-      const res = await replyToComment(job.platform, job.commentId, token, message);
+      const res = await replyToComment(job.platform, job.commentId, token, message, conn.api);
       await logEvent(db, {
         type: "public_reply_sent",
         platform: job.platform,
-        pageId: page.id,
+        pageId: conn.id,
         ruleId: rule.id,
         actorId: job.fromId,
         postId: job.postId,
@@ -196,13 +285,14 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
       await logEvent(db, {
         type: "public_reply_failed",
         platform: job.platform,
-        pageId: page.id,
+        pageId: conn.id,
         ruleId: rule.id,
         actorId: job.fromId,
         postId: job.postId,
         text: message,
         meta: { commentId: job.commentId, error: errorInfo(err) },
       });
+      await noteRejectedToken(db, conn, err);
     }
   }
 }
@@ -212,7 +302,7 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
  * แต่กฎ "โพสต์ถัดไป" ที่ยังไม่ได้ผูกโพสต์ของแพลตฟอร์มนี้ จะถาม Meta ว่าโพสต์นี้คือโพสต์ถัดไปหรือเปล่า
  * (เช็คข้อความก่อนเสมอ คอมเมนต์ที่ไม่ตรง keyword จะไม่ทำให้ต้องเรียก Graph API)
  */
-async function findCommentRule(db: Db, page: ConnectedPage, job: CommentJob) {
+async function findCommentRule(db: Db, conn: Connection, job: CommentJob) {
   const incoming = { trigger: "comment" as const, platform: job.platform, text: job.text, postId: job.postId };
   const sorted = (await loadActiveRules(db, "comment")).sort((a, b) => a.priority - b.priority || a.id - b.id);
   for (const rule of sorted) {
@@ -220,7 +310,8 @@ async function findCommentRule(db: Db, page: ConnectedPage, job: CommentJob) {
     if (postScopeMatches(rule, job.platform, job.postId) !== "resolve") continue;
     // เงื่อนไขอื่น (เปิดอยู่, แพลตฟอร์ม, keyword) ต้องผ่านก่อน — เช็คโดยมองข้ามเรื่องโพสต์ไปชั่วคราว
     if (!findMatchingRule([{ ...rule, postScope: "any" as const }], incoming)) continue;
-    const isNextPost = await resolveNextPost(db, rule, job.platform, page, job.postId, {
+    // conn.api ทำให้ถามข้อมูลโพสต์ผ่าน API เดียวกับที่ใช้ตอบ (Instagram Login → graph.instagram.com)
+    const isNextPost = await resolveNextPost(db, rule, job.platform, conn, job.postId, {
       commentId: job.commentId,
       actorId: job.fromId,
       text: job.text,
@@ -235,11 +326,11 @@ async function findCommentRule(db: Db, page: ConnectedPage, job: CommentJob) {
 // ---------------------------------------------------------------------------
 
 export async function handlePagePost(db: Db, job: PagePostJob): Promise<void> {
-  const page = await findPageByAccount(db, "facebook", job.accountId);
-  if (!page) return;
+  const conn = await findConnection(db, "facebook", job.accountId);
+  if (!conn) return;
   // โพสต์หลายรูปส่ง webhook มาหลายครั้งด้วย post_id เดียวกัน
   if (!(await claimOnce(db, `page_post:${job.postId}`))) return;
-  await bindPublishedFacebookPost(db, page.id, { id: job.postId, createdMs: job.createdTime, caption: job.caption });
+  await bindPublishedFacebookPost(db, conn.id, { id: job.postId, createdMs: job.createdTime, caption: job.caption });
 }
 
 // ---------------------------------------------------------------------------
@@ -247,27 +338,31 @@ export async function handlePagePost(db: Db, job: PagePostJob): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function handleDm(db: Db, job: DmJob): Promise<void> {
-  const page = await findPageByAccount(db, job.platform, job.accountId);
-  if (!page) return;
+  const conn = await findConnection(db, job.platform, job.accountId);
+  if (!conn) return;
+  await noteInstagramLoginDelivery(db, conn, job.via, "messaging");
+  if (skipFacebookDmCopy(conn, job.via, job.mid)) return;
   if (!(await claimOnce(db, `dm:${job.mid}`))) return;
+  const via = viaOf(job);
 
   const contact = await upsertContact(db, {
     platform: job.platform,
     platformUserId: job.senderId,
-    pageId: page.id,
+    pageId: conn.id,
     inbound: true,
   });
 
   let name = contact.name;
   let username = contact.username;
-  if (!name && !username && page.token) {
+  if (!name && !username && conn.token) {
     try {
-      const profile = await fetchProfile(job.platform, job.senderId, page.token);
+      const profile = await fetchProfile(job.platform, job.senderId, conn.token, conn.api);
       name = profile.name;
       username = profile.username;
       await db.update(contacts).set({ name, username }).where(eq(contacts.id, contact.id));
-    } catch {
+    } catch (err) {
       // ไม่มีสิทธิ์ดึงโปรไฟล์ก็ส่งข้อความต่อได้ตามปกติ
+      await noteRejectedToken(db, conn, err);
     }
   }
 
@@ -276,18 +371,18 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
   // ลูกค้ากดปุ่มในข้อความของเรา → ส่งข้อความถัดไป (ไม่ต้องเอาไปจับ keyword ซ้ำ)
   const tap = parseFlowPayload(job.payload);
   if (tap) {
-    await handleButtonTap(db, page, job, contact.id, actorName, tap);
+    await handleButtonTap(db, conn, job, contact.id, actorName, tap);
     return;
   }
 
   await logEvent(db, {
     type: "dm_received",
     platform: job.platform,
-    pageId: page.id,
+    pageId: conn.id,
     contactId: contact.id,
     actorId: job.senderId,
     text: job.text,
-    meta: { mid: job.mid, payload: job.payload },
+    meta: { mid: job.mid, payload: job.payload, via },
   });
 
   const rule = findMatchingRule(await loadActiveRules(db, "dm"), {
@@ -298,26 +393,26 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
   if (!rule) return;
   const firstStep = rule.steps[0];
   if (!firstStep) return;
-  if (!page.token) {
-    await logTokenProblem(db, job.platform, page.id, rule.id, job.senderId);
+  if (!conn.token) {
+    await logTokenProblem(db, job.platform, conn.id, rule.id, job.senderId, conn.api);
     return;
   }
 
   await logEvent(db, {
     type: "rule_triggered",
     platform: job.platform,
-    pageId: page.id,
+    pageId: conn.id,
     ruleId: rule.id,
     contactId: contact.id,
     actorId: job.senderId,
     text: job.text,
-    meta: { mid: job.mid, trigger: "dm" },
+    meta: { mid: job.mid, trigger: "dm", via },
   });
 
   const sendJob: SendDmJob = {
     type: "send_dm",
     platform: job.platform,
-    pageId: page.id,
+    pageId: conn.id,
     ruleId: rule.id,
     stepId: firstStep.id,
     source: "dm",
@@ -325,6 +420,7 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
     actorId: job.senderId,
     actorName,
     postId: null,
+    api: conn.api,
   };
   await enqueue(db, "send_dm", { ...sendJob });
 }
@@ -332,7 +428,7 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
 /** ลูกค้ากดปุ่ม "ส่งข้อความถัดไป" → บันทึกการกด แล้วส่งข้อความที่ปุ่มนั้นพาไป */
 async function handleButtonTap(
   db: Db,
-  page: ConnectedPage,
+  conn: Connection,
   job: DmJob,
   contactId: number,
   actorName: string | null,
@@ -344,12 +440,12 @@ async function handleButtonTap(
   await logEvent(db, {
     type: "button_clicked",
     platform: job.platform,
-    pageId: page.id,
+    pageId: conn.id,
     ruleId: rule ? rule.id : null,
     contactId,
     actorId: job.senderId,
     text: job.text,
-    meta: { mid: job.mid, stepId: tap.stepId, buttonId: tap.buttonId },
+    meta: { mid: job.mid, stepId: tap.stepId, buttonId: tap.buttonId, via: viaOf(job) },
   });
 
   // ปุ่มจากข้อความเก่าที่ถูกแก้/ลบไปแล้ว → ไม่ต้องทำอะไรต่อ
@@ -360,7 +456,7 @@ async function handleButtonTap(
     await logEvent(db, {
       type: "skipped",
       platform: job.platform,
-      pageId: page.id,
+      pageId: conn.id,
       ruleId: rule.id,
       contactId,
       actorId: job.senderId,
@@ -369,15 +465,15 @@ async function handleButtonTap(
     });
     return;
   }
-  if (!page.token) {
-    await logTokenProblem(db, job.platform, page.id, rule.id, job.senderId);
+  if (!conn.token) {
+    await logTokenProblem(db, job.platform, conn.id, rule.id, job.senderId, conn.api);
     return;
   }
 
   const sendJob: SendDmJob = {
     type: "send_dm",
     platform: job.platform,
-    pageId: page.id,
+    pageId: conn.id,
     ruleId: rule.id,
     stepId: next.id,
     source: "button",
@@ -385,6 +481,7 @@ async function handleButtonTap(
     actorId: job.senderId,
     actorName,
     postId: null,
+    api: conn.api,
   };
   await enqueue(db, "send_dm", { ...sendJob });
 }
@@ -425,33 +522,148 @@ export async function handleRead(db: Db, job: ReadJob): Promise<void> {
 // ส่ง DM จริง (แยกเป็นงานของตัวเอง เพื่อคุมความเร็วและลองใหม่ได้)
 // ---------------------------------------------------------------------------
 
-function hourlyLimit(platform: Platform): number {
-  return platform === "instagram" ? env.instagramDmPerHour : env.facebookDmPerHour;
+const HOUR_MS = 60 * 60_000;
+
+/**
+ * ลิมิตต่อชั่วโมงของบัญชีหนึ่ง (Connection.id) ตามที่ตั้งใน env (ดู lib/env.ts):
+ * - Private Reply (ส่งถึง comment_id) มีโควตาของตัวเอง นับเฉพาะ Private Reply (messages.source = "comment")
+ * - *_DM_PER_HOUR (ถ้าตั้งไว้) นับ DM ทุกแบบ
+ * นับทุกครั้งที่ยิงไปหา Meta (ส่งสำเร็จหรือไม่ก็ตาม) เพราะ Meta นับจำนวนครั้งที่เรียก API
+ */
+interface HourlyCap {
+  limit: number;
+  privateRepliesOnly: boolean;
+  note: string;
 }
 
-/** ถ้าส่งครบโควตาชั่วโมงนี้แล้ว คืนเวลาที่ควรลองใหม่ ไม่งั้นคืน null */
-async function nextAllowedSendTime(db: Db, pageId: string, platform: Platform): Promise<Date | null> {
-  const limit = hourlyLimit(platform);
-  if (limit <= 0) return null;
-  const since = new Date(Date.now() - 60 * 60_000);
-  const recent = await db
-    .select({ sentAt: messages.sentAt })
-    .from(messages)
-    .where(
-      and(eq(messages.pageId, pageId), eq(messages.platform, platform), eq(messages.status, "sent"), gte(messages.sentAt, since)),
-    )
-    .orderBy(asc(messages.sentAt));
-  if (recent.length < limit) return null;
-  // รอจนข้อความที่เก่าที่สุดในหน้าต่าง 1 ชม. หลุดออกไป
-  const oldest = recent[recent.length - limit].sentAt;
-  return new Date(oldest.getTime() + 60 * 60_000 + 5_000);
+/** DM ที่ส่งถึง comment_id = Private Reply (DM แรกที่ตอบคอมเมนต์ ระบบบันทึก source เป็น "comment") */
+function isPrivateReply(data: SendDmJob): boolean {
+  return "comment_id" in data.recipient;
+}
+
+function hourlyCaps(data: SendDmJob): HourlyCap[] {
+  const instagram = data.platform === "instagram";
+  const caps: HourlyCap[] = [];
+  // ลิมิตต้องเป็นจำนวนเต็ม (ค่าใน env อาจมีทศนิยม) และ 0 หรือติดลบ = ไม่จำกัด
+  const all = Math.floor(instagram ? env.instagramDmPerHour : env.facebookDmPerHour);
+  if (all > 0) {
+    caps.push({ limit: all, privateRepliesOnly: false, note: `ส่ง DM ครบ ${all} ข้อความใน 1 ชั่วโมงแล้ว` });
+  }
+  if (isPrivateReply(data)) {
+    const privateReplies = Math.floor(instagram ? env.instagramPrivateReplyPerHour : env.facebookPrivateReplyPerHour);
+    if (privateReplies > 0) {
+      caps.push({
+        limit: privateReplies,
+        privateRepliesOnly: true,
+        note: `ตอบคอมเมนต์ทาง DM ครบ ${privateReplies} ครั้งใน 1 ชั่วโมงแล้ว`,
+      });
+    }
+  }
+  return caps;
+}
+
+/** ถ้าส่งครบโควตาชั่วโมงนี้แล้ว คืนเวลาที่ส่งต่อได้พร้อมเหตุผล ไม่งั้นคืน null */
+async function nextAllowedSendTime(db: Db, pageId: string, data: SendDmJob): Promise<{ at: Date; note: string } | null> {
+  const since = new Date(Date.now() - HOUR_MS);
+  let wait: { at: Date; note: string } | null = null;
+  for (const cap of hourlyCaps(data)) {
+    // ข้อความลำดับที่ limit นับจากล่าสุด — พอข้อความนี้พ้นหน้าต่าง 1 ชม. จำนวนก็จะต่ำกว่าลิมิต
+    const [edge] = await db
+      .select({ sentAt: messages.sentAt })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.pageId, pageId),
+          eq(messages.platform, data.platform),
+          gte(messages.sentAt, since),
+          cap.privateRepliesOnly ? eq(messages.source, "comment") : undefined,
+        ),
+      )
+      .orderBy(desc(messages.sentAt))
+      .offset(cap.limit - 1)
+      .limit(1);
+    if (!edge) continue;
+    const at = new Date(edge.sentAt.getTime() + HOUR_MS + 5_000);
+    if (!wait || at > wait.at) wait = { at, note: cap.note };
+  }
+  return wait;
+}
+
+/**
+ * error ที่ Meta ใช้บอกว่า "เรียกถี่เกิน/เกินโควตา": 4 (ทั้งแอป), 17 (ผู้ใช้), 32 (เพจ), 613 (ลิมิตเฉพาะ API),
+ * 80001 / 80002 / 80004 / 80006 (Business Use Case: เพจ / Instagram / Ads Management / Messenger)
+ * และ subcode 2534040 (จำกัดจำนวนการส่งข้อความ)
+ */
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80001, 80002, 80004, 80006]);
+const RATE_LIMIT_SUBCODES = new Set([2534040]);
+
+export function isRateLimitError(err: unknown): err is GraphApiError {
+  if (!(err instanceof GraphApiError)) return false;
+  return (
+    (err.code !== undefined && RATE_LIMIT_CODES.has(err.code)) ||
+    (err.subcode !== undefined && RATE_LIMIT_SUBCODES.has(err.subcode))
+  );
+}
+
+/** Meta ขอให้ชะลอได้กี่รอบก่อนเลิกส่ง (รอ 1+2+4+8+15×6 ≈ 1 ชม. 45 นาที ครอบคลุมลิมิตรายชั่วโมงของ Meta) */
+export const RATE_LIMIT_MAX_WAITS = 10;
+
+/** รอก่อนลองใหม่หลังโดนชะลอรอบที่ hits: 1, 2, 4, 8 แล้ว 15 นาทีทุกรอบ */
+export function rateLimitDelayMs(hits: number): number {
+  return Math.min(60_000 * 2 ** Math.max(0, hits - 1), 15 * 60_000);
+}
+
+function errorCodeText(err: GraphApiError): string {
+  return [err.code, err.subcode].filter((v) => v !== undefined).join(" / ");
+}
+
+/**
+ * Meta ขอให้ชะลอ → เลื่อนงานนี้ออกไป (ไม่นับเป็นความล้มเหลว) และเลื่อนงานส่ง DM อื่นที่รออยู่ของบัญชีเดียวกันไปพร้อมกัน
+ * (ไม่ยิงซ้ำระหว่างโดนชะลอ ซึ่งอาจทำให้ Meta ชะลอนานขึ้น) แล้วบันทึกในหน้ากิจกรรมครั้งเดียวต่อบัญชีต่อชั่วโมง
+ */
+async function pauseForRateLimit(db: Db, job: Job, next: SendDmJob, conn: Connection, err: GraphApiError): Promise<void> {
+  const hits = next.rateLimitHits ?? 1;
+  const delayMs = rateLimitDelayMs(hits);
+  const runAt = new Date(Date.now() + delayMs);
+  const code = errorCodeText(err);
+  const minutes = Math.round(delayMs / 60_000);
+  const note = `Meta ขอให้ชะลอการส่ง (รหัส ${code}) รอบที่ ${hits}/${RATE_LIMIT_MAX_WAITS} — ลองส่งใหม่ในอีก ${minutes} นาที`;
+  await rescheduleJob(db, job, runAt, note, { ...next });
+  await postponePendingJobs(
+    db,
+    "send_dm",
+    { platform: next.platform, pageId: [...new Set([conn.id, next.pageId])] },
+    runAt,
+    `${note} (พักทั้งบัญชี)`,
+  );
+  if (hits !== 1 || !(await claimOnce(db, `rate_limited:${next.platform}:${conn.id}:${Math.floor(Date.now() / HOUR_MS)}`))) {
+    return;
+  }
+  await logEvent(db, {
+    type: "dm_rate_limited",
+    platform: next.platform,
+    pageId: conn.id,
+    text:
+      `Meta แจ้งว่าบัญชีนี้ส่งข้อความถี่เกินกำหนดชั่วคราว (รหัส ${code}) — ระบบพักการส่ง DM ไว้ก่อน ` +
+      `แล้วจะลองส่งใหม่เองเป็นระยะ (ครั้งแรกในอีก ${minutes} นาที) ข้อความไม่หาย ไม่ต้องทำอะไร`,
+    meta: {
+      api: conn.api,
+      // ชื่อเพจหรือ "@username" ของบัญชีร้าน (หน้ากิจกรรมแสดงว่าบัญชีไหนโดนชะลอ)
+      accountName: conn.name,
+      source: next.source,
+      stepId: next.stepId,
+      retryAt: runAt.toISOString(),
+      rateLimit: { message: err.message, code: err.code, subcode: err.subcode, status: err.status },
+    },
+  });
 }
 
 export async function handleSendDm(db: Db, job: Job): Promise<void> {
   const data = job.payload as unknown as SendDmJob;
-  const page = await getPageById(db, data.pageId);
+  // งานเก่าไม่มี api (pageId = Page ID) → ถ้าบัญชี IG ของเพจเชื่อม Instagram Login ไว้ จะส่งผ่าน Instagram Login
+  const conn = await getConnection(db, data.platform, data.pageId, data.api);
   const rule = await db.query.rules.findFirst({ where: eq(rules.id, data.ruleId) });
-  if (!page || !rule) return;
+  if (!conn || !rule) return;
   // งานที่เข้าคิวไว้ก่อนอัปเดตเป็นแบบหลายข้อความจะไม่มี stepId → ส่งข้อความแรก
   const step = data.stepId ? rule.steps.find((s) => s.id === data.stepId) : rule.steps[0];
   if (!step) {
@@ -459,23 +671,27 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
     await logEvent(db, {
       type: "dm_failed",
       platform: data.platform,
-      pageId: page.id,
+      pageId: conn.id,
       ruleId: rule.id,
       actorId: data.actorId,
       postId: data.postId,
-      meta: { stepId: data.stepId, error: { message: "ไม่พบข้อความนี้ในกฎแล้ว (อาจถูกลบระหว่างรอส่ง)" } },
+      meta: {
+        api: conn.api,
+        stepId: data.stepId,
+        error: { message: "ไม่พบข้อความนี้ในกฎแล้ว (อาจถูกลบระหว่างรอส่ง)" },
+      },
     });
     return;
   }
-  const token = page.token;
+  const token = conn.token;
   if (!token) {
-    await logTokenProblem(db, data.platform, page.id, rule.id, data.actorId);
+    await logTokenProblem(db, data.platform, conn.id, rule.id, data.actorId, conn.api);
     return;
   }
 
-  const waitUntil = await nextAllowedSendTime(db, page.id, data.platform);
-  if (waitUntil) {
-    await rescheduleJob(db, job, waitUntil, `ถึงลิมิต ${hourlyLimit(data.platform)} ข้อความ/ชั่วโมง รอส่งต่อ`);
+  const wait = await nextAllowedSendTime(db, conn.id, data);
+  if (wait) {
+    await rescheduleJob(db, job, wait.at, `${wait.note} — รอคิวส่งต่อเมื่อพ้นช่วง 1 ชั่วโมง (ข้อความไม่หาย)`);
     throw new RescheduledError();
   }
 
@@ -512,20 +728,29 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
   });
   // เผื่อชื่อลูกค้ายาวจนข้อความเกินลิมิตของ Meta (ข้อความที่มีปุ่มห้ามว่างด้วย)
   const maxLength = buttons.length ? FLOW_LIMITS.textWithButtons : FLOW_LIMITS.textPlain;
-  const text = fitText(renderTemplate(step.text, { name: data.actorName }) || (buttons.length ? "👇" : ""), maxLength);
+  const fitted = fitText(renderTemplate(step.text, { name: data.actorName }) || (buttons.length ? "👇" : ""), maxLength);
+  // Instagram Login นับลิมิตข้อความธรรมดาเป็นไบต์ (ภาษาไทย 1000 ตัวอักษรเกินแน่นอน)
+  const text =
+    conn.api === "instagram" && buttons.length === 0 ? fitUtf8Bytes(fitted, INSTAGRAM_TEXT_MAX_BYTES) : fitted;
   const logText = buttons.length ? `${text}\n\n${buttons.map((b) => `[${b.title}]`).join(" ")}` : text;
   const codes = Object.values(linkCodes);
 
   let res: SendResult;
   try {
-    res = await sendMessage(page.id, token, data.recipient, buildMessage(text, buttons));
+    res = await sendMessage(conn.messagingId, token, data.recipient, buildMessage(text, buttons), conn.api);
   } catch (err) {
-    if (err instanceof GraphApiError && err.retryable && job.attempts < job.maxAttempts) throw err;
+    // Meta ขอให้ชะลอ → รอแล้วลองใหม่ (ไม่กินจำนวนครั้งที่ลองได้) จนครบ RATE_LIMIT_MAX_WAITS รอบ แล้วค่อยถือว่าส่งไม่สำเร็จ
+    const rateLimitHits = isRateLimitError(err) ? (data.rateLimitHits ?? 0) + 1 : 0;
+    if (isRateLimitError(err) && rateLimitHits <= RATE_LIMIT_MAX_WAITS) {
+      await pauseForRateLimit(db, job, { ...data, linkCodes, rateLimitHits }, conn, err);
+      throw new RescheduledError();
+    }
+    if (!rateLimitHits && err instanceof GraphApiError && err.retryable && job.attempts < job.maxAttempts) throw err;
     // ส่งไม่สำเร็จแน่แล้ว → ลบลิงก์ทิ้ง เพื่อไม่ให้ไปถ่วงสถิติ % คลิก
     if (codes.length) await db.delete(links).where(inArray(links.code, codes));
     await db.insert(messages).values({
       platform: data.platform,
-      pageId: page.id,
+      pageId: conn.id,
       ruleId: rule.id,
       stepId: step.id,
       source: data.source,
@@ -535,19 +760,26 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
     await logEvent(db, {
       type: "dm_failed",
       platform: data.platform,
-      pageId: page.id,
+      pageId: conn.id,
       ruleId: rule.id,
       actorId: data.actorId,
       postId: data.postId,
       text: logText,
-      meta: { source: data.source, stepId: step.id, error: errorInfo(err) },
+      meta: {
+        api: conn.api,
+        source: data.source,
+        stepId: step.id,
+        error: errorInfo(err),
+        ...(rateLimitHits > 0 && { rateLimitHits }),
+      },
     });
+    await noteRejectedToken(db, conn, err);
     return;
   }
 
   // ส่งถึงลูกค้าแล้ว: ถ้าบันทึกสถิติพลาด ห้ามโยน error ออกไป ไม่งั้นงานจะถูกลองใหม่และส่ง DM ซ้ำ
   try {
-    await recordSent(db, data, page.id, rule.id, step.id, res, logText, codes);
+    await recordSent(db, data, conn.id, rule.id, step.id, res, logText, codes);
   } catch (err) {
     console.error(`[send_dm] ส่ง DM แล้วแต่บันทึกสถิติไม่สำเร็จ (งาน #${job.id}):`, err);
   }
@@ -606,14 +838,21 @@ export class RescheduledError extends Error {
   }
 }
 
-/** token ของเพจใช้ไม่ได้ → บันทึกให้เห็นในหน้ากิจกรรม พร้อมบอกวิธีแก้ */
-async function logTokenProblem(db: Db, platform: Platform, pageId: string, ruleId: number, actorId: string): Promise<void> {
+/** token ของเพจ / บัญชี Instagram ใช้ไม่ได้ → บันทึกให้เห็นในหน้ากิจกรรม พร้อมบอกวิธีแก้ตามช่องทางที่เชื่อมไว้ */
+async function logTokenProblem(
+  db: Db,
+  platform: Platform,
+  pageId: string,
+  ruleId: number,
+  actorId: string,
+  api: GraphApi,
+): Promise<void> {
   await logEvent(db, {
     type: "dm_failed",
     platform,
     pageId,
     ruleId,
     actorId,
-    meta: { error: { message: "token ของเพจใช้ไม่ได้ — ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่" } },
+    meta: { api, error: { message: TOKEN_PROBLEM_MESSAGE[api] } },
   });
 }

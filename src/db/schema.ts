@@ -24,6 +24,10 @@ export type PostScope = "any" | "specific" | "next";
 export type BoundPosts = Partial<Record<Platform, { id: string; boundAt: string }>>;
 /** ข้อความถูกส่งเพราะ: คอมเมนต์, ทัก DM, หรือลูกค้ากดปุ่มในข้อความก่อนหน้า */
 export type MessageSource = TriggerType | "button";
+/** ช่องทาง API ที่ใช้คุยกับบัญชี: "facebook" = graph.facebook.com + Page token, "instagram" = graph.instagram.com + Instagram Login token */
+export type GraphApi = "facebook" | "instagram";
+/** webhook มาทางไหน (ตัดสินจาก secret ที่ลายเซ็นตรง) */
+export type WebhookVia = "facebook_login" | "instagram_login";
 
 /** Facebook Page ที่เชื่อมต่อแล้ว (และบัญชี Instagram ที่ผูกกับเพจนั้น ถ้ามี) */
 export const pages = pgTable("pages", {
@@ -36,6 +40,30 @@ export const pages = pgTable("pages", {
   lastError: text("last_error"),
   connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** บัญชี Instagram ที่เชื่อมแยกผ่าน Instagram Login (ไม่ขึ้นกับเพจ Facebook) */
+export const instagramAccounts = pgTable(
+  "instagram_accounts",
+  {
+    id: text("id").primaryKey(), // /me user_id = entry.id ใน webhook = ค่าที่เก็บใน pageId ของ contacts/messages/events
+    appScopedId: text("app_scoped_id"), // /me id (ห้ามใช้ส่งข้อความ เก็บไว้จับคู่ webhook เท่านั้น)
+    username: text("username").notNull(),
+    name: text("name"),
+    accountType: text("account_type"),
+    accessToken: text("access_token").notNull(), // เข้ารหัส (lib/crypto.ts)
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }).notNull(),
+    tokenExpiryEstimated: boolean("token_expiry_estimated").notNull().default(false),
+    tokenRefreshedAt: timestamp("token_refreshed_at", { withTimezone: true }).notNull().defaultNow(),
+    tokenCheckedAt: timestamp("token_checked_at", { withTimezone: true }), // ลองต่ออายุครั้งล่าสุด (สำเร็จหรือไม่ก็ตาม)
+    subscribed: boolean("subscribed").notNull().default(false),
+    lastError: text("last_error"),
+    lastCommentWebhookAt: timestamp("last_comment_webhook_at", { withTimezone: true }), // รับคอมเมนต์ผ่าน Instagram Login ล่าสุด
+    lastMessagingWebhookAt: timestamp("last_messaging_webhook_at", { withTimezone: true }), // รับ DM/กดปุ่มผ่าน Instagram Login ล่าสุด
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("instagram_accounts_app_scoped_idx").on(t.appScopedId)],
+);
+export type InstagramAccountRow = typeof instagramAccounts.$inferSelect;
 
 /** กฎอัตโนมัติ: เมื่อเจอ keyword → ตอบคอมเมนต์ / ส่ง DM */
 export const rules = pgTable("rules", {
@@ -186,6 +214,8 @@ export const webhookLogs = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     object: text("object"),
+    /** มาทาง Facebook Login หรือ Instagram Login (null = แถวเก่าก่อนมีคอลัมน์นี้) */
+    source: text("source").$type<WebhookVia>(),
     body: jsonb("body").notNull(),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
   },

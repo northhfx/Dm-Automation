@@ -2,7 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   Activity,
+  ArrowRight,
   CircleAlert,
+  Hourglass,
+  KeyRound,
   Link2,
   MailX,
   MessageCircle,
@@ -17,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cx, formatDateTime, formatRelativeTime, PlatformIcon } from "@/components/ui";
+import { INSTAGRAM_MESSAGE_ACCESS_MENU } from "@/lib/meta/setup-info";
 import type { TimelineEvent } from "./load-events";
 
 /*
@@ -30,8 +34,8 @@ interface EventType {
   label: string;
   tone: Tone;
   icon: LucideIcon;
-  /** คำนำหน้าชื่อลูกค้า เช่น "จาก Ploy" / "ถึง Ploy" */
-  who: "จาก" | "ถึง" | "โดย";
+  /** คำนำหน้าชื่อลูกค้า เช่น "จาก Ploy" / "ถึง Ploy" ("บัญชี" = บัญชี Instagram ของร้าน) */
+  who: "จาก" | "ถึง" | "โดย" | "บัญชี";
 }
 
 export const EVENT_TYPES: Record<string, EventType> = {
@@ -46,6 +50,9 @@ export const EVENT_TYPES: Record<string, EventType> = {
   link_clicked: { label: "คลิกลิงก์", tone: "accent", icon: Link2, who: "โดย" },
   skipped: { label: "ข้าม ไม่ได้ส่ง", tone: "warning", icon: SkipForward, who: "จาก" },
   post_bound: { label: "กฎเริ่มใช้กับโพสต์ใหม่แล้ว", tone: "accent", icon: Pin, who: "โดย" },
+  token_refresh_failed: { label: "ต่ออายุ token Instagram ไม่สำเร็จ", tone: "critical", icon: KeyRound, who: "บัญชี" },
+  // Meta ขอให้ชะลอ → ระบบพักแล้วส่งต่อเอง (ไม่ใช่ความผิดพลาด จึงเป็นสีเตือน ไม่ใช่สีแดง)
+  dm_rate_limited: { label: "Meta ขอให้ชะลอการส่ง DM", tone: "warning", icon: Hourglass, who: "บัญชี" },
 };
 
 const FALLBACK: EventType = { label: "กิจกรรม", tone: "neutral", icon: Activity, who: "จาก" };
@@ -98,12 +105,15 @@ const SKIP_REASONS: Record<string, string> = {
 };
 
 /** คำอธิบายภาษาคนของรหัสผิดพลาดที่พบบ่อยจาก Meta */
-function errorHint(code: string | null): string | null {
+export function errorHint(code: string | null): string | null {
   const [main, sub] = code?.split(" / ") ?? [];
-  if (sub === "2018278") return "เกิน 24 ชั่วโมงหลังจากลูกค้าทักมาครั้งล่าสุด Meta จึงไม่ให้ส่งข้อความนี้";
+  if (sub === "2018278" || sub === "2534022") return "เกิน 24 ชั่วโมงหลังจากลูกค้าทักมาครั้งล่าสุด Meta จึงไม่ให้ส่งข้อความนี้";
+  if (sub === "2534041") {
+    return `บัญชี Instagram ปิด 'อนุญาตการเข้าถึงข้อความ' ไว้ — เปิดในแอป Instagram ของร้าน: ${INSTAGRAM_MESSAGE_ACCESS_MENU.join(" → ")} → อนุญาตการเข้าถึงข้อความ (ดูคู่มือขั้นที่ 5)`;
+  }
   switch (main) {
     case "190":
-      return "สิทธิ์ของเพจหมดอายุ ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่";
+      return "token หมดอายุหรือใช้ไม่ได้ ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจหรือบัญชี Instagram ใหม่";
     case "10":
     case "200":
       return "แอปยังไม่ได้รับสิทธิ์นี้ ถ้ายังไม่ผ่าน App Review จะส่งได้เฉพาะบัญชีผู้ทดสอบของแอป";
@@ -221,6 +231,15 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
               <Expandable text={`สาเหตุ: ${event.error.message}`} className="text-critical-text" lines={2} />
               {hint && <p className="mt-1 text-fg-2">{hint}</p>}
               {event.error.code && <p className="mt-0.5 text-xs text-fg-3">รหัสจาก Meta: {event.error.code}</p>}
+              {event.type === "token_refresh_failed" && (
+                <Link
+                  href="/settings#instagram"
+                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-accent underline-offset-2 hover:underline"
+                >
+                  ไปที่ตั้งค่า → บัญชี Instagram
+                  <ArrowRight className="size-3.5" aria-hidden />
+                </Link>
+              )}
             </div>
           </div>
         )}

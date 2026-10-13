@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { jobs, type Job } from "@/db/schema";
 
@@ -53,8 +53,17 @@ export async function failJob(db: Db, job: Job, error: string): Promise<void> {
     .where(eq(jobs.id, job.id));
 }
 
-/** เลื่อนงานออกไปโดยไม่นับเป็นความล้มเหลว (เช่น ติดลิมิตจำนวนข้อความต่อชั่วโมง) */
-export async function rescheduleJob(db: Db, job: Job, runAt: Date, note: string): Promise<void> {
+/**
+ * เลื่อนงานออกไปโดยไม่นับเป็นความล้มเหลว (เช่น ติดลิมิตจำนวนข้อความต่อชั่วโมง)
+ * payload = เก็บข้อมูลของงานใหม่ไปพร้อมกัน (เช่น นับว่าโดน Meta ชะลอไปกี่รอบแล้ว)
+ */
+export async function rescheduleJob(
+  db: Db,
+  job: Job,
+  runAt: Date,
+  note: string,
+  payload?: Record<string, unknown>,
+): Promise<void> {
   await db
     .update(jobs)
     .set({
@@ -63,8 +72,31 @@ export async function rescheduleJob(db: Db, job: Job, runAt: Date, note: string)
       attempts: Math.max(0, job.attempts - 1),
       lastError: note,
       updatedAt: new Date(),
+      ...(payload && { payload }),
     })
     .where(eq(jobs.id, job.id));
+}
+
+/**
+ * งานที่รออยู่ (ประเภท type และค่าใน payload ตรงกับ match) ที่จะถึงเวลาก่อน runAt → เลื่อนไปเริ่มที่ runAt
+ * ไม่นับเป็นความล้มเหลว ใช้พักงานทั้งบัญชีตอน Meta ขอให้ชะลอ — คืนจำนวนงานที่เลื่อน
+ */
+export async function postponePendingJobs(
+  db: Db,
+  type: string,
+  match: Record<string, string | string[]>,
+  runAt: Date,
+  note: string,
+): Promise<number> {
+  const payloadMatches = Object.entries(match).map(([key, value]) =>
+    inArray(sql`${jobs.payload} ->> ${key}`, Array.isArray(value) ? value : [value]),
+  );
+  const rows = await db
+    .update(jobs)
+    .set({ runAt, lastError: note, updatedAt: new Date() })
+    .where(and(eq(jobs.type, type), eq(jobs.status, "pending"), lt(jobs.runAt, runAt), ...payloadMatches))
+    .returning({ id: jobs.id });
+  return rows.length;
 }
 
 export async function updateJobPayload(db: Db, id: number, payload: Record<string, unknown>): Promise<void> {

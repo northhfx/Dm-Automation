@@ -374,6 +374,54 @@ describe("กฎแบบ 'โพสต์/รีลถัดไป' — ผู�
   });
 });
 
+describe("กฎแบบ 'โพสต์ถัดไป' — บัญชี Instagram Login", () => {
+  const igLogin = { id: "IG1", igUserId: "IG1", token: "IG_TOKEN", api: "instagram" as const };
+
+  it("ถามเวลาโพสต์และดึงรีลล่าสุดผ่าน graph.instagram.com แล้วผูกได้", async () => {
+    graph.setPosts(POSTS());
+    const rule = await nextRule();
+
+    expect(await resolveNextPost(db, rule, "instagram", igLogin, "IGNEW2", { commentId: "IGC1" })).toBe(false);
+    expect((await boundOf(rule.id)).instagram?.id).toBe("IGNEW1");
+    const fresh = (await db.query.rules.findFirst({ where: eq(rules.id, rule.id) }))!;
+    expect(await resolveNextPost(db, fresh, "instagram", igLogin, "IGNEW1")).toBe(true);
+
+    expect(graph.calls.map((c) => [c.api, c.path])).toEqual([
+      ["instagram", "/IGNEW2"],
+      ["instagram", "/IG1/media"],
+    ]);
+    for (const c of graph.calls) {
+      expect(c.query.access_token).toBe("IG_TOKEN");
+      expect(c.query.appsecret_proof).toBeUndefined();
+      expect(c.authorization).toBeNull();
+    }
+    const [ev] = await eventsOf("post_bound");
+    expect(ev).toMatchObject({ platform: "instagram", pageId: "IG1", ruleId: rule.id, postId: "IGNEW1", text: "รีลใหม่" });
+    expect(ev.meta).toMatchObject({ via: "comment", commentId: "IGC1" });
+  });
+
+  it("Instagram Login ขอ caption ไม่ได้ → ยังผูกได้ (ลองใหม่โดยไม่ขอ caption)", async () => {
+    graph.setPosts(POSTS());
+    graph.failWhen((c) => c.query.fields?.includes("caption") ?? false);
+    const rule = await nextRule();
+    expect(await resolveNextPost(db, rule, "instagram", igLogin, "IGNEW1")).toBe(true);
+    expect((await boundOf(rule.id)).instagram?.id).toBe("IGNEW1");
+  });
+
+  it("token ของ Instagram Login ใช้ไม่ได้ → ข้าม พร้อมบอกให้วาง token ใหม่", async () => {
+    graph.setPosts(POSTS());
+    const rule = await nextRule();
+    expect(await resolveNextPost(db, rule, "instagram", { ...igLogin, token: null }, "IGNEW1", { commentId: "IGC1" })).toBe(false);
+    expect(graph.calls).toHaveLength(0);
+    const [skip] = await eventsOf("skipped");
+    expect(skip).toMatchObject({ platform: "instagram", pageId: "IG1" });
+    expect(skip.meta).toMatchObject({
+      reason: "next_post_lookup_failed",
+      error: { message: "token ของ Instagram ใช้ไม่ได้ — ไปที่ ตั้งค่า → บัญชี Instagram แล้ววาง token ใหม่" },
+    });
+  });
+});
+
 describe("กฎแบบ 'โพสต์ถัดไป' — Facebook ผูกทันทีที่เพจลงโพสต์", () => {
   it("แปลง webhook โพสต์ใหม่ของเพจ และข้ามโพสต์ของคนอื่น/ที่ยังไม่เผยแพร่/ที่ถูกแก้ไข", () => {
     expect(parseWebhook(fbPagePost({ postId: "PAGE1_P9", createdTime: 1700000000, message: "ลดราคา" }))).toEqual([

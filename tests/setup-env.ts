@@ -8,3 +8,4 @@ process.env.ADMIN_PASSWORD = "test-password";
 process.env.AUTH_SECRET = "test-auth-secret-that-is-at-least-32-chars";
 process.env.PUBLIC_BASE_URL = "https://dm.example.com";
 process.env.GRAPH_API_VERSION = "v23.0";
+process.env.INSTAGRAM_APP_SECRET = "test-ig-app-secret";

@@ -1,4 +1,5 @@
 import { getDb } from "@/db/client";
+import type { GraphApi, Platform } from "@/db/schema";
 import { getMetaConfig } from "@/lib/config";
 import { appSecretProof } from "@/lib/crypto";
 import { env } from "@/lib/env";
@@ -33,15 +34,29 @@ interface RequestOptions {
   token?: string;
   query?: Query;
   body?: unknown;
+  /** "facebook" (ค่าเริ่มต้น) = graph.facebook.com + Page token, "instagram" = graph.instagram.com + token ของ Instagram Login */
+  api?: GraphApi;
+  /** false = ไม่ใส่เวอร์ชันใน URL (endpoint ที่ Meta กำหนดว่าไม่มีเวอร์ชัน เช่น /refresh_access_token) */
+  versioned?: boolean;
+}
+
+function graphUrl(path: string, api: GraphApi, versioned: boolean): URL {
+  const base = api === "instagram" ? env.instagramGraphApiBase : env.graphApiBase;
+  const version = api === "instagram" ? env.instagramGraphApiVersion : env.graphApiVersion;
+  return new URL(`${base}${versioned ? `/${version}` : ""}${path.startsWith("/") ? path : `/${path}`}`);
 }
 
 export async function graphRequest<T = Record<string, unknown>>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const url = new URL(`${env.graphApiBase}/${env.graphApiVersion}${path.startsWith("/") ? path : `/${path}`}`);
+  const api = opts.api ?? "facebook";
+  const url = graphUrl(path, api, opts.versioned ?? true);
   for (const [k, v] of Object.entries(opts.query ?? {})) {
     if (v !== undefined) url.searchParams.set(k, String(v));
   }
   const headers: Record<string, string> = {};
-  if (opts.token) {
+  if (opts.token && api === "instagram") {
+    // graph.instagram.com: ส่ง token ทาง query และห้ามแนบ appsecret_proof (proof จาก App Secret ของ Facebook ทำให้ทุก request พัง)
+    url.searchParams.set("access_token", opts.token);
+  } else if (opts.token) {
     headers.Authorization = `Bearer ${opts.token}`;
     const { appSecret } = await getMetaConfig(getDb());
     if (appSecret) url.searchParams.set("appsecret_proof", appSecretProof(opts.token, appSecret));
@@ -63,7 +78,7 @@ export async function graphRequest<T = Record<string, unknown>>(path: string, op
   const text = await res.text();
   let json: Record<string, unknown> = {};
   try {
-    json = text ? JSON.parse(text) : {};
+    json = text ? JSON.parse(api === "instagram" ? quoteLongIds(text) : text) : {};
   } catch {
     // ไม่ใช่ JSON (เช่นหน้า error ของ proxy)
   }
@@ -78,6 +93,14 @@ export async function graphRequest<T = Record<string, unknown>>(path: string, op
     );
   }
   return json as T;
+}
+
+/**
+ * id ของ Instagram (17841…) ยาวเกินกว่าที่ number ใน JS เก็บได้แม่นยำ
+ * ถ้า graph.instagram.com ส่ง id มาเป็นตัวเลข (ไม่มีเครื่องหมายคำพูด) ให้แปลงเป็นข้อความก่อน parse
+ */
+function quoteLongIds(text: string): string {
+  return text.replace(/("[A-Za-z_]*id"\s*:\s*)(\d{16,})(?=\s*[,}\]])/g, '$1"$2"');
 }
 
 // ---------- การส่งข้อความ ----------
@@ -104,33 +127,48 @@ export function buildMessage(text: string, buttons: GraphButton[]): OutgoingMess
 }
 
 /**
- * ส่ง DM ผ่าน Page (ใช้ได้ทั้ง Messenger และ Instagram ที่ผูกกับเพจ)
+ * ส่ง DM: senderId = Page ID (Messenger และ Instagram ที่ผูกกับเพจ, api "facebook")
+ * หรือ IG account ID (Instagram Login, api "instagram")
  * recipient = { comment_id } คือ "Private Reply" ตอบคอมเมนต์ทาง DM (ส่งได้ 1 ครั้งต่อคอมเมนต์ ภายใน 7 วัน)
  */
-export function sendMessage(pageId: string, token: string, recipient: Recipient, message: OutgoingMessage) {
-  return graphRequest<SendResult>(`/${pageId}/messages`, {
+export function sendMessage(
+  senderId: string,
+  token: string,
+  recipient: Recipient,
+  message: OutgoingMessage,
+  api?: GraphApi,
+): Promise<SendResult> {
+  return graphRequest<SendResult>(`/${senderId}/messages`, {
     method: "POST",
     token,
     body: { recipient, messaging_type: "RESPONSE", message },
+    api,
   });
 }
 
 /** ตอบคอมเมนต์แบบสาธารณะ (ให้คนอื่นเห็นว่าเราตอบแล้ว) */
-export function replyToComment(platform: "facebook" | "instagram", commentId: string, token: string, message: string) {
+export function replyToComment(
+  platform: Platform,
+  commentId: string,
+  token: string,
+  message: string,
+  api?: GraphApi,
+): Promise<{ id: string }> {
   const path = platform === "instagram" ? `/${commentId}/replies` : `/${commentId}/comments`;
-  return graphRequest<{ id: string }>(path, { method: "POST", token, body: { message } });
+  return graphRequest<{ id: string }>(path, { method: "POST", token, body: { message }, api });
 }
 
 /** ดึงชื่อของคนที่ทักมา (ถ้าดึงไม่ได้ก็ไม่เป็นไร) */
 export async function fetchProfile(
-  platform: "facebook" | "instagram",
+  platform: Platform,
   userId: string,
   token: string,
+  api?: GraphApi,
 ): Promise<{ name: string | null; username: string | null }> {
   const fields = platform === "instagram" ? "name,username" : "first_name,last_name,name";
   const data = await graphRequest<{ name?: string; username?: string; first_name?: string; last_name?: string }>(
     `/${userId}`,
-    { token, query: { fields } },
+    { token, query: { fields }, api },
   );
   const name = data.name ?? ([data.first_name, data.last_name].filter(Boolean).join(" ") || null);
   return { name, username: data.username ?? null };
@@ -210,21 +248,44 @@ export async function listRecentFacebookPosts(pageId: string, token: string, lim
   }));
 }
 
-export async function listRecentInstagramPosts(igUserId: string, token: string, limit = 12): Promise<RecentPost[]> {
-  const data = await graphRequest<{
-    data: {
-      id: string;
-      caption?: string;
-      permalink?: string;
-      media_type?: string;
-      media_url?: string;
-      thumbnail_url?: string;
-      timestamp?: string;
-    }[];
-  }>(`/${igUserId}/media`, {
-    token,
-    query: { fields: "id,caption,permalink,media_type,media_url,thumbnail_url,timestamp", limit },
-  });
+interface InstagramMediaData {
+  id: string;
+  caption?: string;
+  permalink?: string;
+  media_type?: string;
+  media_url?: string;
+  thumbnail_url?: string;
+  timestamp?: string;
+}
+
+/**
+ * Instagram Login: เอกสารของ Meta ระบุว่า field caption ใช้ได้เฉพาะ Facebook Login
+ * → ขอ caption ก่อน ถ้า error ลองใหม่ 1 ครั้งโดยไม่ขอ caption (ช่องเลือกโพสต์จะได้ไม่พังทั้งหน้า)
+ * api "facebook" (ผ่านเพจ) เรียกครั้งเดียวเหมือนเดิม
+ */
+async function withoutCaptionFallback<T>(api: GraphApi | undefined, fields: string, call: (fields: string) => Promise<T>): Promise<T> {
+  if (api !== "instagram") return call(fields);
+  try {
+    return await call(fields);
+  } catch (err) {
+    if (!(err instanceof GraphApiError)) throw err;
+    const withoutCaption = fields
+      .split(",")
+      .filter((f) => f !== "caption")
+      .join(",");
+    return call(withoutCaption);
+  }
+}
+
+export async function listRecentInstagramPosts(
+  igUserId: string,
+  token: string,
+  limit = 12,
+  api?: GraphApi,
+): Promise<RecentPost[]> {
+  const data = await withoutCaptionFallback(api, "id,caption,permalink,media_type,media_url,thumbnail_url,timestamp", (fields) =>
+    graphRequest<{ data: InstagramMediaData[] }>(`/${igUserId}/media`, { token, query: { fields, limit }, api }),
+  );
   return (data.data ?? []).map((p) => ({
     id: p.id,
     platform: "instagram",
@@ -247,12 +308,15 @@ export interface PostInfo {
 }
 
 /** ดูว่าโพสต์/รีลนี้ลงเมื่อไหร่ (ใช้กับกฎแบบ "โพสต์ถัดไป") */
-export async function getPostInfo(platform: "facebook" | "instagram", postId: string, token: string): Promise<PostInfo> {
+export async function getPostInfo(platform: Platform, postId: string, token: string, api?: GraphApi): Promise<PostInfo> {
   if (platform === "instagram") {
-    const data = await graphRequest<{ id?: string; timestamp?: string; caption?: string; permalink?: string }>(`/${postId}`, {
-      token,
-      query: { fields: "id,timestamp,caption,permalink" },
-    });
+    const data = await withoutCaptionFallback(api, "id,timestamp,caption,permalink", (fields) =>
+      graphRequest<{ id?: string; timestamp?: string; caption?: string; permalink?: string }>(`/${postId}`, {
+        token,
+        query: { fields },
+        api,
+      }),
+    );
     return {
       id: data.id ?? postId,
       createdAt: data.timestamp ?? null,
@@ -270,6 +334,7 @@ export async function getPostInfo(platform: "facebook" | "instagram", postId: st
   }>(`/${postId}`, {
     token,
     query: { fields: "id,created_time,message,permalink_url,from" },
+    api,
   });
   return {
     id: data.id ?? postId,
@@ -278,6 +343,102 @@ export async function getPostInfo(platform: "facebook" | "instagram", postId: st
     permalink: data.permalink_url ?? null,
     fromId: data.from?.id ?? null,
   };
+}
+
+// ---------- Instagram Login (graph.instagram.com) ----------
+
+/** Meta ตอบได้ทั้งแบบ object ตรง ๆ และแบบ { data: [object] } */
+function firstObject(json: Record<string, unknown>): Record<string, unknown> {
+  if (Array.isArray(json.data)) {
+    const first = json.data[0];
+    return first && typeof first === "object" ? (first as Record<string, unknown>) : {};
+  }
+  return json;
+}
+
+function textOrNull(v: unknown): string | null {
+  return typeof v === "string" && v !== "" ? v : typeof v === "number" ? String(v) : null;
+}
+
+export interface InstagramMe {
+  /** user_id = IG account ID (17841…) ที่อยู่ใน entry.id ของ webhook และใช้ใน /{IG_ID}/messages */
+  userId: string;
+  /** id = app-scoped ID (ห้ามใช้ส่งข้อความ เก็บไว้จับคู่ webhook เท่านั้น) */
+  appScopedId: string | null;
+  username: string;
+  name: string | null;
+  /** Business | Media_Creator */
+  accountType: string | null;
+}
+
+/** บัญชีเจ้าของ token (ใช้ user_id ไม่ใช่ id) */
+export async function getInstagramMe(token: string): Promise<InstagramMe> {
+  const json = await graphRequest("/me", {
+    token,
+    query: { fields: "id,user_id,username,name,account_type" },
+    api: "instagram",
+  });
+  const o = firstObject(json);
+  const userId = textOrNull(o.user_id);
+  if (!userId) throw new Error("Instagram ไม่ได้บอก user_id ของบัญชีนี้");
+  return {
+    userId,
+    appScopedId: textOrNull(o.id),
+    username: textOrNull(o.username) ?? "",
+    name: textOrNull(o.name),
+    accountType: textOrNull(o.account_type),
+  };
+}
+
+/** ให้บัญชี Instagram ส่ง webhook มาที่แอป (ต้องทำทุกบัญชี ตั้ง Callback URL อย่างเดียวไม่พอ) */
+export async function subscribeInstagramAccount(token: string, fields: readonly string[]): Promise<void> {
+  const res = await graphRequest<{ success?: boolean }>("/me/subscribed_apps", {
+    method: "POST",
+    token,
+    query: { subscribed_fields: fields.join(",") },
+    api: "instagram",
+  });
+  if (res.success !== true) throw new Error("Instagram ไม่ยืนยันการรับ webhook");
+}
+
+export async function unsubscribeInstagramAccount(token: string): Promise<void> {
+  await graphRequest("/me/subscribed_apps", { method: "DELETE", token, api: "instagram" });
+}
+
+export interface InstagramTokenGrant {
+  token: string;
+  /** อายุ token เป็นวินาที (null = Meta ไม่ได้บอก) */
+  expiresInSec: number | null;
+}
+
+function tokenGrant(json: Record<string, unknown>): InstagramTokenGrant {
+  const o = firstObject(json);
+  const token = textOrNull(o.access_token);
+  if (!token) throw new Error("Instagram ไม่ได้ส่ง access token กลับมา");
+  const expiresIn = Number(o.expires_in);
+  return { token, expiresInSec: Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : null };
+}
+
+/** แลก token อายุสั้นเป็น long-lived (60 วัน) — endpoint นี้ไม่มีเวอร์ชัน และใช้ Instagram app secret */
+export async function exchangeInstagramToken(token: string, appSecret: string): Promise<InstagramTokenGrant> {
+  const json = await graphRequest("/access_token", {
+    token,
+    query: { grant_type: "ig_exchange_token", client_secret: appSecret },
+    api: "instagram",
+    versioned: false,
+  });
+  return tokenGrant(json);
+}
+
+/** ต่ออายุ long-lived token อีก 60 วัน (token ต้องมีอายุ ≥ 24 ชม. และยังไม่หมดอายุ) — endpoint นี้ไม่มีเวอร์ชัน */
+export async function refreshInstagramToken(token: string): Promise<InstagramTokenGrant> {
+  const json = await graphRequest("/refresh_access_token", {
+    token,
+    query: { grant_type: "ig_refresh_token" },
+    api: "instagram",
+    versioned: false,
+  });
+  return tokenGrant(json);
 }
 
 /** แปลงเวลาที่ Meta ส่งมา ("+0000" ไม่มีโคลอน) เป็น ms — อ่านไม่ออกคืน null */

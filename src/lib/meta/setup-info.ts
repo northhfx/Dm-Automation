@@ -4,7 +4,31 @@ import { PAGE_WEBHOOK_FIELDS } from "./graph";
 
 export { PAGE_WEBHOOK_FIELDS };
 
+/** field ของ Instagram ที่ต้อง subscribe (ใช้ทั้งการเชื่อมผ่านเพจ และการเชื่อมผ่าน Instagram Login) */
 export const INSTAGRAM_WEBHOOK_FIELDS = ["comments", "messages", "messaging_postbacks", "messaging_seen"];
+
+/** สิทธิ์ของ Instagram Login (หน้า API setup with Instagram login → Add required messaging permissions) */
+export const INSTAGRAM_LOGIN_SCOPES = [
+  "instagram_business_basic",
+  "instagram_business_manage_messages",
+  "instagram_business_manage_comments",
+];
+
+/** Callback URL ของ webhook: แอป Facebook ใช้ meta, Instagram Login ใช้ instagram */
+/**
+ * เมนูในแอป Instagram (มือถือ) ที่เปิด "อนุญาตการเข้าถึงข้อความ" — คู่มือขั้นที่ 5 และคำอธิบาย error 2534041 ในหน้ากิจกรรมใช้ชุดเดียวกัน
+ * (ชื่อเมนูอาจต่างเล็กน้อยตามเวอร์ชันแอป)
+ */
+export const INSTAGRAM_MESSAGE_ACCESS_MENU = [
+  "โปรไฟล์",
+  "☰",
+  "การตั้งค่าและกิจกรรม",
+  "ข้อความและการตอบกลับสตอรี่",
+  "การควบคุมข้อความ",
+  "เครื่องมือที่เชื่อมต่อ",
+];
+
+export const WEBHOOK_PATHS = { meta: "/api/webhooks/meta", instagram: "/api/webhooks/instagram" } as const;
 
 export const REQUIRED_PERMISSIONS = [
   "pages_show_list",

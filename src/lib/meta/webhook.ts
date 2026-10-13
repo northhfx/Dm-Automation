@@ -1,4 +1,4 @@
-import type { Platform } from "@/db/schema";
+import type { Platform, WebhookVia } from "@/db/schema";
 
 /**
  * แปลง webhook payload จาก Meta ให้เป็นงาน (job) ที่ระบบเข้าใจ
@@ -16,6 +16,8 @@ export interface CommentJob {
   text: string;
   fromId: string;
   fromName: string | null;
+  /** มาทางไหน — งานที่เข้าคิวก่อนมีฟิลด์นี้ไม่มีค่า ให้ถือว่า "facebook_login" */
+  via?: WebhookVia;
 }
 
 export interface DmJob {
@@ -27,6 +29,8 @@ export interface DmJob {
   text: string;
   /** payload จากการกดปุ่ม/quick reply (ถ้ามี) */
   payload: string | null;
+  /** มาทางไหน — งานที่เข้าคิวก่อนมีฟิลด์นี้ไม่มีค่า ให้ถือว่า "facebook_login" */
+  via?: WebhookVia;
 }
 
 export interface ReadJob {
@@ -38,6 +42,8 @@ export interface ReadJob {
   watermark: number | null;
   /** Instagram บอก message id ที่อ่านแล้ว */
   mid: string | null;
+  /** มาทางไหน — งานที่เข้าคิวก่อนมีฟิลด์นี้ไม่มีค่า ให้ถือว่า "facebook_login" */
+  via?: WebhookVia;
 }
 
 /** เพจลงโพสต์ใหม่บน Facebook (ใช้ผูกกฎ "โพสต์ถัดไป" ทันที — Instagram ไม่มี webhook แบบนี้) */
@@ -62,7 +68,11 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : typeof v === "number" ? String(v) : null;
 }
 
-export function parseWebhook(body: any): WebhookJob[] {
+/**
+ * via = webhook มาทางไหน (ตัดสินจาก secret ที่ลายเซ็นตรง) ติดไปกับงานคอมเมนต์/DM/อ่านแล้วทุกงาน
+ * รูปแบบ payload ของ Facebook Login กับ Instagram Login เหมือนกัน จึงใช้ตัวแปลงชุดเดียว
+ */
+export function parseWebhook(body: any, via: WebhookVia = "facebook_login"): WebhookJob[] {
   const jobs: WebhookJob[] = [];
   const object = body?.object;
   if (object !== "page" && object !== "instagram") return jobs;
@@ -74,12 +84,12 @@ export function parseWebhook(body: any): WebhookJob[] {
 
     for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
       const job = parseChange(platform, accountId, change);
-      if (job) jobs.push(job);
+      if (job) jobs.push(job.type === "page_post" ? job : { ...job, via });
     }
 
     for (const event of Array.isArray(entry.messaging) ? entry.messaging : []) {
       const job = parseMessaging(platform, accountId, event);
-      if (job) jobs.push(job);
+      if (job) jobs.push({ ...job, via });
     }
   }
   return jobs;
@@ -111,10 +121,13 @@ function parseChange(platform: Platform, accountId: string, change: any): Commen
   }
 
   if (platform === "instagram" && change.field === "comments") {
-    const commentId = str(v.id);
+    // ปกติใช้ value.id — เผื่อบางรูปแบบส่ง comment_id มาแทน
+    const commentId = str(v.id) ?? str(v.comment_id);
     const fromId = str(v.from?.id);
     if (!commentId || !fromId) return null;
-    if (fromId === accountId) return null;
+    // คอมเมนต์ของบัญชีเราเอง (รวมคำตอบที่ระบบโพสต์) → ข้าม กันวนลูป
+    // Instagram Login แนบ from.self_ig_scoped_id มากับคอมเมนต์ของบัญชีเอง
+    if (fromId === accountId || str(v.from?.self_ig_scoped_id)) return null;
     return {
       type: "comment",
       platform,
@@ -166,7 +179,7 @@ function parseMessaging(platform: Platform, accountId: string, event: any): DmJo
 
   if (event.message) {
     const m = event.message;
-    if (m.is_echo || m.is_deleted) return null;
+    if (m.is_echo || m.is_deleted || m.is_self) return null;
     const mid = str(m.mid);
     if (!mid) return null;
     return {

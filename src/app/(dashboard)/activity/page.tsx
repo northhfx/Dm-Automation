@@ -27,12 +27,12 @@ import {
   Section,
 } from "@/components/ui";
 import { env } from "@/lib/env";
+import { FAILED_TYPES, failureSummary } from "./failure-summary";
 import { FilterScroller } from "./filter-scroller";
 import { loadEvents, type TimelineEvent } from "./load-events";
 import { RelativeTime, TimelineItem } from "./timeline";
 
 const PAGE_SIZE = 50;
-const FAILED_TYPES = ["dm_failed", "public_reply_failed"];
 
 const FILTERS = [
   { key: "all", label: "ทั้งหมด", types: null, icon: <ListFilter /> },
@@ -76,8 +76,10 @@ function groupByDay(items: TimelineEvent[], now: Date): { key: string; label: st
   return groups;
 }
 
-function webhookSource(object: string | null): { label: string; platform: "facebook" | "instagram" | null } {
-  if (object === "instagram") return { label: "Instagram", platform: "instagram" };
+/** ข้อมูลมาจากไหน: source = ช่องทางที่ลายเซ็นตรง (instagram_login / facebook_login), object = ชนิดของข้อมูลจาก Meta */
+function webhookSource(object: string | null, source: string | null): { label: string; platform: "facebook" | "instagram" | null } {
+  if (source === "instagram_login") return { label: "Instagram (Instagram Login)", platform: "instagram" };
+  if (object === "instagram") return { label: "Instagram (ผ่านเพจ)", platform: "instagram" };
   if (object === "page") return { label: "Facebook Page", platform: "facebook" };
   return { label: object ?? "ไม่ทราบที่มา", platform: null };
 }
@@ -118,11 +120,12 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
     db.select().from(jobs).where(eq(jobs.status, "failed")).orderBy(desc(jobs.updatedAt)).limit(10),
     db.select().from(webhookLogs).orderBy(desc(webhookLogs.id)).limit(10),
     db
-      .select({ n: count() })
+      .select({ type: events.type, n: count() })
       .from(events)
-      .where(and(inArray(events.type, FAILED_TYPES), gte(events.createdAt, sql`now() - interval '24 hours'`))),
+      .where(and(inArray(events.type, FAILED_TYPES), gte(events.createdAt, sql`now() - interval '24 hours'`)))
+      .groupBy(events.type),
   ]);
-  const failedToday = Number(recentFailed[0]?.n ?? 0);
+  const failures = failureSummary(Object.fromEntries(recentFailed.map((r) => [r.type, Number(r.n)])));
 
   const filterHref = (key: string) => (key === "all" ? "/activity" : `/activity?filter=${key}`);
   const currentHref = filterHref(filter.key);
@@ -144,17 +147,17 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
       />
 
       <div className="space-y-6">
-        {failedToday > 0 && filter.key !== "failed" && (
+        {failures && filter.key !== "failed" && (
           <Notice
             tone="critical"
-            title={`ส่งไม่สำเร็จ ${formatNumber(failedToday)} รายการ ใน 24 ชั่วโมงที่ผ่านมา`}
+            title={failures.title}
             actions={
-              <ButtonLink href="/activity?filter=failed" variant="secondary" size="sm" iconRight={<ArrowRight />}>
-                ดูสาเหตุ
+              <ButtonLink href={failures.href} variant="secondary" size="sm" iconRight={<ArrowRight />}>
+                {failures.action}
               </ButtonLink>
             }
           >
-            กดดูสาเหตุและวิธีแก้ของแต่ละรายการ
+            {failures.description}
           </Notice>
         )}
 
@@ -293,7 +296,7 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
             ) : (
               <ul className="divide-y divide-line">
                 {logs.map((log) => {
-                  const source = webhookSource(log.object);
+                  const source = webhookSource(log.object, log.source);
                   const summary = webhookSummary(log.body);
                   return (
                     <li key={log.id}>

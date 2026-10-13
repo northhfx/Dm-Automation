@@ -29,9 +29,10 @@ function PageStatus({ page }: { page: ConnectedPage }) {
 /**
  * รายการเพจที่เชื่อมต่อแล้ว พร้อมสถานะการรับ webhook
  * inset = แสดงในกรอบของตัวเอง (ใช้ในหน้าคู่มือ) — ค่าเริ่มต้นชิดขอบการ์ด (Card padding="none")
+ * igLoginIds = id ของบัญชี Instagram ที่เชื่อมผ่าน Instagram Login (บัญชีของเพจที่อยู่ในนี้ ระบบใช้ Instagram Login แทน)
  * ปุ่ม "เชื่อมต่อใหม่" ลิงก์ไปที่ #connect (ฟอร์มเชื่อมเพจในหน้าเดียวกัน)
  */
-export function PagesList({ pages, inset }: { pages: ConnectedPage[]; inset?: boolean }) {
+export function PagesList({ pages, inset, igLoginIds = [] }: { pages: ConnectedPage[]; inset?: boolean; igLoginIds?: string[] }) {
   if (pages.length === 0) {
     return (
       <div className={inset ? undefined : "p-5"}>
@@ -45,7 +46,7 @@ export function PagesList({ pages, inset }: { pages: ConnectedPage[]; inset?: bo
             </a>
           }
         >
-          เชื่อมเพจ Facebook (และ Instagram ที่ผูกไว้) เพื่อให้ระบบเริ่มตอบลูกค้าอัตโนมัติ
+          เชื่อมเพจ Facebook เพื่อให้ระบบเริ่มตอบลูกค้าอัตโนมัติ
         </EmptyState>
       </div>
     );
@@ -70,15 +71,20 @@ export function PagesList({ pages, inset }: { pages: ConnectedPage[]; inset?: bo
                   <Badge tone="outline" icon={<PlatformIcon platform="facebook" size={14} />}>
                     Facebook
                   </Badge>
-                  {p.igUsername ? (
-                    <Badge tone="outline" icon={<PlatformIcon platform="instagram" size={14} />}>
-                      Instagram @{p.igUsername}
-                    </Badge>
-                  ) : (
-                    <Badge tone="warning" icon={<PlatformIcon platform="instagram" variant="mono" size={14} />}>
-                      ไม่มี Instagram ที่ผูกไว้
-                    </Badge>
-                  )}
+                  {p.igUsername &&
+                    (p.igUserId && igLoginIds.includes(p.igUserId) ? (
+                      // แยกเป็น 2 ป้าย เพื่อขึ้นบรรทัดใหม่ได้บนจอมือถือ (ไม่ถูกตัดคำ)
+                      <>
+                        <Badge tone="outline" icon={<PlatformIcon platform="instagram" size={14} />}>
+                          Instagram @{p.igUsername}
+                        </Badge>
+                        <Badge tone="accent">ใช้ Instagram Login</Badge>
+                      </>
+                    ) : (
+                      <Badge tone="outline" icon={<PlatformIcon platform="instagram" size={14} />}>
+                        Instagram @{p.igUsername} (ผ่านเพจ)
+                      </Badge>
+                    ))}
                 </div>
                 {problem && (
                   <p className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-critical-text">

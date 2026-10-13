@@ -2,6 +2,7 @@ import { and, eq, lt } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { dedupKeys, jobs, webhookLogs, type Job } from "@/db/schema";
 import { handleComment, handleDm, handlePagePost, handleRead, handleSendDm, RescheduledError } from "@/lib/automation/handlers";
+import { refreshDueInstagramTokens } from "@/lib/instagram/token";
 import type { CommentJob, DmJob, PagePostJob, ReadJob } from "@/lib/meta/webhook";
 import { claimJobs, completeJob, failJob, recoverStuckJobs } from "./queue";
 
@@ -49,6 +50,21 @@ export async function cleanup(db: Db): Promise<void> {
   await db.delete(jobs).where(and(eq(jobs.status, "done"), lt(jobs.updatedAt, new Date(Date.now() - 7 * day))));
 }
 
+/** งานดูแลระบบทุก 10 นาที: ล้างข้อมูลเก่า แล้วต่ออายุ token Instagram ที่ถึงเวลา (อย่างหนึ่งพังไม่กระทบอีกอย่าง) */
+export async function maintenance(db: Db): Promise<void> {
+  try {
+    await cleanup(db);
+  } catch (err) {
+    console.error("[worker] ล้างข้อมูลเก่าไม่สำเร็จ:", err);
+  }
+  try {
+    const r = await refreshDueInstagramTokens(db);
+    if (r.checked > 0) console.log(`[worker] ต่ออายุ token Instagram: สำเร็จ ${r.refreshed} ไม่สำเร็จ ${r.failed}`);
+  } catch (err) {
+    console.error("[worker] ต่ออายุ token Instagram ไม่สำเร็จ:", err);
+  }
+}
+
 /**
  * worker ที่ทำงานอยู่เบื้องหลังในเซิร์ฟเวอร์เดียวกับเว็บ
  * ปลุกทันทีเมื่อมี webhook เข้ามา และเช็คคิวทุก 2 วินาทีเผื่องานที่ตั้งเวลาไว้
@@ -78,7 +94,7 @@ class Worker {
         await drainQueue(db);
         if (Date.now() - this.lastCleanup > 10 * 60_000) {
           this.lastCleanup = Date.now();
-          await cleanup(db);
+          await maintenance(db);
         }
       } catch (err) {
         console.error("[worker] ผิดพลาด:", err);

@@ -1,6 +1,21 @@
 @import "tailwindcss";
 
 /*
+ * dark: ของ Tailwind ให้ตรงกับธีมที่เลือกในแอป (ค่าเริ่มต้นของ Tailwind ดูแค่โหมดของเครื่อง
+ * ซึ่งจะผิดเมื่อผู้ใช้บังคับ "สว่าง" หรือ "มืด" เอง) — ปกติใช้ token สีด้านล่างแทน ไม่ต้องใช้ dark:
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+/*
  * สีทั้งหมดของระบบ กำหนดเป็นตัวแปร เพื่อสลับโหมดสว่าง/มืดได้ในที่เดียว
  * ใช้ผ่านชื่อ Tailwind เช่น bg-surface, text-fg-2, border-line, bg-accent-soft, shadow-sm, ring-ring
  */
@@ -71,8 +86,66 @@
   --app-sidebar-w: 248px;
 }
 
+/*
+ * โหมดมืด — ใช้เมื่อ (1) เลือก "มืด" เอง: <html data-theme="dark">
+ *            หรือ (2) เลือก "ตามเครื่อง" (ไม่มี data-theme) และเครื่องตั้งโหมดมืดไว้
+ * เลือก "สว่าง" เอง (data-theme="light") จะได้ค่าสว่างด้านบนเสมอ แม้เครื่องเป็นโหมดมืด
+ * สองบล็อกนี้ต้องแก้ให้ตรงกันเสมอ (เทสใน tests/theme.test.ts ตรวจให้)
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0c0e12;
+  --surface: #14171d;
+  --surface-2: #1b1f27;
+  --surface-3: #242934;
+  --surface-raised: #2a303b;
+  --sidebar: #101318;
+  --line: #262b35;
+  --line-strong: #353b48;
+
+  --fg: #f2f4f7;
+  --fg-2: #b3bbc9;
+  --fg-3: #8b95a7;
+
+  --accent: #3d84f3;
+  --accent-hover: #5a96f5;
+  --accent-fg: #ffffff;
+  --accent-soft: #172235;
+  --accent-soft-hover: #1d2b44;
+  --ring: rgb(90 150 245 / 0.55);
+
+  --series-1: #4a8df5;
+  --series-2: #e8703f;
+
+  --good: #22c55e;
+  --good-text: #4ade80;
+  --good-soft: #0f2419;
+  --critical: #ef4444;
+  --critical-hover: #f05a5a;
+  --critical-text: #f97066;
+  --critical-soft: #2f1414;
+  --warning: #f5a524;
+  --warning-text: #fdb022;
+  --warning-soft: #2b2110;
+
+  --brand-facebook: #3b8bff;
+  --brand-instagram: #f0518a;
+
+  --overlay: rgb(0 0 0 / 0.6);
+  --knob: #f2f4f7;
+  --avatar-s: 45%;
+  --avatar-bg-l: 22%;
+  --avatar-fg-l: 78%;
+  --scrollbar: #3a404c;
+  --elev-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+  --elev-sm: 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.25);
+  --elev-md: 0 8px 20px -6px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.3);
+  --elev-lg: 0 18px 40px -10px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.4);
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
 
     --bg: #0c0e12;
