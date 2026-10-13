@@ -15,9 +15,21 @@ function expiryText(a: Pick<InstagramAccount, "tokenExpiresAt" | "tokenExpiryEst
  * สถานะของขั้นที่ 5 ในคู่มือ (เชื่อมต่อ Instagram): เสร็จเมื่อมีบัญชีที่ใช้งานได้จริง
  * (รับ webhook แล้ว และ token ยังไม่หมดอายุ/ไม่ถูก Meta ปฏิเสธ) — กติกาเดียวกับหน้าตั้งค่าและแถบเมนู
  * ถ้า token ตายหมดแล้ว ขั้นนี้กลับเป็น "ยังไม่เสร็จ" (การ์ดเปิดอยู่) และบอกให้วาง token ใหม่ในข้อ 7
+ * webhookOk = Meta ยืนยัน Callback URL ของ Instagram แล้ว หรือเคยได้รับข้อมูลทาง Instagram Login
+ * (ยังไม่ครบ → ยังไม่เสร็จ การ์ดไม่พับ เพื่อให้เห็นข้อ 8–11 ที่เหลือ)
  */
-export function instagramStepStatus(accounts: InstagramAccount[], now: Date = new Date()): { done: boolean; summary: string } {
+export function instagramStepStatus(
+  accounts: InstagramAccount[],
+  now: Date = new Date(),
+  webhookOk = true,
+): { done: boolean; summary: string } {
   const ready = accounts.filter((a) => isInstagramAccountUsable(a, now));
+  if (ready.length > 0 && !webhookOk) {
+    return {
+      done: false,
+      summary: `เชื่อม @${ready[0].username} แล้ว — เหลือข้อ 8 ตั้ง Webhook ของ Instagram และข้อ 11 เผยแพร่แอป`,
+    };
+  }
   if (ready.length > 0) {
     return {
       done: true,

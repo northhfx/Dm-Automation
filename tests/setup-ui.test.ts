@@ -72,7 +72,7 @@ function account(o: Partial<InstagramAccount> = {}): InstagramAccount {
   };
 }
 
-function status(o: { igSubscribed?: number; igAccounts?: number } = {}): SetupStatus {
+function status(o: { igSubscribed?: number; igAccounts?: number; igWebhookVerified?: boolean } = {}): SetupStatus {
   return {
     baseUrl: "https://dm.example.com",
     meta: { appId: "1234567890", appSecret: "secret", verifyToken: "verify", fromEnv: false },
@@ -88,7 +88,7 @@ function status(o: { igSubscribed?: number; igAccounts?: number } = {}): SetupSt
       fromEnv: false,
       accounts: o.igAccounts ?? 0,
       subscribed: o.igSubscribed ?? 0,
-      webhookVerifiedAt: null,
+      webhookVerifiedAt: o.igWebhookVerified ? new Date().toISOString() : null,
       lastWebhookAt: null,
       badSignatureAt: null,
       tokenWarning: null,
@@ -134,11 +134,19 @@ describe("คู่มือขั้นที่ 5: ติ๊กเสร็จ
   });
 
   it("บัญชีใช้งานได้ → ติ๊กเสร็จ และบอกว่าวันหมดอายุเป็นค่าประมาณ (ถ้าประมาณเอา)", () => {
-    const html = guide([account({ tokenExpiryEstimated: true })], status({ igAccounts: 1, igSubscribed: 1 }));
+    const html = guide([account({ tokenExpiryEstimated: true })], status({ igAccounts: 1, igSubscribed: 1, igWebhookVerified: true }));
     const summary = stepSummary(html, 5);
     expect(summary).toContain("เสร็จแล้ว");
     expect(summary).toMatch(/@northh\.fx \(token ใช้ได้ถึง .+ \(โดยประมาณ\)\)/);
     expect(stepOpen(html, 5)).toBe(false);
+  });
+
+  it("วาง token แล้วแต่ Meta ยังไม่ยืนยัน Webhook ของ Instagram → การ์ดยังเปิด และชี้ไปข้อ 8", () => {
+    const html = guide([account()], status({ igAccounts: 1, igSubscribed: 1 }));
+    const summary = stepSummary(html, 5);
+    expect(summary).not.toContain("เสร็จแล้ว");
+    expect(summary).toContain("ข้อ 8");
+    expect(stepOpen(html, 5)).toBe(true);
   });
 
   it("instagramStepStatus: เรียงความสำคัญ ใช้ได้ → token ตาย → ยังไม่รับ webhook → ยังไม่เชื่อม", () => {
@@ -153,6 +161,14 @@ describe("คู่มือขั้นที่ 5: ติ๊กเสร็จ
     expect(both.done).toBe(true);
     expect(both.summary).toContain("@ok.shop");
     expect(both.summary).not.toContain("@northh.fx");
+  });
+
+  it("instagramStepStatus: เชื่อม token แล้วแต่ Meta ยังไม่ยืนยัน Webhook → ยังไม่เสร็จ และชี้ไปข้อ 8", () => {
+    const now = new Date();
+    const pending = instagramStepStatus([account()], now, false);
+    expect(pending.done).toBe(false);
+    expect(pending.summary).toContain("ข้อ 8");
+    expect(instagramStepStatus([account()], now, true).done).toBe(true);
   });
 });
 

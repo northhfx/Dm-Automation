@@ -59,8 +59,8 @@ export function GuideView({
   const subscribedPages = pages.filter((p) => p.subscribed);
   const ig = status.instagram;
   // เสร็จเมื่อมีบัญชีที่ใช้งานได้จริง (token หมดอายุ/ใช้ไม่ได้ → ยังไม่เสร็จ และบอกให้วาง token ใหม่)
-  const igStep = instagramStepStatus(igAccounts);
   const igWebhookOk = Boolean(ig.webhookVerifiedAt || ig.lastWebhookAt);
+  const igStep = instagramStepStatus(igAccounts, undefined, igWebhookOk);
   // username ของ Instagram ร้าน (ถ้ารู้จากเพจหรือบัญชีที่เชื่อมแล้ว) ใช้บอกว่าต้องเชิญบัญชีไหนเป็น Tester
   const shopIgUsername = igAccounts[0]?.username ?? pages.find((p) => p.igUsername)?.igUsername ?? null;
 
