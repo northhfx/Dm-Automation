@@ -14,7 +14,6 @@ export const INSTAGRAM_LOGIN_SCOPES = [
   "instagram_business_manage_comments",
 ];
 
-/** Callback URL ของ webhook: แอป Facebook ใช้ meta, Instagram Login ใช้ instagram */
 /**
  * เมนูในแอป Instagram (มือถือ) ที่เปิด "อนุญาตการเข้าถึงข้อความ" — คู่มือขั้นที่ 5 และคำอธิบาย error 2534041 ในหน้ากิจกรรมใช้ชุดเดียวกัน
  * (ชื่อเมนูอาจต่างเล็กน้อยตามเวอร์ชันแอป)
@@ -28,6 +27,20 @@ export const INSTAGRAM_MESSAGE_ACCESS_MENU = [
   "เครื่องมือที่เชื่อมต่อ",
 ];
 
+/**
+ * เมนูเดียวกับ INSTAGRAM_MESSAGE_ACCESS_MENU แต่เป็นชื่อในแอป Instagram ภาษาอังกฤษ (หน้าจัดการโหมดภาษาอังกฤษ)
+ * เป็นชื่อเมนูในแอปของ Meta จึงเขียนตามแอปเป๊ะๆ ไม่ได้แปลเอง
+ */
+export const INSTAGRAM_MESSAGE_ACCESS_MENU_EN = [
+  "Profile",
+  "☰",
+  "Settings and activity",
+  "Messages and story replies",
+  "Message controls",
+  "Connected tools",
+];
+
+/** Callback URL ของ webhook: แอป Facebook ใช้ meta, Instagram Login ใช้ instagram */
 export const WEBHOOK_PATHS = { meta: "/api/webhooks/meta", instagram: "/api/webhooks/instagram" } as const;
 
 export const REQUIRED_PERMISSIONS = [

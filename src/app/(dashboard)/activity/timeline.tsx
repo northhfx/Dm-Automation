@@ -19,7 +19,9 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { cx, formatDateTime, formatRelativeTime, PlatformIcon } from "@/components/ui";
+import { cx, PlatformIcon } from "@/components/ui";
+import { createT, DEFAULT_LOCALE, formatters, type Locale, type MessageKey, type TFunction } from "@/lib/i18n";
+import { activityMessages } from "@/lib/i18n/messages/activity";
 import { inboxCutoff } from "@/lib/inbox/retention";
 import { INSTAGRAM_MESSAGE_ACCESS_MENU } from "@/lib/meta/setup-info";
 import type { TimelineEvent } from "./load-events";
@@ -27,39 +29,49 @@ import type { TimelineEvent } from "./load-events";
 /*
  * ส่วนแสดงผลกิจกรรม (ใช้ทั้งหน้ากิจกรรมและหน้าภาพรวม) — Server Component เท่านั้น
  * เพราะใช้ formatRelativeTime ซึ่งคำนวณจากเวลาปัจจุบันฝั่งเซิร์ฟเวอร์
+ * ภาษา: คอมโพเนนต์ในไฟล์นี้ไม่ใช่ async จึงอ่านคุกกี้เองไม่ได้ → หน้าที่เรียกส่ง locale มา (ไม่ส่ง = ไทย)
  */
 
 type Tone = "neutral" | "good" | "critical" | "accent" | "warning";
 
+type ActivityKey = MessageKey<typeof activityMessages>;
+type T = TFunction<ActivityKey>;
+
+const tOf = (locale: Locale): T => createT(activityMessages, locale);
+
 interface EventType {
-  label: string;
+  /** key ของชื่อกิจกรรมใน activityMessages */
+  label: ActivityKey;
   tone: Tone;
   icon: LucideIcon;
-  /** คำนำหน้าชื่อลูกค้า เช่น "จาก Ploy" / "ถึง Ploy" ("บัญชี" = บัญชี Instagram ของร้าน) */
-  who: "จาก" | "ถึง" | "โดย" | "บัญชี";
+  /** คำนำหน้าชื่อลูกค้า เช่น "จาก Ploy" / "ถึง Ploy" (whoAccount = บัญชี Instagram ของร้าน) */
+  who: "whoFrom" | "whoTo" | "whoBy" | "whoAccount";
 }
 
 export const EVENT_TYPES: Record<string, EventType> = {
-  comment_received: { label: "มีคนคอมเมนต์", tone: "neutral", icon: MessageCircle, who: "จาก" },
-  dm_received: { label: "มีคนทักแชท", tone: "neutral", icon: MessagesSquare, who: "จาก" },
-  rule_triggered: { label: "ตรงกับกฎ", tone: "accent", icon: Zap, who: "จาก" },
-  public_reply_sent: { label: "ตอบใต้คอมเมนต์แล้ว", tone: "good", icon: Reply, who: "ถึง" },
-  public_reply_failed: { label: "ตอบใต้คอมเมนต์ไม่สำเร็จ", tone: "critical", icon: MessageCircleX, who: "ถึง" },
-  dm_sent: { label: "ส่ง DM แล้ว", tone: "good", icon: Send, who: "ถึง" },
-  dm_failed: { label: "ส่ง DM ไม่สำเร็จ", tone: "critical", icon: MailX, who: "ถึง" },
-  button_clicked: { label: "กดปุ่ม", tone: "accent", icon: MousePointerClick, who: "โดย" },
-  link_clicked: { label: "คลิกลิงก์", tone: "accent", icon: Link2, who: "โดย" },
-  skipped: { label: "ข้าม ไม่ได้ส่ง", tone: "warning", icon: SkipForward, who: "จาก" },
-  post_bound: { label: "กฎเริ่มใช้กับโพสต์ใหม่แล้ว", tone: "accent", icon: Pin, who: "โดย" },
-  token_refresh_failed: { label: "ต่ออายุ token Instagram ไม่สำเร็จ", tone: "critical", icon: KeyRound, who: "บัญชี" },
+  comment_received: { label: "evCommentReceived", tone: "neutral", icon: MessageCircle, who: "whoFrom" },
+  dm_received: { label: "evDmReceived", tone: "neutral", icon: MessagesSquare, who: "whoFrom" },
+  rule_triggered: { label: "evRuleTriggered", tone: "accent", icon: Zap, who: "whoFrom" },
+  public_reply_sent: { label: "evPublicReplySent", tone: "good", icon: Reply, who: "whoTo" },
+  public_reply_failed: { label: "evPublicReplyFailed", tone: "critical", icon: MessageCircleX, who: "whoTo" },
+  dm_sent: { label: "evDmSent", tone: "good", icon: Send, who: "whoTo" },
+  dm_failed: { label: "evDmFailed", tone: "critical", icon: MailX, who: "whoTo" },
+  button_clicked: { label: "evButtonClicked", tone: "accent", icon: MousePointerClick, who: "whoBy" },
+  link_clicked: { label: "evLinkClicked", tone: "accent", icon: Link2, who: "whoBy" },
+  skipped: { label: "evSkipped", tone: "warning", icon: SkipForward, who: "whoFrom" },
+  post_bound: { label: "evPostBound", tone: "accent", icon: Pin, who: "whoBy" },
+  token_refresh_failed: { label: "evTokenRefreshFailed", tone: "critical", icon: KeyRound, who: "whoAccount" },
   // Meta ขอให้ชะลอ → ระบบพักแล้วส่งต่อเอง (ไม่ใช่ความผิดพลาด จึงเป็นสีเตือน ไม่ใช่สีแดง)
-  dm_rate_limited: { label: "Meta ขอให้ชะลอการส่ง DM", tone: "warning", icon: Hourglass, who: "บัญชี" },
+  dm_rate_limited: { label: "evDmRateLimited", tone: "warning", icon: Hourglass, who: "whoAccount" },
 };
 
-const FALLBACK: EventType = { label: "กิจกรรม", tone: "neutral", icon: Activity, who: "จาก" };
+/** ประเภทที่ไม่รู้จัก: ใช้ชื่อประเภทตามที่บันทึกไว้เป็นชื่อกิจกรรม */
+const FALLBACK: Omit<EventType, "label"> = { tone: "neutral", icon: Activity, who: "whoFrom" };
 
-export function eventType(type: string): EventType {
-  return EVENT_TYPES[type] ?? { ...FALLBACK, label: type };
+/** ประเภทกิจกรรม + ชื่อตามภาษา */
+export function eventType(type: string, locale: Locale = DEFAULT_LOCALE): Omit<EventType, "label"> & { label: string } {
+  const known = EVENT_TYPES[type];
+  return known ? { ...known, label: tOf(locale)(known.label) } : { ...FALLBACK, label: type };
 }
 
 const CHIP_TONES: Record<Tone, string> = {
@@ -72,14 +84,13 @@ const CHIP_TONES: Record<Tone, string> = {
 
 /** ไอคอนวงกลมของแต่ละประเภทกิจกรรม */
 export function EventIcon({ type, size = "md", className }: { type: string; size?: "sm" | "md"; className?: string }) {
-  const t = eventType(type);
-  const Icon = t.icon;
+  const { tone, icon: Icon } = EVENT_TYPES[type] ?? FALLBACK;
   return (
     <span
       className={cx(
         "flex shrink-0 items-center justify-center rounded-full",
         size === "sm" ? "size-7 [&_svg]:size-3.5" : "size-8 [&_svg]:size-4",
-        CHIP_TONES[t.tone],
+        CHIP_TONES[tone],
         className,
       )}
     >
@@ -89,48 +100,74 @@ export function EventIcon({ type, size = "md", className }: { type: string; size
 }
 
 /** เวลาแบบ "5 นาทีที่ผ่านมา" — ชี้เมาส์เพื่อดูวันเวลาเต็ม */
-export function RelativeTime({ date, now, className }: { date: Date | string | null; now?: Date; className?: string }) {
+export function RelativeTime({
+  date,
+  now,
+  className,
+  locale = DEFAULT_LOCALE,
+}: {
+  date: Date | string | null;
+  now?: Date;
+  className?: string;
+  locale?: Locale;
+}) {
   if (!date) return <span className={className}>–</span>;
   const d = typeof date === "string" ? new Date(date) : date;
+  const f = formatters(locale);
   return (
-    <time dateTime={d.toISOString()} title={formatDateTime(d)} className={cx("whitespace-nowrap tabular", className)}>
-      {formatRelativeTime(d, now)}
+    <time dateTime={d.toISOString()} title={f.dateTime(d)} className={cx("whitespace-nowrap tabular", className)}>
+      {f.relativeTime(d, now)}
     </time>
   );
 }
 
-const SKIP_REASONS: Record<string, string> = {
-  once_per_user: "คนนี้เคยได้รับจากกฎนี้แล้ว (ตั้งไว้ให้ส่งครั้งเดียวต่อคน)",
-  rule_inactive: "กฎนี้ปิดอยู่ จึงไม่ส่งข้อความถัดไป",
-  next_post_lookup_failed: "เช็คกับ Meta ไม่ได้ว่าโพสต์นี้เป็นโพสต์ถัดไปของกฎหรือเปล่า จึงยังไม่ส่ง (คอมเมนต์ถัดไปจะลองเช็คใหม่)",
+const SKIP_REASONS: Record<string, ActivityKey> = {
+  once_per_user: "skipOncePerUser",
+  rule_inactive: "skipRuleInactive",
+  next_post_lookup_failed: "skipNextPostLookupFailed",
 };
 
+/**
+ * เมนูเดียวกับ INSTAGRAM_MESSAGE_ACCESS_MENU (ชื่อเมนูในแอป Instagram ภาษาไทย) แต่เป็นชื่อในแอป Instagram ภาษาอังกฤษ
+ * เป็นชื่อปุ่มในแอปของ Meta จึงเขียนตามแอปเป๊ะๆ ไม่ได้แปลเอง
+ */
+const INSTAGRAM_MESSAGE_ACCESS_MENU_EN = [
+  "Profile",
+  "☰",
+  "Settings and activity",
+  "Messages and story replies",
+  "Message controls",
+  "Connected tools",
+];
+
 /** คำอธิบายภาษาคนของรหัสผิดพลาดที่พบบ่อยจาก Meta */
-export function errorHint(code: string | null): string | null {
+export function errorHint(code: string | null, locale: Locale = DEFAULT_LOCALE): string | null {
+  const t = tOf(locale);
   const [main, sub] = code?.split(" / ") ?? [];
-  if (sub === "2018278" || sub === "2534022") return "เกิน 24 ชั่วโมงหลังจากลูกค้าทักมาครั้งล่าสุด Meta จึงไม่ให้ส่งข้อความนี้";
+  if (sub === "2018278" || sub === "2534022") return t("hint24h");
   if (sub === "2534041") {
-    return `บัญชี Instagram ปิด 'อนุญาตการเข้าถึงข้อความ' ไว้ — เปิดในแอป Instagram ของร้าน: ${INSTAGRAM_MESSAGE_ACCESS_MENU.join(" → ")} → อนุญาตการเข้าถึงข้อความ (ดูคู่มือขั้นที่ 5)`;
+    const menu = locale === "en" ? INSTAGRAM_MESSAGE_ACCESS_MENU_EN : INSTAGRAM_MESSAGE_ACCESS_MENU;
+    return t("hintIgMessageAccess", { menu: menu.join(" → ") });
   }
   switch (main) {
     case "190":
-      return "token หมดอายุหรือใช้ไม่ได้ ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจหรือบัญชี Instagram ใหม่";
+      return t("hintToken");
     case "10":
     case "200":
-      return "แอปยังไม่ได้รับสิทธิ์นี้ ถ้ายังไม่ผ่าน App Review จะส่งได้เฉพาะบัญชีผู้ทดสอบของแอป";
+      return t("hintPermission");
     case "551":
-      return "ผู้รับไม่สามารถรับข้อความได้ในตอนนี้";
+      return t("hintUnavailable");
     case "4":
     case "32":
     case "613":
-      return "ส่งถี่เกินไป Meta จำกัดจำนวนชั่วคราว รอสักครู่แล้วระบบจะใช้งานได้ตามปกติ";
+      return t("hintRateLimit");
     default:
       return null;
   }
 }
 
 /** ข้อความยาว → แสดง 3 บรรทัดแรก กดเพื่อดูทั้งหมด (ไม่ต้องใช้ JavaScript) */
-function Expandable({ text, className, lines = 3 }: { text: string; className?: string; lines?: 2 | 3 }) {
+function Expandable({ text, t, className, lines = 3 }: { text: string; t: T; className?: string; lines?: 2 | 3 }) {
   const long = text.length > 140 || text.split("\n").length > lines;
   const clamp = lines === 2 ? "line-clamp-2" : "line-clamp-3";
   if (!long) return <span className={cx("block break-words whitespace-pre-line", className)}>{text}</span>;
@@ -138,8 +175,8 @@ function Expandable({ text, className, lines = 3 }: { text: string; className?: 
     <details className="group/more">
       <summary className="cursor-pointer list-none rounded-md [&::-webkit-details-marker]:hidden">
         <span className={cx("break-words whitespace-pre-line group-open/more:line-clamp-none", clamp, className)}>{text}</span>
-        <span className="mt-1 inline-block text-xs font-medium text-accent group-open/more:hidden">ดูทั้งหมด</span>
-        <span className="mt-1 hidden text-xs font-medium text-accent group-open/more:inline-block">ย่อ</span>
+        <span className="mt-1 inline-block text-xs font-medium text-accent group-open/more:hidden">{t("expandMore")}</span>
+        <span className="mt-1 hidden text-xs font-medium text-accent group-open/more:inline-block">{t("expandLess")}</span>
       </summary>
     </details>
   );
@@ -150,37 +187,35 @@ function Expandable({ text, className, lines = 3 }: { text: string; className?: 
  * ไม่ตรงได้หลายสาเหตุ (คำ, โพสต์ที่เลือกไว้, แพลตฟอร์ม, กฎปิดอยู่) — ห้ามบอกว่าเป็นเพราะคำไม่ตรงอย่างเดียว
  * ไม่งั้นเจ้าของร้านที่ลองคอมเมนต์ผิดโพสต์จะไปแก้คำในกฎแทนที่จะดูว่าเลือกโพสต์ไว้ถูกหรือเปล่า
  */
-export function unmatchedNote(type: string): string {
-  const where = type === "comment_received" ? "คำ โพสต์ หรือแพลตฟอร์มที่ตั้งไว้" : "คำหรือแพลตฟอร์มที่ตั้งไว้";
-  return `ไม่ได้เก็บชื่อและข้อความ เพราะไม่ตรงกับกฎไหนเลย (${where})`;
+export function unmatchedNote(type: string, locale: Locale = DEFAULT_LOCALE): string {
+  const t = tOf(locale);
+  const where = type === "comment_received" ? t("unmatchedWhereComment") : t("unmatchedWhereDm");
+  return t("unmatchedNote", { where });
 }
 
 /**
  * กิจกรรมไม่เก็บชื่อ/ข้อความของคนที่ไม่ตรงกฎ แต่หน้า "ข้อความรอตอบ" เก็บไว้ให้ตามตอบเอง (ลบเองเมื่อครบอายุ)
  * → ชี้ทางไปที่นั่น เฉพาะกิจกรรมที่ยังไม่เกินอายุของหน้านั้น (เก่ากว่านั้นไม่มีให้ดูแล้ว)
  */
-function UnmatchedInboxLink({ event, now }: { event: TimelineEvent; now: Date }) {
+function UnmatchedInboxLink({ event, now, t }: { event: TimelineEvent; now: Date; t: T }) {
   if (!event.unmatched || event.createdAt < inboxCutoff(now)) return null;
   return (
     <Link href="/inbox" className="inline-flex items-center gap-0.5 rounded font-medium text-accent hover:underline">
-      ดูในข้อความรอตอบ
+      {t("viewInInbox")}
       <ArrowRight className="size-3" aria-hidden />
     </Link>
   );
 }
 
-function UnmatchedTag({ event }: { event: TimelineEvent }) {
+function UnmatchedTag({ event, t }: { event: TimelineEvent; t: T }) {
   if (!event.unmatched) return null;
-  return <span className="font-normal text-fg-3"> (ไม่ตรงกฎ)</span>;
+  return <span className="font-normal text-fg-3"> {t("unmatchedTag")}</span>;
 }
 
-function Person({ event }: { event: TimelineEvent }) {
+function Person({ event, t }: { event: TimelineEvent; t: T }) {
   if (!event.person) return null;
-  return (
-    <span className="text-fg-2">
-      {eventType(event.type).who} <span className="font-medium text-fg">{event.person}</span>
-    </span>
-  );
+  const who = (EVENT_TYPES[event.type] ?? FALLBACK).who;
+  return <span className="text-fg-2">{t.rich(who, { person: <span className="font-medium text-fg">{event.person}</span> })}</span>;
 }
 
 /** ไอคอนประเภทกิจกรรม + ป้ายแพลตฟอร์มเล็กๆ ที่มุมขวาล่าง */
@@ -201,11 +236,23 @@ function EventMark({ event, size = "md", className }: { event: TimelineEvent; si
 }
 
 /** รายการกิจกรรมแบบเต็ม (หน้ากิจกรรม) */
-export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: Date; last?: boolean }) {
-  const t = eventType(event.type);
+export function TimelineItem({
+  event,
+  now,
+  last,
+  locale = DEFAULT_LOCALE,
+}: {
+  event: TimelineEvent;
+  now: Date;
+  last?: boolean;
+  locale?: Locale;
+}) {
+  const t = tOf(locale);
+  const type = eventType(event.type, locale);
   const isButton = event.type === "button_clicked";
-  const skip = event.skipReason ? (SKIP_REASONS[event.skipReason] ?? event.skipReason) : null;
-  const hint = event.error ? errorHint(event.error.code) : null;
+  const skipKey = event.skipReason ? SKIP_REASONS[event.skipReason] : undefined;
+  const skip = skipKey ? t(skipKey) : event.skipReason;
+  const hint = event.error ? errorHint(event.error.code, locale) : null;
 
   return (
     <li className="relative flex gap-3 px-4 py-3.5 sm:px-5">
@@ -215,30 +262,35 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-3">
           <p className="min-w-0 flex-1 text-sm leading-6">
-            <span className={cx("font-semibold", t.tone === "critical" ? "text-critical-text" : "text-fg")}>{t.label}</span>
-            <UnmatchedTag event={event} />
-            {isButton && event.text && <span className="text-fg"> “{event.text}”</span>} <Person event={event} />
+            <span className={cx("font-semibold", type.tone === "critical" ? "text-critical-text" : "text-fg")}>{type.label}</span>
+            <UnmatchedTag event={event} t={t} />
+            {isButton && event.text && <span className="text-fg"> “{event.text}”</span>} <Person event={event} t={t} />
           </p>
-          <RelativeTime date={event.createdAt} now={now} className="mt-0.5 hidden shrink-0 text-xs leading-5 text-fg-3 sm:block" />
+          <RelativeTime
+            date={event.createdAt}
+            now={now}
+            locale={locale}
+            className="mt-0.5 hidden shrink-0 text-xs leading-5 text-fg-3 sm:block"
+          />
         </div>
 
         <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-fg-3">
-          <RelativeTime date={event.createdAt} now={now} className="sm:hidden" />
+          <RelativeTime date={event.createdAt} now={now} locale={locale} className="sm:hidden" />
           {event.ruleId !== null && event.ruleName !== null && (
             <Link href={`/rules/${event.ruleId}`} className="inline-flex max-w-full min-w-0 items-center gap-1 rounded hover:text-accent">
               <Zap className="size-3 shrink-0" aria-hidden />
-              <span className="truncate">กฎ: {event.ruleName}</span>
+              <span className="truncate">{t("ruleName", { rule: event.ruleName })}</span>
             </Link>
           )}
-          {event.unmatched && <span>{unmatchedNote(event.type)}</span>}
-          <UnmatchedInboxLink event={event} now={now} />
+          {event.unmatched && <span>{unmatchedNote(event.type, locale)}</span>}
+          <UnmatchedInboxLink event={event} now={now} t={t} />
         </div>
 
         {!isButton && (event.text || event.buttons.length > 0) && (
           <div className="mt-2 max-w-2xl rounded-xl bg-surface-2 px-3 py-2 text-sm leading-6 text-fg-2">
-            {event.text && <Expandable text={event.text} />}
+            {event.text && <Expandable text={event.text} t={t} />}
             {event.buttons.length > 0 && (
-              <div className={cx("flex flex-wrap gap-1.5", event.text && "mt-2")} role="group" aria-label="ปุ่มในข้อความ">
+              <div className={cx("flex flex-wrap gap-1.5", event.text && "mt-2")} role="group" aria-label={t("buttonsAria")}>
                 {event.buttons.map((b, i) => (
                   // แค่บอกว่าข้อความมีปุ่มอะไร (กดไม่ได้) → เส้นประ สีเทา ไม่ให้ดูเหมือนปุ่มจริง
                   <span
@@ -246,7 +298,7 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
                     className="inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-dashed border-line-strong px-2 text-xs text-fg-2"
                   >
                     <MousePointerClick size={12} className="shrink-0 text-fg-3" aria-hidden="true" />
-                    <span className="sr-only">ปุ่ม: </span>
+                    <span className="sr-only">{t("buttonSr")} </span>
                     <span className="truncate">{b}</span>
                   </span>
                 ))}
@@ -261,15 +313,20 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
           <div className="mt-2 flex max-w-2xl gap-2 rounded-xl border border-critical/25 bg-critical-soft px-3 py-2 text-sm leading-6">
             <CircleAlert className="mt-1 size-4 shrink-0 text-critical-text" aria-hidden />
             <div className="min-w-0 flex-1">
-              <Expandable text={`สาเหตุ: ${event.error.message}`} className="text-critical-text" lines={2} />
+              <Expandable
+                text={t("errorReason", { message: event.error.message ?? t("errorUnknown") })}
+                t={t}
+                className="text-critical-text"
+                lines={2}
+              />
               {hint && <p className="mt-1 text-fg-2">{hint}</p>}
-              {event.error.code && <p className="mt-0.5 text-xs text-fg-3">รหัสจาก Meta: {event.error.code}</p>}
+              {event.error.code && <p className="mt-0.5 text-xs text-fg-3">{t("errorCode", { code: event.error.code })}</p>}
               {event.type === "token_refresh_failed" && (
                 <Link
                   href="/settings#instagram"
                   className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-accent underline-offset-2 hover:underline"
                 >
-                  ไปที่ตั้งค่า → บัญชี Instagram
+                  {t("goToInstagramSettings")}
                   <ArrowRight className="size-3.5" aria-hidden />
                 </Link>
               )}
@@ -282,26 +339,27 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
 }
 
 /** รายการกิจกรรมแบบย่อ (การ์ด "กิจกรรมล่าสุด" ในหน้าภาพรวม) */
-export function TimelineItemCompact({ event, now }: { event: TimelineEvent; now: Date }) {
-  const t = eventType(event.type);
+export function TimelineItemCompact({ event, now, locale = DEFAULT_LOCALE }: { event: TimelineEvent; now: Date; locale?: Locale }) {
+  const t = tOf(locale);
+  const type = eventType(event.type, locale);
   const detail: ReactNode =
     event.type === "button_clicked" && event.text
       ? `“${event.text}”`
       : event.error
-        ? event.error.message
+        ? (event.error.message ?? t("errorUnknown"))
         : event.unmatched
-          ? unmatchedNote(event.type)
-          : (event.text ?? (event.ruleName ? `กฎ: ${event.ruleName}` : null));
+          ? unmatchedNote(event.type, locale)
+          : (event.text ?? (event.ruleName ? t("ruleName", { rule: event.ruleName }) : null));
   return (
     <li className="flex items-start gap-3 px-5 py-3">
       <EventMark event={event} size="sm" className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           <p className="min-w-0 flex-1 truncate text-sm leading-6">
-            <span className={cx("font-medium", t.tone === "critical" ? "text-critical-text" : "text-fg")}>{t.label}</span>
-            <UnmatchedTag event={event} /> <Person event={event} />
+            <span className={cx("font-medium", type.tone === "critical" ? "text-critical-text" : "text-fg")}>{type.label}</span>
+            <UnmatchedTag event={event} t={t} /> <Person event={event} t={t} />
           </p>
-          <RelativeTime date={event.createdAt} now={now} className="mt-0.5 shrink-0 text-xs leading-5 text-fg-3" />
+          <RelativeTime date={event.createdAt} now={now} locale={locale} className="mt-0.5 shrink-0 text-xs leading-5 text-fg-3" />
         </div>
         {detail && <p className={cx("truncate text-xs leading-5", event.error ? "text-critical-text" : "text-fg-3")}>{detail}</p>}
       </div>

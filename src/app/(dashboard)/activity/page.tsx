@@ -1,4 +1,5 @@
 import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import type { ReactNode } from "react";
 import {
   ArrowRight,
   ChevronRight,
@@ -16,21 +17,12 @@ import { getDb } from "@/db/client";
 import { events, jobs, webhookLogs } from "@/db/schema";
 import { NavTitle } from "@/components/localized";
 import { SegmentedControl } from "@/components/segmented-control";
-import {
-  ButtonLink,
-  Card,
-  EmptyState,
-  formatDateTime,
-  formatNumber,
-  Notice,
-  PageHeader,
-  PlatformIcon,
-  Section,
-} from "@/components/ui";
+import { ButtonLink, Card, EmptyState, Notice, PageHeader, PlatformIcon, Section } from "@/components/ui";
 import { env } from "@/lib/env";
-import { createT, formatters, type Locale } from "@/lib/i18n";
+import { createT, formatters, type Locale, type MessageKey, type TFunction } from "@/lib/i18n";
+import type { activityMessages } from "@/lib/i18n/messages/activity";
 import { commonMessages } from "@/lib/i18n/messages/common";
-import { getLocale } from "@/lib/i18n/server";
+import { getT } from "@/lib/i18n/server";
 import { FAILED_TYPES, failureSummary } from "./failure-summary";
 import { FilterScroller } from "./filter-scroller";
 import { loadEvents, type TimelineEvent } from "./load-events";
@@ -38,26 +30,29 @@ import { RelativeTime, TimelineItem } from "./timeline";
 
 const PAGE_SIZE = 50;
 
-const FILTERS = [
-  { key: "all", label: "ทั้งหมด", types: null, icon: <ListFilter /> },
-  { key: "incoming", label: "ข้อความเข้า", types: ["comment_received", "dm_received"], icon: <MessagesSquare /> },
-  { key: "sent", label: "ส่งแล้ว", types: ["dm_sent", "public_reply_sent"], icon: <Send /> },
-  { key: "clicks", label: "กดปุ่ม/คลิก", types: ["button_clicked", "link_clicked"], icon: <MousePointerClick /> },
-  { key: "failed", label: "ไม่สำเร็จ", types: FAILED_TYPES, icon: <CircleX /> },
-] as const;
+type ActivityKey = MessageKey<typeof activityMessages>;
+type T = TFunction<ActivityKey>;
 
-const JOB_LABELS: Record<string, string> = {
-  comment: "จัดการคอมเมนต์",
-  dm: "จัดการข้อความแชท",
-  read: "อัปเดตสถานะอ่านแล้ว",
-  send_dm: "ส่ง DM",
+const FILTERS = [
+  { key: "all", label: "filterAll", types: null, icon: <ListFilter /> },
+  { key: "incoming", label: "filterIncoming", types: ["comment_received", "dm_received"], icon: <MessagesSquare /> },
+  { key: "sent", label: "filterSent", types: ["dm_sent", "public_reply_sent"], icon: <Send /> },
+  { key: "clicks", label: "filterClicks", types: ["button_clicked", "link_clicked"], icon: <MousePointerClick /> },
+  { key: "failed", label: "filterFailed", types: FAILED_TYPES, icon: <CircleX /> },
+] as const satisfies readonly { key: string; label: ActivityKey; types: readonly string[] | null; icon: ReactNode }[];
+
+const JOB_LABELS: Record<string, ActivityKey> = {
+  comment: "jobComment",
+  dm: "jobDm",
+  read: "jobRead",
+  send_dm: "jobSendDm",
 };
 
-const EMPTY_TEXT: Record<string, string> = {
-  incoming: "ยังไม่มีคอมเมนต์หรือแชทเข้ามา",
-  sent: "ยังไม่มีข้อความที่ระบบส่งออกไป",
-  clicks: "ยังไม่มีใครกดปุ่มหรือคลิกลิงก์",
-  failed: "ไม่มีรายการที่ส่งไม่สำเร็จ",
+const EMPTY_TEXT: Record<string, ActivityKey> = {
+  incoming: "emptyIncoming",
+  sent: "emptySent",
+  clicks: "emptyClicks",
+  failed: "emptyFailed",
 };
 
 /** แบ่งรายการเป็นกลุ่มตามวัน (ตามเขตเวลาของระบบ) — ชื่อวันตามภาษาที่เลือก */
@@ -84,15 +79,15 @@ function groupByDay(items: TimelineEvent[], now: Date, locale: Locale): { key: s
 }
 
 /** ข้อมูลมาจากไหน: source = ช่องทางที่ลายเซ็นตรง (instagram_login / facebook_login), object = ชนิดของข้อมูลจาก Meta */
-function webhookSource(object: string | null, source: string | null): { label: string; platform: "facebook" | "instagram" | null } {
+function webhookSource(object: string | null, source: string | null, t: T): { label: string; platform: "facebook" | "instagram" | null } {
   if (source === "instagram_login") return { label: "Instagram (Instagram Login)", platform: "instagram" };
-  if (object === "instagram") return { label: "Instagram (ผ่านเพจ)", platform: "instagram" };
+  if (object === "instagram") return { label: t("sourceInstagramViaPage"), platform: "instagram" };
   if (object === "page") return { label: "Facebook Page", platform: "facebook" };
-  return { label: object ?? "ไม่ทราบที่มา", platform: null };
+  return { label: object ?? t("sourceUnknown"), platform: null };
 }
 
 /** สรุปว่าข้อมูลจาก Meta ก้อนนี้มีอะไรบ้าง เช่น "คอมเมนต์ · กดปุ่ม 2" (อ่านอย่างเดียว ไม่เชื่อโครงสร้างข้อมูล) */
-function webhookSummary(body: unknown): string | null {
+function webhookSummary(body: unknown, t: T): string | null {
   const counts = new Map<string, number>();
   const add = (label: string) => counts.set(label, (counts.get(label) ?? 0) + 1);
   const entries = (body as { entry?: unknown } | null)?.entry;
@@ -100,18 +95,18 @@ function webhookSummary(body: unknown): string | null {
     const e = (entry ?? {}) as { changes?: unknown; messaging?: unknown };
     for (const change of Array.isArray(e.changes) ? e.changes : []) {
       const field = (change as { field?: unknown } | null)?.field;
-      add(field === "feed" || field === "comments" ? "คอมเมนต์" : typeof field === "string" ? field : "อื่นๆ");
+      add(field === "feed" || field === "comments" ? t("whComment") : typeof field === "string" ? field : t("whOther"));
     }
     for (const m of Array.isArray(e.messaging) ? e.messaging : []) {
       const msg = (m ?? {}) as { message?: { is_echo?: unknown }; postback?: unknown; read?: unknown };
-      if (msg.message) add(msg.message.is_echo ? "ข้อความจากเพจ" : "แชท");
-      else if (msg.postback) add("กดปุ่ม");
-      else if (msg.read) add("อ่านแล้ว");
-      else add("อื่นๆ");
+      if (msg.message) add(msg.message.is_echo ? t("whPageMessage") : t("whChat"));
+      else if (msg.postback) add(t("whButton"));
+      else if (msg.read) add(t("whRead"));
+      else add(t("whOther"));
     }
   }
   if (counts.size === 0) return null;
-  return [...counts].map(([label, n]) => (n > 1 ? `${label} ${formatNumber(n)}` : label)).join(" · ");
+  return [...counts].map(([label, n]) => (n > 1 ? t("whCount", { label, count: n }) : label)).join(" · ");
 }
 
 export default async function ActivityPage({ searchParams }: PageProps<"/activity">) {
@@ -121,9 +116,9 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
   const before = Math.max(0, Math.floor(Number(params.before) || 0)) || null;
   const now = new Date();
   const db = getDb();
-  const locale = await getLocale();
 
-  const [{ items, hasMore }, failedJobs, logs, recentFailed] = await Promise.all([
+  const [t, { items, hasMore }, failedJobs, logs, recentFailed] = await Promise.all([
+    getT("activity"),
     loadEvents(db, { types: filter.types, before, limit: PAGE_SIZE }),
     db.select().from(jobs).where(eq(jobs.status, "failed")).orderBy(desc(jobs.updatedAt)).limit(10),
     db.select().from(webhookLogs).orderBy(desc(webhookLogs.id)).limit(10),
@@ -133,7 +128,9 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
       .where(and(inArray(events.type, FAILED_TYPES), gte(events.createdAt, sql`now() - interval '24 hours'`)))
       .groupBy(events.type),
   ]);
-  const failures = failureSummary(Object.fromEntries(recentFailed.map((r) => [r.type, Number(r.n)])));
+  const locale = t.locale;
+  const f = formatters(locale);
+  const failures = failureSummary(Object.fromEntries(recentFailed.map((r) => [r.type, Number(r.n)])), locale);
 
   const filterHref = (key: string) => (key === "all" ? "/activity" : `/activity?filter=${key}`);
   const currentHref = filterHref(filter.key);
@@ -146,10 +143,10 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
     <>
       <PageHeader
         title={<NavTitle name="activity" />}
-        description="ทุกอย่างที่ระบบได้รับและทำไป เรียงจากล่าสุด ใช้ดูว่าระบบตอบลูกค้าแล้วหรือยัง และหาสาเหตุเวลาระบบไม่ตอบ"
+        description={t("description")}
         actions={
           <ButtonLink href={currentHref} variant="secondary" icon={<RefreshCw />}>
-            อัปเดตรายการ
+            {t("refresh")}
           </ButtonLink>
         }
       />
@@ -173,16 +170,14 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
           {/* บนมือถือเลื่อนแถบตัวกรองซ้าย/ขวาได้ */}
           <FilterScroller className="no-scrollbar -mx-4 max-w-[calc(100%+2rem)] overflow-x-auto px-4 sm:mx-0 sm:max-w-full sm:px-0">
             <SegmentedControl
-              label="กรองตามประเภท"
+              label={t("filterLabel")}
               value={filter.key}
               className="max-w-none!"
-              options={FILTERS.map((f) => ({ value: f.key, label: f.label, icon: f.icon, href: filterHref(f.key) }))}
+              options={FILTERS.map((o) => ({ value: o.key, label: t(o.label), icon: o.icon, href: filterHref(o.key) }))}
             />
           </FilterScroller>
           {items.length > 0 && (
-            <p className="text-xs text-fg-3">
-              {before ? "รายการที่เก่ากว่า" : "ล่าสุด"} {formatNumber(items.length)} รายการ
-            </p>
+            <p className="text-xs text-fg-3">{t(before ? "countOlder" : "countLatest", { count: items.length })}</p>
           )}
         </div>
 
@@ -192,39 +187,39 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
             icon={<History />}
             actions={
               <ButtonLink href={currentHref} variant="ghost" size="sm">
-                กลับไปรายการล่าสุด
+                {t("backToLatest")}
               </ButtonLink>
             }
           >
-            กำลังดูรายการย้อนหลัง
+            {t("olderNotice")}
           </Notice>
         )}
 
         {items.length === 0 ? (
           filter.key === "all" && !before ? (
             <EmptyState
-              title="ยังไม่มีกิจกรรม"
+              title={t("emptyTitle")}
               icon={<Inbox />}
               action={
                 <ButtonLink href="/guide" variant="secondary">
-                  เปิดคู่มือตั้งค่า
+                  {t("emptyAction")}
                 </ButtonLink>
               }
             >
-              ลองคอมเมนต์หรือทักแชทเพจของคุณดู ถ้าตั้งค่าถูกต้อง รายการจะขึ้นที่นี่ภายในไม่กี่วินาที
+              {t("emptyBody")}
             </EmptyState>
           ) : (
             <EmptyState
-              title={before ? "ไม่มีรายการที่เก่ากว่านี้" : (EMPTY_TEXT[filter.key] ?? "ไม่มีรายการ")}
+              title={t(before ? "emptyOlder" : (EMPTY_TEXT[filter.key] ?? "emptyOther"))}
               icon={filter.key === "failed" && !before ? <CircleCheck className="text-good-text" /> : undefined}
               compact
               action={
                 <ButtonLink href="/activity" variant="secondary">
-                  ดูกิจกรรมทั้งหมด
+                  {t("emptyViewAll")}
                 </ButtonLink>
               }
             >
-              {filter.key === "failed" && !before ? "ระบบตอบลูกค้าได้ตามปกติ" : undefined}
+              {filter.key === "failed" && !before ? t("emptyFailedBody") : undefined}
             </EmptyState>
           )
         ) : (
@@ -234,11 +229,11 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
                 <h2 className="flex items-baseline gap-2 rounded-t-xl border-b border-line bg-surface-2/60 px-4 py-2.5 text-sm font-semibold text-fg sm:px-5">
                   {g.label}
                   {g.label !== g.date && <span className="text-xs font-normal text-fg-3">{g.date}</span>}
-                  <span className="ml-auto text-xs font-normal text-fg-3 tabular">{formatNumber(g.items.length)} รายการ</span>
+                  <span className="ml-auto text-xs font-normal text-fg-3 tabular">{t("groupCount", { count: g.items.length })}</span>
                 </h2>
                 <ul>
                   {g.items.map((e, i) => (
-                    <TimelineItem key={e.id} event={e} now={now} last={i === g.items.length - 1} />
+                    <TimelineItem key={e.id} event={e} now={now} last={i === g.items.length - 1} locale={locale} />
                   ))}
                 </ul>
               </Card>
@@ -246,7 +241,7 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
             {hasMore && olderHref && (
               <div className="flex justify-center pt-2">
                 <ButtonLink href={olderHref} variant="secondary" icon={<History />}>
-                  ดูรายการที่เก่ากว่า
+                  {t("loadOlder")}
                 </ButtonLink>
               </div>
             )}
@@ -254,14 +249,14 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
         )}
 
         <Section
-          title="สำหรับตรวจสอบปัญหา"
-          description="ข้อมูลทางเทคนิค ใช้ดูเวลาระบบไม่ตอบ หรือส่งให้คนที่ช่วยดูแลระบบ"
+          title={t("debugTitle")}
+          description={t("debugDescription")}
           className="pt-4"
         >
           {failedJobs.length > 0 && (
             <Card
-              title="งานที่ล้มเหลว"
-              description="ระบบลองใหม่จนครบจำนวนครั้งแล้วยังไม่สำเร็จ"
+              title={t("failedJobsTitle")}
+              description={t("failedJobsDescription")}
               icon={<CircleX className="text-critical-text" />}
               padding="none"
             >
@@ -270,12 +265,12 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
                   <li key={j.id} className="px-5 py-3.5 text-sm">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                       <span className="font-medium text-fg">
-                        {JOB_LABELS[j.type] ?? j.type} <span className="font-normal text-fg-3">#{j.id}</span>
+                        {JOB_LABELS[j.type] ? t(JOB_LABELS[j.type]) : j.type} <span className="font-normal text-fg-3">#{j.id}</span>
                       </span>
-                      <RelativeTime date={j.updatedAt} now={now} className="text-xs text-fg-3" />
+                      <RelativeTime date={j.updatedAt} now={now} locale={locale} className="text-xs text-fg-3" />
                     </div>
                     {j.lastError && <p className="mt-1 text-sm break-words text-critical-text">{j.lastError}</p>}
-                    <p className="mt-0.5 text-xs text-fg-3">ลองไปแล้ว {formatNumber(j.attempts)} ครั้ง</p>
+                    <p className="mt-0.5 text-xs text-fg-3">{t("jobAttempts", { count: j.attempts })}</p>
                   </li>
                 ))}
               </ul>
@@ -283,29 +278,29 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
           )}
 
           <Card
-            title="ข้อมูลที่ Meta ส่งเข้ามาล่าสุด (webhook)"
-            description="ข้อมูลดิบจาก Meta เก็บไว้ 7 วัน ถ้าว่างแปลว่า Meta ยังไม่ได้ส่งข้อมูลเข้ามาที่ระบบ"
+            title={t("webhookTitle")}
+            description={t("webhookDescription")}
             padding="none"
           >
             {logs.length === 0 ? (
               <div className="p-5">
                 <EmptyState
-                  title="ยังไม่เคยได้รับข้อมูลจาก Meta"
+                  title={t("webhookEmptyTitle")}
                   compact
                   action={
                     <ButtonLink href="/guide" variant="secondary">
-                      ตรวจขั้นตอนตั้งค่า
+                      {t("webhookEmptyAction")}
                     </ButtonLink>
                   }
                 >
-                  ตรวจขั้นตอนตั้งค่า Webhook ในคู่มือ แล้วลองคอมเมนต์ที่เพจอีกครั้ง
+                  {t("webhookEmptyBody")}
                 </EmptyState>
               </div>
             ) : (
               <ul className="divide-y divide-line">
                 {logs.map((log) => {
-                  const source = webhookSource(log.object, log.source);
-                  const summary = webhookSummary(log.body);
+                  const source = webhookSource(log.object, log.source, t);
+                  const summary = webhookSummary(log.body, t);
                   return (
                     <li key={log.id}>
                       <details className="group">
@@ -316,8 +311,8 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
                             <span className="font-medium text-fg">{source.label}</span>
                             {summary && <span className="text-fg-3"> · {summary}</span>}
                           </span>
-                          <span className="hidden text-xs text-fg-3 sm:inline">{formatDateTime(log.receivedAt)}</span>
-                          <RelativeTime date={log.receivedAt} now={now} className="text-xs text-fg-3 sm:hidden" />
+                          <span className="hidden text-xs text-fg-3 sm:inline">{f.dateTime(log.receivedAt)}</span>
+                          <RelativeTime date={log.receivedAt} now={now} locale={locale} className="text-xs text-fg-3 sm:hidden" />
                         </summary>
                         <pre className="scroll-thin mx-5 mb-4 max-h-72 overflow-auto rounded-lg border border-line bg-surface-2 p-3 font-mono text-xs leading-5 text-fg-2">
                           {JSON.stringify(log.body, null, 2)}

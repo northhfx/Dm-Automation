@@ -1,6 +1,6 @@
 import { defineMessages } from "../core";
 
-/** หน้าภาพรวม (/) — src/app/(dashboard)/page.tsx, overview-parts.tsx */
+/** หน้าภาพรวม (/) — src/app/(dashboard)/page.tsx, overview-parts.tsx, show-more.tsx */
 export const dashboardMessages = defineMessages({
   th: {
     // ---- หัวหน้า (ชื่อหน้าอยู่ใน nav: "dashboard") ----
@@ -9,11 +9,180 @@ export const dashboardMessages = defineMessages({
     descriptionRange: "ผลงานของระบบตอบอัตโนมัติ {days} วันล่าสุด ({since} – วันนี้)",
     rangeLabel: "ช่วงเวลา",
     rangeDays: "{days} วัน",
+
+    // ---- แถบตั้งค่าให้เสร็จ ----
+    setupAria: "ความคืบหน้าการตั้งค่า",
+    /** {count} = จำนวนขั้นที่เหลือ */
+    setupStepsLeft: "อีก {count} ขั้นก็พร้อมตอบลูกค้าอัตโนมัติ",
+    /** {step} = ชื่อขั้นถัดไป (ตัวหนา) */
+    setupNext: "ขั้นต่อไป: {step}",
+    setupProgressLabel: "ตั้งค่าเสร็จ {done} จาก {total} ขั้น",
+    /** ข้างแถบความคืบหน้า เช่น "3/6 ขั้น" */
+    setupProgressShort: "{done}/{total} ขั้น",
+    setupOpenGuide: "ดูคู่มือ",
+    setupCreateRule: "สร้างกฎ",
+    setupGoToGuide: "ไปที่คู่มือตั้งค่า",
+    stepBaseUrl: "ยืนยันที่อยู่เว็บของระบบ",
+    stepMetaApp: "ใส่ข้อมูลแอปจาก Meta for Developers",
+    stepWebhook: "ตั้งค่าให้ Meta ส่งคอมเมนต์และแชทเข้าระบบ",
+    stepConnect: "เชื่อมต่อเพจ Facebook หรือบัญชี Instagram",
+    stepFirstRule: "สร้างกฎอัตโนมัติอันแรก",
+    stepTest: "ทดสอบโดยคอมเมนต์ที่โพสต์ของเพจ",
+
+    // ---- ตัวเลขสรุป 5 ช่อง ----
+    statTriggers: "ตรงกับกฎ",
+    statTriggersDetail: "คอมเมนต์/แชทที่ระบบตอบให้",
+    statSent: "DM ที่ส่งสำเร็จ",
+    statSentFailed: "ไม่สำเร็จ {count}",
+    statCtr: "อัตราการกด",
+    /** {engaged} = คนที่กดปุ่มหรือลิงก์, {reached} = คนที่ได้รับ DM */
+    statCtrDetail: "{engaged} จาก {reached} คนที่ได้รับ DM กดปุ่มหรือลิงก์",
+    statClicks: "กดปุ่ม / คลิกลิงก์",
+    statClicksDetail: "กดปุ่ม {taps} · คลิกลิงก์ {clicks}",
+    statNewContacts: "ลูกค้าใหม่",
+    statNewContactsDetail: "คนใหม่ที่คอมเมนต์หรือทักแชทตรงกับคำในกฎ",
+
+    // ---- กราฟรายวัน ----
+    chartTitle: "DM ที่ส่ง และการกดปุ่ม/คลิกลิงก์ รายวัน",
+    chartSummary: "รวม {days} วัน: ส่ง {sent} ข้อความ · กด/คลิก {clicks} ครั้ง",
+    chartRangeOnly: "{days} วันล่าสุด",
+    /** ชื่อเส้นในกราฟ */
+    chartSeriesSent: "DM ที่ส่งสำเร็จ",
+    chartSeriesClicks: "กดปุ่ม/คลิกลิงก์",
+    chartEmptyTitle: "ยังไม่มีข้อมูลใน {days} วันนี้",
+    chartEmptyNoRules: "สร้างกฎอัตโนมัติก่อน แล้วเมื่อมีคนคอมเมนต์คำที่ตั้งไว้ กราฟจะแสดงที่นี่",
+    chartEmptyBody: "เมื่อมีคนคอมเมนต์หรือทักแชทตรงกับกฎ กราฟจะแสดงที่นี่",
+    chartEmptyTry90: "ดูช่วง 90 วัน",
+    /** ปุ่มเมื่อยังไม่มีกฎเลย (ในกราฟและในการ์ดกฎ) */
+    createFirstRule: "สร้างกฎแรก",
+    viewRules: "ดูกฎอัตโนมัติ",
+
+    // ---- การ์ด Facebook กับ Instagram ----
+    platformTitle: "Facebook กับ Instagram",
+    platformDescription: "เทียบสองแพลตฟอร์มในช่วงเดียวกัน",
+    splitIncoming: "ข้อความเข้า",
+    splitIncomingHint: "คอมเมนต์ {comments} · แชท {chats}",
+    splitTriggers: "ตรงกับกฎ",
+    splitSent: "ส่ง DM สำเร็จ",
+    factPublicReplies: "ตอบใต้คอมเมนต์",
+    factPublicRepliesValue: "{count} ครั้ง",
+    factRead: "ลูกค้าเปิดอ่าน DM",
+    factLinks: "ลิงก์ที่ถูกเปิด",
+    /** {clicked} = ลิงก์ที่ถูกเปิด, {sent} = ลิงก์ที่ส่งไป */
+    factLinksValue: "{clicked} จาก {sent}",
+    factFailed: "ส่งไม่สำเร็จ",
+
+    // ---- การ์ดกฎที่ทำงานมากที่สุด ----
+    topRulesTitle: "กฎที่ทำงานมากที่สุด",
+    topRulesDescription: "เรียงตามครั้งที่ทำงานใน {days} วัน",
+    allRules: "กฎทั้งหมด",
+    rulesEmptyTitle: "ยังไม่มีกฎอัตโนมัติ",
+    rulesEmptyBody: "ตั้งคำที่ลูกค้ามักพิมพ์ เช่น “ราคา” แล้วให้ระบบตอบและส่ง DM ให้อัตโนมัติ",
+    triggerComment: "คอมเมนต์",
+    triggerDm: "แชท DM",
+    ruleOff: "ปิดอยู่",
+    colRule: "กฎ",
+    colRuns: "ทำงาน",
+    colRunsHint: "จำนวนครั้งที่มีคนคอมเมนต์หรือทักแชทตรงกับกฎ",
+    colSent: "ส่งสำเร็จ",
+    colFailed: "ไม่สำเร็จ",
+    colRead: "อ่าน",
+    colReadHint: "สัดส่วน DM ที่ลูกค้าเปิดอ่าน",
+    colCtr: "อัตราการกด",
+    ctrHint: "สัดส่วนคนที่กดปุ่มหรือลิงก์ จากคนที่ได้รับ DM (กฎที่ไม่มีปุ่มแสดง –)",
+    /** ต่อท้ายจำนวนครั้งที่ทำงาน (มือถือ) เช่น "12 ครั้ง" — อังกฤษไม่มีรูปพหูพจน์ จึงใช้คำที่ไม่เปลี่ยนตามจำนวน */
+    runsUnit: "ครั้ง",
+    /** ปุ่มแสดงกฎที่ซ่อนไว้ */
+    showMoreRules: "แสดงอีก {count} กฎ",
+    showLess: "ย่อรายการ",
+
+    // ---- การ์ดกิจกรรมล่าสุด ----
+    recentTitle: "กิจกรรมล่าสุด",
+    recentViewAll: "ดูทั้งหมด",
+    recentEmptyTitle: "ยังไม่มีกิจกรรม",
+    recentEmptyBody: "ลองคอมเมนต์ที่โพสต์ของเพจ รายการจะขึ้นที่นี่ภายในไม่กี่วินาที",
   },
   en: {
     description: "How your automations are doing",
     descriptionRange: "How your automations did over the last {days} days ({since} – today)",
     rangeLabel: "Time range",
     rangeDays: "{days} days",
+
+    setupAria: "Setup progress",
+    setupStepsLeft: "Almost ready to auto-reply. Steps left: {count}",
+    setupNext: "Next step: {step}",
+    setupProgressLabel: "{done} of {total} setup steps done",
+    setupProgressShort: "{done}/{total} steps",
+    setupOpenGuide: "Open guide",
+    setupCreateRule: "Create automation",
+    setupGoToGuide: "Go to Setup guide",
+    stepBaseUrl: "Confirm your app's web address",
+    stepMetaApp: "Add your app details from Meta for Developers",
+    stepWebhook: "Let Meta send comments and messages to the app",
+    stepConnect: "Connect a Facebook Page or Instagram account",
+    stepFirstRule: "Create your first automation",
+    stepTest: "Test it by commenting on a post on your Page",
+
+    statTriggers: "Automation matches",
+    statTriggersDetail: "Comments and messages answered for you",
+    statSent: "DMs sent",
+    statSentFailed: "Failed: {count}",
+    statCtr: "Click rate",
+    statCtrDetail: "{engaged} of {reached} people who got a DM tapped a button or link",
+    statClicks: "Taps and clicks",
+    statClicksDetail: "Button taps {taps} · Link clicks {clicks}",
+    statNewContacts: "New contacts",
+    statNewContactsDetail: "New people whose comment or message matched a keyword",
+
+    chartTitle: "DMs sent and taps/clicks per day",
+    chartSummary: "Last {days} days: Sent {sent} · Taps/clicks {clicks}",
+    chartRangeOnly: "Last {days} days",
+    chartSeriesSent: "DMs sent",
+    chartSeriesClicks: "Taps/clicks",
+    chartEmptyTitle: "No data in the last {days} days",
+    chartEmptyNoRules: "Create an automation first. When someone comments one of your keywords, the chart shows up here.",
+    chartEmptyBody: "When a comment or message matches an automation, the chart shows up here.",
+    chartEmptyTry90: "See the last 90 days",
+    createFirstRule: "Create your first automation",
+    viewRules: "View automations",
+
+    platformTitle: "Facebook vs. Instagram",
+    platformDescription: "Both platforms side by side for the same period",
+    splitIncoming: "Incoming",
+    splitIncomingHint: "Comments {comments} · Messages {chats}",
+    splitTriggers: "Matched an automation",
+    splitSent: "DMs sent",
+    factPublicReplies: "Public replies",
+    factPublicRepliesValue: "{count}",
+    factRead: "DMs opened by customers",
+    factLinks: "Links opened",
+    factLinksValue: "{clicked} of {sent}",
+    factFailed: "Failed to send",
+
+    topRulesTitle: "Top automations",
+    topRulesDescription: "Sorted by runs in the last {days} days",
+    allRules: "All automations",
+    rulesEmptyTitle: "No automations yet",
+    rulesEmptyBody: "Pick words your customers often type, like “price”, and the system replies and sends a DM for you.",
+    triggerComment: "Comment",
+    triggerDm: "DM",
+    ruleOff: "Off",
+    colRule: "Automation",
+    colRuns: "Runs",
+    colRunsHint: "How many times a comment or message matched this automation",
+    colSent: "Sent",
+    colFailed: "Failed",
+    colRead: "Read",
+    colReadHint: "Share of DMs that customers opened",
+    colCtr: "Click rate",
+    ctrHint: "Share of people who got a DM and tapped a button or link (– for automations without buttons)",
+    runsUnit: "total",
+    showMoreRules: "Show {count} more",
+    showLess: "Show less",
+
+    recentTitle: "Recent activity",
+    recentViewAll: "See all",
+    recentEmptyTitle: "No activity yet",
+    recentEmptyBody: "Try commenting on a post on your Page. It shows up here within seconds.",
   },
 });

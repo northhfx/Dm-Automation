@@ -22,11 +22,14 @@ import {
   Zap,
 } from "lucide-react";
 import type { MatchType, Platform, PostScope, TriggerType } from "@/db/schema";
-import { Badge, cx, formatNumber, formatPercent, PlatformIcon } from "@/components/ui";
+import { Badge, cx, PlatformIcon } from "@/components/ui";
 import { Switch } from "@/components/switch";
 import { Menu, MenuItem, MenuSeparator } from "@/components/menu";
 import { runAction, toFormData } from "@/components/action";
 import { toast } from "@/components/toast";
+import { useFormat, useT } from "@/lib/i18n/client";
+import type { MessageKey, TFunction } from "@/lib/i18n/core";
+import { rulesMessages } from "@/lib/i18n/messages/rules";
 import { deleteRule, duplicateRule, moveRule, toggleRule } from "./actions";
 import { TemplateOptions } from "./template-chooser";
 
@@ -63,14 +66,16 @@ export interface RuleListItem {
   ctr: number | null;
 }
 
-const GROUPS: { trigger: TriggerType; title: string; icon: ReactNode }[] = [
-  { trigger: "comment", title: "เมื่อมีคนคอมเมนต์", icon: <MessageCircle /> },
-  { trigger: "dm", title: "เมื่อมีคนทักแชท", icon: <MessagesSquare /> },
+type RulesKey = MessageKey<typeof rulesMessages>;
+type RulesT = TFunction<RulesKey>;
+
+const GROUPS: { trigger: TriggerType; title: RulesKey; icon: ReactNode }[] = [
+  { trigger: "comment", title: "groupComment", icon: <MessageCircle /> },
+  { trigger: "dm", title: "groupDm", icon: <MessagesSquare /> },
 ];
 
-const CTR_HINT = "อัตราการกด = สัดส่วนคนที่กดปุ่มหรือลิงก์ จากคนที่ได้รับ DM";
-
 export function RuleList({ rules }: { rules: RuleListItem[] }) {
+  const t = useT(rulesMessages);
   const groups = GROUPS.map((g) => ({ ...g, rules: rules.filter((r) => r.trigger === g.trigger) })).filter((g) => g.rules.length > 0);
   return (
     <div className="space-y-8">
@@ -81,16 +86,13 @@ export function RuleList({ rules }: { rules: RuleListItem[] }) {
               <span className="flex size-7 items-center justify-center rounded-lg border border-line bg-surface text-fg-2 shadow-xs [&_svg]:size-4" aria-hidden>
                 {g.icon}
               </span>
-              {g.title}
+              {t(g.title)}
               <span className="text-sm font-normal text-fg-3 tabular">{g.rules.length}</span>
             </h2>
             {g.rules.length > 1 && (
-              <p
-                className="flex items-center gap-1.5 text-xs leading-5 text-fg-3"
-                title="ย้ายกฎขึ้น/ลงได้จากปุ่ม ⋮ ของแต่ละกฎ"
-              >
+              <p className="flex items-center gap-1.5 text-xs leading-5 text-fg-3" title={t("moveHint")}>
                 <ListOrdered className="size-3.5 shrink-0" aria-hidden />
-                ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนสุด
+                {t("topWins")}
               </p>
             )}
           </div>
@@ -104,15 +106,14 @@ export function RuleList({ rules }: { rules: RuleListItem[] }) {
 
       <p className="flex items-start gap-2 text-xs leading-5 text-fg-3">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        <span>
-          ตัวเลขนับตั้งแต่สร้างกฎ · {CTR_HINT} · ย้ายกฎขึ้น/ลงได้จากปุ่ม ⋮ ของแต่ละกฎ
-        </span>
+        <span>{[t("statsSince"), t("ctrHint"), t("moveHint")].join(" · ")}</span>
       </p>
     </div>
   );
 }
 
 function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; total: number }) {
+  const t = useT(rulesMessages);
   const [active, setActive] = useOptimistic(rule.active);
   const [pending, startTransition] = useTransition();
   const href = `/rules/${rule.id}`;
@@ -121,10 +122,10 @@ function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; tot
     startTransition(async () => {
       setActive(next);
       const ok = await runAction(() => toggleRule(toFormData({ id: rule.id })), {
-        error: "เปลี่ยนสถานะไม่สำเร็จ ลองใหม่อีกครั้ง",
+        error: t("toggleFailed"),
       });
       if (ok) {
-        toast(next ? "เปิดกฎแล้ว เริ่มตอบอัตโนมัติ" : "ปิดกฎแล้ว หยุดตอบชั่วคราว", {
+        toast(next ? t("toggledOn") : t("toggledOff"), {
           tone: next ? "good" : "neutral",
           description: rule.name,
         });
@@ -149,9 +150,9 @@ function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; tot
           "hidden size-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold tabular sm:flex",
           active ? "border-line bg-surface-2 text-fg-2" : "border-line text-fg-3",
         )}
-        title={`ลำดับที่ ${rank}`}
+        title={t("rankTitle", { rank })}
       >
-        <span className="sr-only">ลำดับที่ </span>
+        <span className="sr-only">{t("rankPrefix")}</span>
         {rank}
       </span>
 
@@ -171,7 +172,7 @@ function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; tot
               {/* จอใหญ่มีคำว่า "ปิดอยู่" ข้างสวิตช์แล้ว */}
               {!active && (
                 <Badge tone="neutral" dot className="sm:hidden">
-                  ปิดอยู่
+                  {t("statusOff")}
                 </Badge>
               )}
             </div>
@@ -180,9 +181,9 @@ function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; tot
 
           <div className="relative z-10 -mt-1.5 -mr-2 flex shrink-0 items-center gap-0.5 sm:-mt-1">
             <span aria-hidden className={cx("mr-1.5 hidden text-xs font-medium sm:inline", active ? "text-good-text" : "text-fg-3")}>
-              {active ? "เปิดอยู่" : "ปิดอยู่"}
+              {active ? t("statusOn") : t("statusOff")}
             </span>
-            <Switch checked={active} onChange={toggle} busy={pending} label={`เปิดใช้กฎ ${rule.name}`} hideLabel />
+            <Switch checked={active} onChange={toggle} busy={pending} label={t("toggleLabel", { rule: rule.name })} hideLabel />
             <RuleMenu rule={rule} href={href} rank={rank} total={total} />
           </div>
         </div>
@@ -204,13 +205,14 @@ function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; tot
 }
 
 function RuleMenu({ rule, href, rank, total }: { rule: RuleListItem; href: string; rank: number; total: number }) {
+  const t = useT(rulesMessages);
   return (
-    <Menu label={`ตัวเลือกของกฎ ${rule.name}`}>
+    <Menu label={t("menuLabel", { rule: rule.name })}>
       <MenuItem href={href} icon={<Pencil />}>
-        แก้ไข
+        {t("edit")}
       </MenuItem>
-      <MenuItem action={duplicateRule} fields={{ id: rule.id }} icon={<Copy />} successMessage="ทำสำเนาแล้ว (ปิดไว้ก่อน)">
-        ทำสำเนา
+      <MenuItem action={duplicateRule} fields={{ id: rule.id }} icon={<Copy />} successMessage={t("duplicated")}>
+        {t("duplicate")}
       </MenuItem>
       {total > 1 && (
         <>
@@ -221,18 +223,18 @@ function RuleMenu({ rule, href, rank, total }: { rule: RuleListItem; href: strin
             fields={{ id: rule.id, dir: "up" }}
             icon={<ArrowUp />}
             disabled={rank === 1}
-            successMessage={`ย้าย “${rule.name}” ขึ้นแล้ว`}
+            successMessage={t("movedUp", { rule: rule.name })}
           >
-            ย้ายขึ้น
+            {t("moveUp")}
           </MenuItem>
           <MenuItem
             action={moveRule}
             fields={{ id: rule.id, dir: "down" }}
             icon={<ArrowDown />}
             disabled={rank === total}
-            successMessage={`ย้าย “${rule.name}” ลงแล้ว`}
+            successMessage={t("movedDown", { rule: rule.name })}
           >
-            ย้ายลง
+            {t("moveDown")}
           </MenuItem>
         </>
       )}
@@ -242,14 +244,14 @@ function RuleMenu({ rule, href, rank, total }: { rule: RuleListItem; href: strin
         fields={{ id: rule.id }}
         icon={<Trash2 />}
         tone="danger"
-        successMessage="ลบกฎแล้ว"
+        successMessage={t("deleted")}
         confirm={{
-          title: `ลบกฎ “${rule.name}”?`,
-          description: "ลบแล้วกู้คืนไม่ได้ ถ้าแค่อยากหยุดชั่วคราว ให้ปิดสวิตช์แทน",
-          confirmLabel: "ลบกฎ",
+          title: t("deleteTitle", { rule: rule.name }),
+          description: t("deleteBody"),
+          confirmLabel: t("deleteConfirm"),
         }}
       >
-        ลบ
+        {t("delete")}
       </MenuItem>
     </Menu>
   );
@@ -259,41 +261,45 @@ const PLATFORM_NAME: Record<Platform, string> = { facebook: "Facebook", instagra
 
 /** ขอบเขตโพสต์ของกฎคอมเมนต์ → ไอคอน + ข้อความสั้น (+ คำอธิบายตอนชี้) */
 // ใช้คำและไอคอนชุดเดียวกับการ์ด "เมื่อ…" ในหน้าแก้กฎ
-function postScopeLabel(rule: RuleListItem): { icon: ReactNode; text: string; title: string; tone?: "warning" } {
+function postScopeLabel(rule: RuleListItem, t: RulesT): { icon: ReactNode; text: string; title: string; tone?: "warning" } {
   if (rule.postScope === "specific") {
     return rule.postCount > 0
-      ? { icon: <ListChecks />, text: `${formatNumber(rule.postCount)} โพสต์/รีลที่เลือก`, title: "ใช้กับโพสต์หรือรีลที่เลือกไว้เท่านั้น" }
-      : { icon: <ListChecks />, text: "ยังไม่ได้เลือกโพสต์หรือรีล", title: "เลือกโพสต์หรือรีลในหน้าแก้ไขกฎ", tone: "warning" };
+      ? { icon: <ListChecks />, text: t("scopeSelected", { count: rule.postCount }), title: t("scopeSelectedTitle") }
+      : { icon: <ListChecks />, text: t("scopeNoneSelected"), title: t("scopeNoneSelectedTitle"), tone: "warning" };
   }
   if (rule.postScope === "next") {
     const bound = rule.platforms.filter((p) => rule.boundPlatforms.includes(p));
     if (bound.length === 0) {
-      return { icon: <CalendarClock />, text: "รอโพสต์หรือรีลถัดไป", title: "ระบบจะผูกกฎนี้กับโพสต์หรือรีลถัดไปที่คุณลงให้อัตโนมัติ" };
+      return { icon: <CalendarClock />, text: t("scopeWaiting"), title: t("scopeWaitingTitle") };
     }
     if (bound.length === rule.platforms.length) {
-      return { icon: <CalendarClock />, text: "ผูกกับโพสต์/รีลใหม่แล้ว", title: "ใช้กับโพสต์หรือรีลใหม่ที่ระบบผูกไว้ให้แล้ว" };
+      return { icon: <CalendarClock />, text: t("scopeBoundAll"), title: t("scopeBoundAllTitle") };
     }
     return {
       icon: <CalendarClock />,
-      text: `ผูก ${bound.map((p) => PLATFORM_NAME[p]).join(", ")} แล้ว`,
-      title: "แพลตฟอร์มที่เหลือยังรอโพสต์หรือรีลถัดไป",
+      text: t("scopeBoundSome", { platforms: bound.map((p) => PLATFORM_NAME[p]).join(", ") }),
+      title: t("scopeBoundSomeTitle"),
     };
   }
-  return { icon: <Layers />, text: "ทุกโพสต์และรีล", title: "ใช้กับทุกโพสต์และรีล" };
+  return { icon: <Layers />, text: t("scopeAny"), title: t("scopeAnyTitle") };
+}
+
+/** คำนำหน้าชิปคำ: "ทุกคอมเมนต์" / "แชทที่มีคำว่า" ฯลฯ */
+function leadKey(rule: RuleListItem): RulesKey {
+  const comment = rule.trigger === "comment";
+  if (rule.matchType === "any") return comment ? "leadAnyComment" : "leadAnyDm";
+  if (rule.matchType === "exact") return comment ? "leadCommentExact" : "leadDmExact";
+  return comment ? "leadCommentContains" : "leadDmContains";
 }
 
 /** เงื่อนไข: แพลตฟอร์ม · คำที่ต้องมี · โพสต์ */
 function TriggerSummary({ rule, className }: { rule: RuleListItem; className?: string }) {
+  const t = useT(rulesMessages);
   const comment = rule.trigger === "comment";
   const shown = rule.keywords.slice(0, 4);
   const more = rule.keywords.length - shown.length;
-  const lead =
-    rule.matchType === "any"
-      ? comment
-        ? "ทุกคอมเมนต์"
-        : "ทุกข้อความในแชท"
-      : `${comment ? "คอมเมนต์" : "แชท"}${rule.matchType === "exact" ? "ที่พิมพ์ว่า" : "ที่มีคำว่า"}`;
-  const scope = comment ? postScopeLabel(rule) : null;
+  const lead = t(leadKey(rule));
+  const scope = comment ? postScopeLabel(rule, t) : null;
 
   return (
     <div className={cx("flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] leading-5 text-fg-2", className)}>
@@ -315,7 +321,7 @@ function TriggerSummary({ rule, className }: { rule: RuleListItem; className?: s
       {rule.matchType !== "any" && more > 0 && (
         // อยู่เหนือลิงก์ของการ์ด เพื่อให้ชี้ดูคำที่เหลือได้
         <span className="relative z-10 cursor-default text-xs text-fg-3" title={rule.keywords.join(", ")}>
-          +{more} คำ
+          {t("moreKeywords", { count: more })}
         </span>
       )}
       {scope && (
@@ -337,6 +343,7 @@ function TriggerSummary({ rule, className }: { rule: RuleListItem; className?: s
 
 /** แสดงข้อความ โดยแทน {name} ด้วยชิป "ชื่อลูกค้า" (แบบเดียวกับหน้าแก้ไขกฎ) */
 function TextWithName({ text }: { text: string }) {
+  const t = useT(rulesMessages);
   const parts = text.split("{name}");
   return (
     <>
@@ -345,7 +352,7 @@ function TextWithName({ text }: { text: string }) {
           {part}
           {i < parts.length - 1 && (
             <span className="mx-0.5 inline-flex items-center rounded-md bg-accent-soft px-1.5 align-baseline text-[0.85em] font-medium whitespace-nowrap text-accent">
-              ชื่อลูกค้า
+              {t("customerName")}
             </span>
           )}
         </Fragment>
@@ -356,6 +363,7 @@ function TextWithName({ text }: { text: string }) {
 
 /** ตัวอย่างข้อความแรกที่ลูกค้าจะได้รับ (แบบฟองแชท) */
 function MessagePreview({ text, inactive, className }: { text: string; inactive?: boolean; className?: string }) {
+  const t = useT(rulesMessages);
   const flat = text.replace(/\s+/g, " ").trim();
   return (
     <div className={cx("flex", className)}>
@@ -369,7 +377,7 @@ function MessagePreview({ text, inactive, className }: { text: string; inactive?
         )}
         title={flat || undefined}
       >
-        <span className="line-clamp-2 sm:line-clamp-1">{flat ? <TextWithName text={flat} /> : "ยังไม่ได้เขียนข้อความ"}</span>
+        <span className="line-clamp-2 sm:line-clamp-1">{flat ? <TextWithName text={flat} /> : t("noMessage")}</span>
       </p>
     </div>
   );
@@ -377,6 +385,7 @@ function MessagePreview({ text, inactive, className }: { text: string; inactive?
 
 /** ลำดับการตอบย่อ: ตอบใต้คอมเมนต์ › ส่ง 3 ข้อความ · 2 ปุ่ม */
 function FlowSummary({ rule, className }: { rule: RuleListItem; className?: string }) {
+  const t = useT(rulesMessages);
   const chip = "inline-flex items-center gap-1.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-fg-3";
   return (
     <div className={cx("flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-fg-2", className)}>
@@ -384,14 +393,14 @@ function FlowSummary({ rule, className }: { rule: RuleListItem; className?: stri
         <>
           <span className={chip}>
             <Reply aria-hidden />
-            ตอบใต้คอมเมนต์
+            {t("flowPublicReply")}
           </span>
           <ChevronRight className="size-3.5 text-fg-3" aria-hidden />
         </>
       )}
       <span className={chip}>
         <Send aria-hidden />
-        ส่ง {formatNumber(rule.stepCount)} ข้อความ
+        {t("flowMessages", { count: rule.stepCount })}
       </span>
       {rule.buttonCount > 0 && (
         <>
@@ -400,7 +409,7 @@ function FlowSummary({ rule, className }: { rule: RuleListItem; className?: stri
           </span>
           <span className={chip}>
             <MousePointerClick aria-hidden />
-            {formatNumber(rule.buttonCount)} ปุ่ม
+            {t("flowButtons", { count: rule.buttonCount })}
           </span>
         </>
       )}
@@ -410,20 +419,22 @@ function FlowSummary({ rule, className }: { rule: RuleListItem; className?: stri
 
 /** สถิติย่อแบบ ManyChat: ทำงานกี่ครั้ง · อัตราการกด (คนที่กดปุ่ม/ลิงก์ จากคนที่ได้รับข้อความ) */
 function RuleStats({ rule, className }: { rule: RuleListItem; className?: string }) {
+  const t = useT(rulesMessages);
+  const f = useFormat();
   return (
     <dl className={cx("flex items-center gap-4 text-xs leading-5", className)}>
       <div className="flex items-center gap-1.5">
         <Zap className="size-3.5 text-accent" aria-hidden />
-        <dt className="text-fg-3">ทำงาน</dt>
+        <dt className="text-fg-3">{t("statRuns")}</dt>
         <dd className="text-fg-2">
-          <span className="text-sm font-semibold text-fg tabular">{formatNumber(rule.runs)}</span> ครั้ง
+          {t.rich("statRunsValue", { count: <span className="text-sm font-semibold text-fg tabular">{f.number(rule.runs)}</span> })}
         </dd>
       </div>
-      <div className="flex items-center gap-1.5" title={rule.hasButtons ? CTR_HINT : "กฎนี้ไม่มีปุ่ม จึงไม่มีอัตราการกด"}>
-        <dt className="text-fg-3">อัตราการกด</dt>
+      <div className="flex items-center gap-1.5" title={rule.hasButtons ? t("ctrHint") : t("noButtonsTitle")}>
+        <dt className="text-fg-3">{t("statCtr")}</dt>
         <dd className="text-fg-2">
-          <span className="text-sm font-semibold text-fg tabular">{rule.hasButtons ? formatPercent(rule.ctr) : "–"}</span>
-          {!rule.hasButtons && <span className="ml-1 text-fg-3">(ไม่มีปุ่ม)</span>}
+          <span className="text-sm font-semibold text-fg tabular">{rule.hasButtons ? f.percent(rule.ctr) : "–"}</span>
+          {!rule.hasButtons && <span className="ml-1 text-fg-3">{t("noButtons")}</span>}
         </dd>
       </div>
     </dl>
@@ -432,6 +443,7 @@ function RuleStats({ rule, className }: { rule: RuleListItem; className?: string
 
 /** หน้าว่าง: ภาพประกอบเล็กๆ + เลือกแบบเริ่มต้นได้ทันที */
 export function RulesEmptyState() {
+  const t = useT(rulesMessages);
   return (
     <section
       aria-labelledby="rules-empty-title"
@@ -440,10 +452,10 @@ export function RulesEmptyState() {
       <div className="flex flex-col items-center text-center">
         <EmptyIllustration />
         <h2 id="rules-empty-title" className="mt-6 text-lg leading-7 font-semibold text-fg">
-          ยังไม่มีกฎอัตโนมัติ
+          {t("emptyTitle")}
         </h2>
         <p className="mt-1.5 max-w-md text-sm leading-6 text-balance text-fg-2">
-          เลือกแบบเริ่มต้นด้านล่าง แล้วปรับข้อความ ปุ่ม และการ์ดได้เองทุกอย่าง
+          {t("emptyBody")}
         </p>
       </div>
       {/* จอใหญ่: การ์ด 3 ใบเรียงกัน · มือถือ: แถวเรียงลงมา (สั้นกว่า เลื่อนน้อยกว่า) */}

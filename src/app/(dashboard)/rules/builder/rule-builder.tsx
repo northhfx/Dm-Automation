@@ -19,8 +19,11 @@ import { ChevronUp, CircleAlert, ClipboardCheck, MessageSquareText, PanelRightCl
 import { Dialog } from "@/components/dialog";
 import { dismissToast, toast } from "@/components/toast";
 import { Button, cx, IconButton } from "@/components/ui";
+import { useLocale, useT } from "@/lib/i18n/client";
+import { builderMessages } from "@/lib/i18n/messages/builder";
+import { commonMessages } from "@/lib/i18n/messages/common";
 import type { RecentPost } from "@/lib/meta/graph";
-import type { CanvasPoint } from "@/lib/flows/types";
+import { FLOW_LIMITS, type CanvasPoint } from "@/lib/flows/types";
 import type { StepStats } from "@/lib/stats";
 import { saveRule } from "../actions";
 import type { RuleFormState, RuleFormValues } from "../form-values";
@@ -93,6 +96,9 @@ const sameMeasure = (a: MeasuredNode | undefined, b: MeasuredNode) =>
  */
 export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleStats }: Props) {
   const router = useRouter();
+  const locale = useLocale();
+  const t = useT(builderMessages);
+  const tCommon = useT(commonMessages);
   const ruleId = initial.id;
   const [state, dispatch] = useReducer(builderReducer, undefined, () =>
     createInitialState(
@@ -122,7 +128,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
   const submitted = useRef<BuilderDoc | null>(null);
 
   const dirty = docJson(doc) !== state.savedJson;
-  const problems = useMemo(() => findProblems(doc), [doc]);
+  const problems = useMemo(() => findProblems(doc, locale), [doc, locale]);
   const numbers = useMemo(() => stepNumbers(doc), [doc]);
   const reach = useMemo(() => reachableSteps(doc), [doc]);
   const unreachable = useMemo(() => new Set(doc.steps.filter((s) => !reach.has(s.id)).map((s) => s.id)), [doc.steps, reach]);
@@ -282,7 +288,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
   const onCreate = useCallback(
     (at: CanvasPoint, from?: EdgeFrom) => {
       if (!canAddStep(latest.current.doc)) {
-        toast("ใส่ข้อความได้สูงสุด 20 ข้อความต่อกฎ", { tone: "warning" });
+        toast(t("maxSteps", { max: String(FLOW_LIMITS.maxSteps) }), { tone: "warning" });
         return;
       }
       const id = newId("s");
@@ -291,7 +297,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
       reveal(id);
       if (window.matchMedia(DESKTOP_QUERY).matches) focusText();
     },
-    [openPanel, focusText, reveal],
+    [openPanel, focusText, reveal, t],
   );
 
   const onCreateFrom = useCallback(
@@ -307,7 +313,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     const step = d.steps.find((x) => x.id === id);
     if (!step) return;
     if (!canAddStep(d)) {
-      toast("ใส่ข้อความได้สูงสุด 20 ข้อความต่อกฎ", { tone: "warning" });
+      toast(t("maxSteps", { max: String(FLOW_LIMITS.maxSteps) }), { tone: "warning" });
       return;
     }
     const box = nodeBox(d, s, id);
@@ -316,15 +322,15 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     const copyId = newId("s");
     dispatch({ type: "duplicateStep", stepId: id, id: copyId, buttonIds: step.buttons.map(() => newId("b")), at });
     reveal(copyId);
-    toast("ทำสำเนาการ์ดแล้ว");
-  }, [reveal]);
+    toast(t("cardDuplicated"));
+  }, [reveal, t]);
 
   const deleteToast = useRef<number | null>(null);
   const deleteNow = useCallback((id: string) => {
     const n = stepNumbers(latest.current.doc).get(id);
     dispatch({ type: "deleteStep", stepId: id });
-    deleteToast.current = toast(`ลบข้อความ #${n} แล้ว`, { description: "กด Ctrl+Z หรือปุ่มย้อนกลับเพื่อเอาคืน" });
-  }, []);
+    deleteToast.current = toast(t("messageDeleted", { n: n ?? "" }), { description: t("undoHint") });
+  }, [t]);
   // ย้อนกลับแล้ว → ปิดข้อความ "ลบแล้ว"
   useEffect(() => {
     if (state.future.length && deleteToast.current !== null) {
@@ -351,21 +357,21 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     if (first) {
       setShowErrors(true);
       goTo(first.target);
-      toast("ยังบันทึกไม่ได้", { tone: "critical", description: first.message });
+      toast(t("cantSaveYet"), { tone: "critical", description: first.message });
       return;
     }
     submitted.current = doc;
     setClearedAttempt(saveState.attempt);
     const data = toFormData(doc, ruleId);
     startTransition(() => formAction(data));
-  }, [pending, problems, goTo, doc, ruleId, formAction, saveState.attempt]);
+  }, [pending, problems, goTo, doc, ruleId, formAction, saveState.attempt, t]);
 
   const handled = useRef(saveState);
   useEffect(() => {
     if (saveState === handled.current) return;
     handled.current = saveState;
     if (saveState.error) {
-      toast("บันทึกไม่สำเร็จ", { tone: "critical", description: saveState.error });
+      toast(t("saveFailed"), { tone: "critical", description: saveState.error });
       const stepId = saveState.errorStepId;
       // เลือกการ์ดที่มีปัญหาหลังหน้าจอแสดงผลเสร็จ
       if (stepId) requestAnimationFrame(() => goTo({ kind: "step", id: stepId }));
@@ -373,9 +379,9 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
       // กฎเดิม: เซิร์ฟเวอร์ส่งสถานะ "โพสต์ถัดไป" ล่าสุดกลับมา (เริ่มรอเมื่อไหร่ / ผูกโพสต์ไหนแล้ว) → ใส่ให้โดยไม่นับเป็นการแก้ไข
       const v = saveState.values;
       dispatch({ type: "saved", doc: submitted.current, display: v ? { nextPostSince: v.nextPostSince, boundPosts: v.boundPosts } : undefined });
-      toast("บันทึกแล้ว", { tone: "good" });
+      toast(t("saved"), { tone: "good" });
     }
-  }, [saveState, goTo]);
+  }, [saveState, goTo, t]);
 
   /* ------------------------------------------------------------ คีย์ลัด */
 
@@ -454,7 +460,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
   /* ------------------------------------------------------------ แผงด้านข้าง */
 
   const selectedStep = selection?.kind === "step" ? doc.steps.find((s) => s.id === selection.id) : undefined;
-  let panelTitle: ReactNode = "ภาพรวม";
+  let panelTitle: string = t("panelOverview");
   let panelIcon: ReactNode = (
     <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-2 text-fg-2">
       <ClipboardCheck size={15} aria-hidden="true" />
@@ -462,7 +468,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
   );
   let panelBody: ReactNode;
   if (selection?.kind === "trigger") {
-    panelTitle = "ทำงานเมื่อ…";
+    panelTitle = t("panelTrigger");
     panelIcon = (
       <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-accent-fg">
         <Zap size={15} aria-hidden="true" />
@@ -471,7 +477,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     panelBody = <TriggerPanel doc={doc} dispatch={dispatch} problems={problems} recentPosts={recentPosts} postsError={postsError} />;
   } else if (selectedStep) {
     const n = numbers.get(selectedStep.id);
-    panelTitle = `ข้อความ #${n}`;
+    panelTitle = t("messageCard", { n: n ?? "" });
     panelIcon = (
       <span
         className={cx(
@@ -566,7 +572,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
               className="absolute top-3 right-3 hidden h-10 lg:inline-flex items-center gap-2 rounded-xl border border-line bg-surface px-3 text-sm font-medium text-fg shadow-md hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
             >
               <PanelRightOpen size={18} aria-hidden="true" />
-              แผงตั้งค่า
+              {t("panelShow")}
               {blockingCount > 0 && (
                 <span className="rounded-full bg-critical px-1.5 text-xs font-semibold text-critical-fg tabular">{blockingCount}</span>
               )}
@@ -577,7 +583,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
         {/* แผงตั้งค่า: เดสก์ท็อปอยู่ด้านขวา, มือถือเป็นแผ่นเลื่อนขึ้นจากด้านล่าง */}
         <aside
           ref={sheetRef}
-          aria-label={typeof panelTitle === "string" ? panelTitle : "แผงตั้งค่า"}
+          aria-label={panelTitle}
           inert={!panelVisible}
           className={cx(
             // มือถือ: แผ่นเลื่อนขึ้นจากด้านล่าง (ใช้ CSS ล้วน หน้าแรกที่โหลดจึงไม่กระพริบ) · แท็บเล็ต: สูงไม่เกินครึ่งจอ ให้ยังเห็นแผนผัง
@@ -595,13 +601,13 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
             {panelIcon}
             <h2 className="min-w-0 flex-1 truncate text-base font-semibold">{panelTitle}</h2>
             {selectedStep && doc.startStepId === selectedStep.id && (
-              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">ข้อความแรก</span>
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">{t("firstMessage")}</span>
             )}
             <span className="hidden lg:block">
-              <IconButton icon={<PanelRightClose />} label="ซ่อนแผงตั้งค่า" size="sm" onClick={() => setPanelOpen(false)} />
+              <IconButton icon={<PanelRightClose />} label={t("panelHide")} size="sm" onClick={() => setPanelOpen(false)} />
             </span>
             <span className="-mr-2 lg:hidden">
-              <IconButton icon={<X />} label="ปิดแผงตั้งค่า" size="md" onClick={() => setSheetOpen(false)} />
+              <IconButton icon={<X />} label={t("panelClose")} size="md" onClick={() => setSheetOpen(false)} />
             </span>
           </div>
           <div ref={panelBodyRef} data-panel-body className="scroll-thin min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
@@ -633,16 +639,16 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
           )
         )}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{selection && selection.kind !== "edge" ? panelTitle : "ภาพรวมและสิ่งที่ต้องแก้"}</span>
+          <span className="block truncate text-sm font-medium">{selection && selection.kind !== "edge" ? panelTitle : t("sheetOverview")}</span>
           {/* ก่อนกดบันทึกครั้งแรก: บอกแบบนุ่มๆ ว่าเหลืออีกกี่ขั้น, กดบันทึกแล้วไม่ผ่าน: สีแดง */}
           <span className={cx("block text-xs", blockingCount ? (showErrors ? "text-critical-text" : "text-fg-2") : "text-fg-3")}>
             {blockingCount
               ? showErrors
-                ? `ต้องแก้อีก ${blockingCount} จุดก่อนบันทึก`
-                : `เหลืออีก ${blockingCount} ขั้นก่อนบันทึก`
+                ? t("sheetMustFix", { count: blockingCount })
+                : t("sheetStepsLeft", { count: blockingCount })
               : dirty || !ruleId
-                ? "ครบแล้ว พร้อมบันทึก"
-                : "บันทึกแล้ว"}
+                ? t("sheetReady")
+                : t("sheetSaved")}
           </span>
         </span>
         <ChevronUp size={18} className="text-fg-3" aria-hidden="true" />
@@ -652,15 +658,15 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
         open={!!deleteTarget}
         onClose={() => setPendingDelete(null)}
         size="sm"
-        title={`ลบข้อความ #${deleteTarget ? numbers.get(deleteTarget.id) : ""}?`}
-        description="ปุ่มที่เชื่อมมาที่การ์ดนี้จะไม่ได้เชื่อม (ย้อนกลับได้ด้วย Ctrl+Z ก่อนบันทึก)"
+        title={t("deleteMessageTitle", { n: (deleteTarget && numbers.get(deleteTarget.id)) ?? "" })}
+        description={t("deleteMessageBody")}
         icon={<Trash2 aria-hidden="true" />}
         iconTone="danger"
         hideClose
         footer={
           <>
             <Button variant="secondary" data-autofocus onClick={() => setPendingDelete(null)} className="max-sm:w-full">
-              ยกเลิก
+              {tCommon("cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -670,7 +676,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
                 setPendingDelete(null);
               }}
             >
-              ลบการ์ด
+              {t("deleteCard")}
             </Button>
           </>
         }
@@ -680,16 +686,16 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
         open={!!leaveTo}
         onClose={() => setLeaveTo(null)}
         size="sm"
-        title="ออกโดยไม่บันทึก?"
-        description="การแก้ไขที่ยังไม่ได้บันทึกจะหายไป"
+        title={t("leaveTitle")}
+        description={t("leaveBody")}
         hideClose
         footer={
           <>
             <Button variant="secondary" data-autofocus onClick={() => setLeaveTo(null)} className="max-sm:w-full">
-              อยู่ต่อ
+              {t("stay")}
             </Button>
             <Button variant="destructive" className="max-sm:w-full" onClick={confirmLeave}>
-              ออกโดยไม่บันทึก
+              {t("leave")}
             </Button>
           </>
         }

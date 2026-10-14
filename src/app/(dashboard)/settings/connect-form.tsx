@@ -1,19 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useEffectEvent, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { ArrowLeft, Check, Link2 } from "lucide-react";
 import { Avatar, Badge, Button, checkboxClass, cx, Field, Notice, PlatformIcon, textareaClass } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { toast } from "@/components/toast";
+import { useT } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/messages/settings";
 import { connectAction, type ConnectState } from "./actions";
 
 /** แถบบอกว่าอยู่ขั้นไหนของการเชื่อมเพจ: 1 วาง token → 2 เลือกเพจ */
 function ConnectSteps({ current }: { current: 1 | 2 }) {
-  const steps = ["วาง token", "เลือกเพจ"];
+  const t = useT(settingsMessages);
+  const steps = [t("stepPasteToken"), t("stepPickPages")];
   return (
-    <ol className="flex items-center gap-2 text-[13px]" aria-label="ขั้นตอนการเชื่อมต่อเพจ">
+    <ol className="flex items-center gap-2 text-[13px]" aria-label={t("stepsAriaLabel")}>
       {steps.map((label, i) => {
         const n = i + 1;
         const done = n < current;
@@ -40,13 +43,14 @@ function ConnectSteps({ current }: { current: 1 | 2 }) {
 
 /** ปุ่มในขั้นเลือกเพจ — หมุนเฉพาะปุ่มที่ถูกกด (ฟอร์มเดียวมี 2 ปุ่ม) */
 function PickButtons() {
+  const t = useT(settingsMessages);
   const { pending, data } = useFormStatus();
   const saving = pending && data?.get("intent") === "save";
   return (
     // DOM: ปุ่มหลักมาก่อน (Enter = เชื่อมต่อ) แต่แสดงไว้ด้านขวา
     <div className="flex flex-row-reverse flex-wrap gap-2 max-sm:flex-col">
       <Button type="submit" name="intent" value="save" loading={saving} disabled={pending} icon={<Link2 />} className="max-sm:w-full">
-        {saving ? "กำลังเชื่อมต่อ…" : "เชื่อมต่อเพจที่เลือก"}
+        {saving ? t("connecting") : t("connectSelected")}
       </Button>
       <Button
         type="submit"
@@ -58,7 +62,7 @@ function PickButtons() {
         icon={<ArrowLeft />}
         className="max-sm:w-full"
       >
-        ย้อนกลับ
+        {t("back")}
       </Button>
     </div>
   );
@@ -70,6 +74,7 @@ function PickButtons() {
  * inGuide = อยู่ในหน้าคู่มือ (ไม่ต้องมีลิงก์กลับไปคู่มือ)
  */
 export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: string[]; inGuide?: boolean }) {
+  const t = useT(settingsMessages);
   const [state, action] = useActionState<ConnectState, FormData>(connectAction, { step: "token" });
   const [token, setToken] = useState("");
   // เชื่อมต่อสำเร็จ → ล้างช่อง token (ระบบไม่เก็บ token นี้ไว้อยู่แล้ว)
@@ -79,11 +84,13 @@ export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: str
     if (state.step === "done") setToken("");
   }
 
-  useEffect(() => {
-    if (state.step !== "done" || !state.message) return;
-    if (state.error) toast(state.message, { tone: "warning", description: "แต่บางเพจยังรับข้อความไม่ได้ ดูรายละเอียดในหน้า" });
-    else toast(state.message, { tone: "good" });
-  }, [state]);
+  // useEffectEvent: เปลี่ยนภาษาทีหลัง (t เปลี่ยน) ไม่ทำให้ toast ขึ้นซ้ำ
+  const showResult = useEffectEvent((s: ConnectState) => {
+    if (s.step !== "done" || !s.message) return;
+    if (s.error) toast(s.message, { tone: "warning", description: t("connectPartialToast") });
+    else toast(s.message, { tone: "good" });
+  });
+  useEffect(() => showResult(state), [state]);
 
   if (state.step === "pick" && state.pages) {
     const pages = state.pages;
@@ -93,10 +100,8 @@ export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: str
         <input type="hidden" name="userToken" value={state.userToken} />
         <ConnectSteps current={2} />
         <fieldset className="space-y-3">
-          <legend className="text-sm leading-6 font-medium text-fg">เลือกเพจที่ต้องการให้ระบบตอบอัตโนมัติ</legend>
-          <p className="-mt-2 text-xs leading-5 text-fg-3">
-            พบ {pages.length} เพจที่บัญชีนี้เป็นแอดมิน — เลือกได้หลายเพจ
-          </p>
+          <legend className="text-sm leading-6 font-medium text-fg">{t("pickLegend")}</legend>
+          <p className="-mt-2 text-xs leading-5 text-fg-3">{t("pickFound", { count: pages.length })}</p>
           <div className="space-y-2">
             {pages.map((p) => (
               <label
@@ -111,13 +116,13 @@ export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: str
                     <PlatformIcon platform="facebook" size={12} />
                     <span className="truncate">
                       Facebook
-                      {p.igUsername && <span className="text-fg-3"> (IG @{p.igUsername} ผ่านเพจ)</span>}
+                      {p.igUsername && <span className="text-fg-3"> {t("pickIgViaPage", { username: p.igUsername })}</span>}
                     </span>
                   </span>
                 </span>
                 {connected.has(p.id) && (
                   <Badge tone="neutral" className="max-sm:hidden">
-                    เชื่อมต่ออยู่แล้ว
+                    {t("alreadyConnected")}
                   </Badge>
                 )}
               </label>
@@ -136,7 +141,7 @@ export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: str
       <input type="hidden" name="intent" value="fetch" />
       {state.step === "done" && state.message && (
         <Notice tone={state.error ? "warning" : "good"} title={state.message}>
-          {state.error ?? "ระบบเริ่มตอบคอมเมนต์และข้อความของเพจที่เลือกแล้ว"}
+          {state.error ?? t("connectDoneBody")}
         </Notice>
       )}
       <ConnectSteps current={1} />
@@ -145,17 +150,15 @@ export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: str
         htmlFor="token"
         error={tokenError}
         hint={
-          inGuide ? (
-            "ระบบจะแลกเป็น token ระยะยาวให้อัตโนมัติ และไม่เก็บ token นี้ไว้"
-          ) : (
-            <>
-              สร้างได้จาก Graph API Explorer (
-              <Link href="/guide#step-4" className="font-medium text-accent hover:underline">
-                ดูวิธีในคู่มือ ขั้นที่ 4
-              </Link>
-              ) — ระบบจะแลกเป็น token ระยะยาวให้อัตโนมัติ และไม่เก็บ token นี้ไว้
-            </>
-          )
+          inGuide
+            ? t("tokenHintGuide")
+            : t.rich("tokenHint", {
+                link: (
+                  <Link href="/guide#step-4" className="font-medium text-accent hover:underline">
+                    {t("tokenHintLink")}
+                  </Link>
+                ),
+              })
         }
       >
         <textarea
@@ -173,8 +176,8 @@ export function ConnectForm({ connectedIds = [], inGuide }: { connectedIds?: str
         />
       </Field>
       <div className="flex justify-end">
-        <SubmitButton pendingText="กำลังตรวจสอบ…" className="max-sm:w-full">
-          ดึงรายชื่อเพจ
+        <SubmitButton pendingText={t("checking")} className="max-sm:w-full">
+          {t("fetchPages")}
         </SubmitButton>
       </div>
     </form>

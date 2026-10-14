@@ -6,6 +6,9 @@ import { Button } from "@/components/ui";
 import { ConfirmDialog } from "@/components/dialog";
 import { toFormData } from "@/components/action";
 import { toast } from "@/components/toast";
+import { useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
+import { settingsMessages } from "@/lib/i18n/messages/settings";
 import { disconnectPage, resubscribePage } from "./actions";
 
 /*
@@ -16,6 +19,8 @@ import { disconnectPage, resubscribePage } from "./actions";
 
 /** ปุ่ม "ลองใหม่" ให้เพจส่งคอมเมนต์/ข้อความมาที่ระบบอีกครั้ง พร้อมแจ้งผลตามจริง */
 export function ResubscribeButton({ pageId, pageName }: { pageId: string; pageName: string }) {
+  const t = useT(settingsMessages);
+  const tCommon = useT(commonMessages);
   const [pending, startTransition] = useTransition();
   return (
     <Button
@@ -27,36 +32,37 @@ export function ResubscribeButton({ pageId, pageName }: { pageId: string; pageNa
         startTransition(async () => {
           try {
             const result = await resubscribePage(toFormData({ pageId }));
-            if (result.ok) toast(`${pageName} พร้อมใช้งานแล้ว`, { tone: "good" });
-            else toast("ยังเชื่อมต่อไม่สำเร็จ", { tone: "critical", description: result.error });
+            if (result.ok) toast(t("pageReady", { page: pageName }), { tone: "good" });
+            else toast(t("stillNotConnected"), { tone: "critical", description: result.error });
           } catch {
-            toast("ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง", { tone: "critical" });
+            toast(tCommon("actionFailed"), { tone: "critical" });
           }
         })
       }
     >
-      {pending ? "กำลังลอง…" : "ลองใหม่"}
+      {pending ? t("trying") : tCommon("retry")}
     </Button>
   );
 }
 
 /** ปุ่มยกเลิกการเชื่อมต่อเพจ (ถามยืนยันก่อน) */
 export function DisconnectButton({ pageId, pageName }: { pageId: string; pageName: string }) {
+  const t = useT(settingsMessages);
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button variant="danger" icon={<Unplug />} className="max-sm:flex-1" onClick={() => setOpen(true)}>
-        ยกเลิกการเชื่อมต่อ
+        {t("disconnect")}
       </Button>
       <ConfirmDialog
         open={open}
         onClose={() => setOpen(false)}
         onConfirm={() => disconnectPage(toFormData({ pageId }))}
-        title={`ยกเลิกการเชื่อมต่อ ${pageName}?`}
-        description="ระบบจะหยุดตอบคอมเมนต์และข้อความของเพจนี้ทันที กฎ รายชื่อลูกค้า และสถิติเดิมยังอยู่ครบ เชื่อมต่อกลับได้ทุกเมื่อ"
-        confirmLabel="ยกเลิกการเชื่อมต่อ"
-        cancelLabel="ไม่ใช่ตอนนี้"
-        successMessage="ยกเลิกการเชื่อมต่อแล้ว"
+        title={t("pageDisconnectTitle", { page: pageName })}
+        description={t("pageDisconnectBody")}
+        confirmLabel={t("disconnect")}
+        cancelLabel={t("notNow")}
+        successMessage={t("disconnected")}
       />
     </>
   );

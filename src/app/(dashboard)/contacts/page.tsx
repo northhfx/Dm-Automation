@@ -12,16 +12,21 @@ import {
   Card,
   cx,
   EmptyState,
-  formatNumber,
   inputClass,
   PageHeader,
   PlatformIcon,
   tableClass,
 } from "@/components/ui";
+import type { MessageKey, TFunction } from "@/lib/i18n";
+import type { contactsMessages } from "@/lib/i18n/messages/contacts";
+import { getFormat, getT } from "@/lib/i18n/server";
 import { RelativeTime } from "../activity/timeline";
 import { loadPreviews, type Preview } from "./load-previews";
 
 const PAGE_SIZE = 50;
+
+/** ตัวแปลของหน้านี้ — คอมโพเนนต์ย่อยไม่ใช่ async จึงรับ t จากหน้า */
+type T = TFunction<MessageKey<typeof contactsMessages>>;
 
 interface ContactRow {
   id: number;
@@ -43,63 +48,63 @@ function hasName(c: ContactRow): boolean {
 }
 
 /** Meta ไม่ส่งชื่อมาให้ (แอปยังไม่ผ่าน App Review) → เรียกว่า "ผู้ใช้ Facebook" แทน */
-function displayName(c: ContactRow): string {
-  return c.name ?? (c.username ? `@${c.username}` : `ผู้ใช้ ${PLATFORM_LABEL[c.platform]}`);
+function displayName(c: ContactRow, t: T): string {
+  return c.name ?? (c.username ? `@${c.username}` : t("unknownPerson", { platform: PLATFORM_LABEL[c.platform] }));
 }
 
 /**
  * ลิงก์ไปคุยต่อในแอปของ Meta: Facebook เปิดห้องแชทใน Meta Business Suite ได้ตรงๆ
  * Instagram ไม่มีลิงก์เข้าห้องแชท จึงเปิดหน้าโปรไฟล์ (ต้องรู้ username) ให้กดส่งข้อความต่อเอง
  */
-function chatLink(c: ContactRow): { href: string; where: string; hint: string } | null {
+function chatLink(c: ContactRow, t: T): { href: string; where: string; hint: string } | null {
   if (c.platform === "facebook") {
     const page = encodeURIComponent(c.page_id);
     const user = encodeURIComponent(c.platform_user_id);
     return {
       href: `https://business.facebook.com/latest/inbox/all?asset_id=${page}&mailbox_id=${page}&selected_item_id=${user}&thread_type=FB_MESSAGE`,
       where: "Meta Business Suite",
-      hint: "เปิดแชทนี้ในกล่องข้อความของเพจ (Meta Business Suite)",
+      hint: t("openChatHintMessenger"),
     };
   }
   if (c.username) {
     return {
       href: `https://www.instagram.com/${encodeURIComponent(c.username)}/`,
       where: "Instagram",
-      hint: "เปิดหน้าโปรไฟล์ Instagram ของลูกค้า แล้วกดส่งข้อความเพื่อคุยต่อ",
+      hint: t("openChatHintInstagram"),
     };
   }
   return null;
 }
 
 /** ปุ่มเล็ก "เปิดแชท" (เปิดแท็บใหม่) — ไม่แสดงถ้าไม่มีที่ให้ลิงก์ไป */
-function ChatLink({ contact, size = "md" }: { contact: ContactRow; size?: "sm" | "md" }) {
-  const link = chatLink(contact);
+function ChatLink({ contact, t, size = "md" }: { contact: ContactRow; t: T; size?: "sm" | "md" }) {
+  const link = chatLink(contact, t);
   if (!link) return null;
   return (
     <a
       href={link.href}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={`เปิดแชทกับ ${displayName(contact)} ใน ${link.where} (เปิดแท็บใหม่)`}
+      aria-label={t("openChatAria", { person: displayName(contact, t), where: link.where })}
       title={link.hint}
       className={cx(
         "inline-flex shrink-0 items-center gap-1 rounded-md font-medium whitespace-nowrap text-accent transition-colors hover:bg-accent-soft active:bg-accent-soft-hover",
         size === "sm" ? "-mr-1.5 h-6 px-1.5 text-xs [&_svg]:size-3.5" : "h-8 px-2.5 text-[13px] [&_svg]:size-4",
       )}
     >
-      เปิดแชท
+      {t("openChat")}
       <ArrowUpRight aria-hidden />
     </a>
   );
 }
 
 /** ข้อความล่าสุดของลูกค้า บรรทัดเดียว */
-function PreviewLine({ preview }: { preview: Preview }) {
+function PreviewLine({ preview, t }: { preview: Preview; t: T }) {
   const Icon = preview.via === "comment" ? MessageCircle : MessagesSquare;
   return (
     <p className="flex min-w-0 items-center gap-1.5 text-xs leading-5 text-fg-2" title={preview.text}>
       <Icon className="size-3.5 shrink-0 text-fg-3" aria-hidden />
-      <span className="sr-only">{preview.via === "comment" ? "คอมเมนต์ล่าสุด:" : "ข้อความแชทล่าสุด:"}</span>
+      <span className="sr-only">{preview.via === "comment" ? t("previewComment") : t("previewChat")}</span>
       <span className="truncate">{preview.text}</span>
     </p>
   );
@@ -134,16 +139,16 @@ function ShortLabel({ short, full }: { short: string; full: string }) {
   );
 }
 
-function NameText({ contact: c }: { contact: ContactRow }) {
-  return <p className={cx("truncate", hasName(c) ? "font-medium text-fg" : "text-fg-3")}>{displayName(c)}</p>;
+function NameText({ contact: c, t }: { contact: ContactRow; t: T }) {
+  return <p className={cx("truncate", hasName(c) ? "font-medium text-fg" : "text-fg-3")}>{displayName(c, t)}</p>;
 }
 
-function NameCell({ contact: c, preview }: { contact: ContactRow; preview?: Preview }) {
+function NameCell({ contact: c, preview, t }: { contact: ContactRow; preview?: Preview; t: T }) {
   return (
     <div className="min-w-0">
-      <NameText contact={c} />
+      <NameText contact={c} t={t} />
       {c.name && c.username && <p className="truncate text-xs text-fg-3">@{c.username}</p>}
-      {!hasName(c) && preview && <PreviewLine preview={preview} />}
+      {!hasName(c) && preview && <PreviewLine preview={preview} t={t} />}
     </div>
   );
 }
@@ -156,6 +161,8 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
   const like = `%${q}%`;
   const now = new Date();
   const db = getDb();
+  const [t, f] = await Promise.all([getT("contacts"), getFormat()]);
+  const locale = t.locale;
 
   const search = q ? sql`(c.name ILIKE ${like} OR c.username ILIKE ${like} OR c.platform_user_id = ${q})` : sql`true`;
   const platformFilter = platform ? sql`c.platform = ${platform}` : sql`true`;
@@ -199,7 +206,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
     const target = dir === "prev" ? page - 1 : page + 1;
     const enabled = dir === "prev" ? page > 1 : page < pages;
     const icon = dir === "prev" ? <ChevronLeft /> : <ChevronRight />;
-    const label = dir === "prev" ? "ก่อนหน้า" : "ถัดไป";
+    const label = dir === "prev" ? t("prev") : t("next");
     if (!enabled) {
       return (
         <span aria-disabled className={buttonStyle("secondary", "md")}>
@@ -225,21 +232,21 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
     <>
       <PageHeader
         title={<NavTitle name="contacts" />}
-        badge={all > 0 && !q ? <Badge size="md">{formatNumber(all)} คน</Badge> : undefined}
-        description="เฉพาะคนที่คอมเมนต์หรือทักแชทตรงกับคำที่ตั้งไว้ในกฎ เรียงตามคนที่ทักมาล่าสุด"
+        badge={all > 0 && !q ? <Badge size="md">{t("badgeTotal", { count: all })}</Badge> : undefined}
+        description={t("description")}
       />
 
       {all === 0 && !q ? (
         <EmptyState
-          title="ยังไม่มีลูกค้า"
+          title={t("emptyTitle")}
           icon={<Users />}
           action={
             <ButtonLink href="/rules" variant="secondary">
-              ดูกฎอัตโนมัติ
+              {t("emptyAction")}
             </ButtonLink>
           }
         >
-          เมื่อมีคนคอมเมนต์หรือทักแชทตรงกับคำที่ตั้งไว้ในกฎ รายชื่อจะแสดงที่นี่ คนที่ทักเรื่องอื่นจะไม่ถูกเก็บไว้
+          {t("emptyBody")}
         </EmptyState>
       ) : (
         <div className="space-y-4">
@@ -247,7 +254,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
             <form action="/contacts" role="search" className="flex min-w-0 flex-1 basis-72 gap-2">
               {platform && <input type="hidden" name="platform" value={platform} />}
               <label htmlFor="contact-search" className="sr-only">
-                ค้นหาลูกค้า
+                {t("searchLabel")}
               </label>
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" aria-hidden />
@@ -256,19 +263,19 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                   type="search"
                   name="q"
                   defaultValue={q}
-                  placeholder="ค้นหาชื่อ หรือ username"
+                  placeholder={t("searchPlaceholder")}
                   className={cx(inputClass, "pl-9")}
                 />
               </div>
               <button type="submit" className={buttonStyle("secondary", "md")}>
-                ค้นหา
+                {t("searchButton")}
               </button>
             </form>
             <SegmentedControl
-              label="แพลตฟอร์ม"
+              label={t("platformLabel")}
               value={platform ?? "all"}
               options={[
-                { value: "all", label: "ทั้งหมด", count: all, href: href({ platform: null, page: 1 }) },
+                { value: "all", label: t("filterAll"), count: all, href: href({ platform: null, page: 1 }) },
                 {
                   value: "facebook",
                   label: <ShortLabel short="FB" full="Facebook" />,
@@ -289,11 +296,9 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
 
           {q && (
             <div className="flex flex-wrap items-center gap-2 text-sm text-fg-2">
-              <span>
-                ผลการค้นหา “<span className="font-medium text-fg">{q}</span>” · {formatNumber(total)} คน
-              </span>
+              <span>{t.rich("searchResult", { query: <span className="font-medium text-fg">{q}</span>, count: total })}</span>
               <ButtonLink href={href({ q: "", page: 1 })} variant="ghost" size="sm" icon={<X />}>
-                ล้างการค้นหา
+                {t("clearSearch")}
               </ButtonLink>
             </div>
           )}
@@ -302,31 +307,29 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
             <EmptyState
               title={
                 q
-                  ? `ไม่พบ “${q}”`
+                  ? t("notFoundTitle", { query: q })
                   : total > 0
-                    ? "ไม่มีรายการในหน้านี้"
-                    : `ยังไม่มีลูกค้าจาก ${platform ? PLATFORM_LABEL[platform] : "แพลตฟอร์มนี้"}`
+                    ? t("pageEmptyTitle")
+                    : t("platformEmptyTitle", { platform: platform ? PLATFORM_LABEL[platform] : t("platformFallback") })
               }
               icon={q ? <SearchX /> : <Users />}
               compact
               action={
                 <ButtonLink href={total > 0 ? href({ page: 1 }) : "/contacts"} variant="secondary">
-                  {total > 0 ? "กลับไปหน้าแรก" : "ดูรายชื่อทั้งหมด"}
+                  {total > 0 ? t("backToFirstPage") : t("viewAll")}
                 </ButtonLink>
               }
             >
-              {q ? "ลองค้นด้วยชื่ออื่น หรือ username ของลูกค้า" : undefined}
+              {q ? t("notFoundBody") : undefined}
             </EmptyState>
           ) : (
             <Card
               padding="none"
               footer={
                 <div className="flex w-full flex-wrap items-center justify-between gap-3">
-                  <span className="text-fg-2 tabular">
-                    แสดง {formatNumber(from)}–{formatNumber(to)} จาก {formatNumber(total)} คน
-                  </span>
+                  <span className="text-fg-2 tabular">{t("showing", { from, to, total })}</span>
                   {pages > 1 && (
-                    <nav aria-label="เปลี่ยนหน้า" className="flex items-center gap-2">
+                    <nav aria-label={t("pagerLabel")} className="flex items-center gap-2">
                       {pager("prev")}
                       <span className="px-1 text-fg-3 tabular">
                         {page}/{pages}
@@ -342,16 +345,16 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                 <table className={tableClass.table}>
                   <thead className={tableClass.thead}>
                     <tr>
-                      <th className={tableClass.th}>ลูกค้า</th>
-                      <th className={tableClass.th}>ช่องทาง</th>
-                      <th className={tableClass.th}>เจอครั้งแรก</th>
-                      <th className={tableClass.th}>ทักมาล่าสุด</th>
-                      <th className={cx(tableClass.th, tableClass.num)}>DM ที่ได้รับ</th>
-                      <th className={cx(tableClass.th, tableClass.num)} title="จำนวนครั้งที่คลิกลิงก์ในข้อความ (ไม่รวมการกดปุ่มที่ส่งข้อความถัดไป)">
-                        คลิกลิงก์
+                      <th className={tableClass.th}>{t("colContact")}</th>
+                      <th className={tableClass.th}>{t("colPlatform")}</th>
+                      <th className={tableClass.th}>{t("colFirstSeen")}</th>
+                      <th className={tableClass.th}>{t("colLastInbound")}</th>
+                      <th className={cx(tableClass.th, tableClass.num)}>{t("colSent")}</th>
+                      <th className={cx(tableClass.th, tableClass.num)} title={t("colClicksHint")}>
+                        {t("colClicks")}
                       </th>
                       <th className={tableClass.th}>
-                        <span className="sr-only">เปิดแชท</span>
+                        <span className="sr-only">{t("openChat")}</span>
                       </th>
                     </tr>
                   </thead>
@@ -361,7 +364,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                         <td className={cx(tableClass.td, "max-w-80")}>
                           <div className="flex items-center gap-3">
                             <ContactAvatar contact={c} badge={false} />
-                            <NameCell contact={c} preview={previews.get(c.id)} />
+                            <NameCell contact={c} preview={previews.get(c.id)} t={t} />
                           </div>
                         </td>
                         <td className={cx(tableClass.td, "text-fg-2")}>
@@ -371,17 +374,21 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                           </span>
                         </td>
                         <td className={cx(tableClass.td, "text-fg-2")}>
-                          <RelativeTime date={c.first_seen_at} now={now} />
+                          <RelativeTime date={c.first_seen_at} now={now} locale={locale} />
                         </td>
                         <td className={cx(tableClass.td, "text-fg-2")}>
-                          {c.last_inbound_at ? <RelativeTime date={c.last_inbound_at} now={now} /> : <span className="text-fg-3">ยังไม่เคยทัก</span>}
+                          {c.last_inbound_at ? (
+                            <RelativeTime date={c.last_inbound_at} now={now} locale={locale} />
+                          ) : (
+                            <span className="text-fg-3">{t("neverMessaged")}</span>
+                          )}
                         </td>
-                        <td className={cx(tableClass.td, tableClass.num)}>{formatNumber(c.sent)}</td>
+                        <td className={cx(tableClass.td, tableClass.num)}>{f.number(c.sent)}</td>
                         <td className={cx(tableClass.td, tableClass.num, c.clicks > 0 ? "font-medium text-fg" : "text-fg-3")}>
-                          {formatNumber(c.clicks)}
+                          {f.number(c.clicks)}
                         </td>
                         <td className={cx(tableClass.td, "text-right")}>
-                          <ChatLink contact={c} />
+                          <ChatLink contact={c} t={t} />
                         </td>
                       </tr>
                     ))}
@@ -398,16 +405,16 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
                       <ContactAvatar contact={c} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-2">
-                          <NameText contact={c} />
-                          <RelativeTime date={c.last_inbound_at ?? c.first_seen_at} now={now} className="shrink-0 text-xs text-fg-3" />
+                          <NameText contact={c} t={t} />
+                          <RelativeTime date={c.last_inbound_at ?? c.first_seen_at} now={now} locale={locale} className="shrink-0 text-xs text-fg-3" />
                         </div>
-                        {preview && <PreviewLine preview={preview} />}
+                        {preview && <PreviewLine preview={preview} t={t} />}
                         <div className="flex items-center justify-between gap-2">
                           <p className="min-w-0 truncate text-xs leading-5 text-fg-3">
                             {c.name && c.username ? `@${c.username} · ` : ""}
-                            DM {formatNumber(c.sent)} · คลิกลิงก์ {formatNumber(c.clicks)}
+                            {t("mobileStats", { sent: c.sent, clicks: c.clicks })}
                           </p>
-                          <ChatLink contact={c} size="sm" />
+                          <ChatLink contact={c} t={t} size="sm" />
                         </div>
                       </div>
                     </li>

@@ -17,9 +17,13 @@ import { getDb } from "@/db/client";
 import { NavTitle } from "@/components/localized";
 import { ActionButton } from "@/components/submit-button";
 import { CopyField } from "@/components/copy-field";
-import { Badge, ButtonLink, Card, cx, formatDateTime, formatNumber, Notice, PageHeader, PlatformIcon } from "@/components/ui";
+import { Badge, ButtonLink, Card, cx, Notice, PageHeader, PlatformIcon } from "@/components/ui";
 import { getInstagramConfig, getSetupStatus, setupProgress } from "@/lib/config";
 import { env } from "@/lib/env";
+import type { MessageKey, TFunction } from "@/lib/i18n/core";
+import type { Formatters } from "@/lib/i18n/format";
+import type { settingsMessages } from "@/lib/i18n/messages/settings";
+import { getFormat, getT } from "@/lib/i18n/server";
 import { listInstagramAccounts } from "@/lib/instagram/accounts";
 import { INSTAGRAM_WEBHOOK_FIELDS, PAGE_WEBHOOK_FIELDS, WEBHOOK_PATHS } from "@/lib/meta/setup-info";
 import { listConnectedPages } from "@/lib/pages";
@@ -32,6 +36,8 @@ import { instagramNeedsAttention, InstagramAccountsList } from "./instagram-list
 import { PagesList } from "./pages-list";
 import { SettingsNav, type SettingsNavItem } from "./settings-nav";
 
+type SettingsT = TFunction<MessageKey<typeof settingsMessages>>;
+
 // เว้นที่ด้านบนเมื่อกระโดดไปหมวด (ไม่ให้หัวการ์ดถูกแถบด้านบน/แถบหมวดบนมือถือบัง)
 const SECTION = "scroll-mt-[calc(var(--app-topbar-h)+72px)] lg:scroll-mt-10";
 
@@ -42,6 +48,21 @@ function Titled({ children, badge }: { children: ReactNode; badge: ReactNode }) 
       {children}
       {badge}
     </span>
+  );
+}
+
+/** ยังไม่มีที่อยู่เว็บ → สร้าง Callback URL ไม่ได้ ชี้ไปการ์ด "ที่อยู่เว็บ" */
+function NeedBaseUrl({ t }: { t: SettingsT }) {
+  return (
+    <Notice tone="warning">
+      {t.rich("needBaseUrl", {
+        link: (
+          <a href="#url" className="font-medium underline">
+            {t("needBaseUrlLink")}
+          </a>
+        ),
+      })}
+    </Notice>
   );
 }
 
@@ -65,14 +86,18 @@ function LimitTile({
   platform,
   privateReplyPerHour,
   dmPerHour,
+  t,
+  f,
 }: {
   platform: "facebook" | "instagram";
   privateReplyPerHour: number;
   dmPerHour: number;
+  t: SettingsT;
+  f: Formatters;
 }) {
   const rows = [
-    { label: "DM ตอบคอมเมนต์", perHour: privateReplyPerHour },
-    { label: "DM ทั่วไป", perHour: dmPerHour },
+    { label: t("limitPrivateReply"), perHour: privateReplyPerHour },
+    { label: t("limitDm"), perHour: dmPerHour },
   ];
   return (
     <div className="flex min-w-0 flex-col items-start gap-2 rounded-lg border border-line bg-surface-2/50 px-3.5 py-3 sm:flex-row sm:gap-3 sm:px-4">
@@ -87,10 +112,10 @@ function LimitTile({
               <dd className="text-sm font-semibold text-fg tabular">
                 {r.perHour ? (
                   <>
-                    {formatNumber(r.perHour)} <span className="font-normal text-fg-2">/ชม.</span>
+                    {f.number(r.perHour)} <span className="font-normal text-fg-2">{t("perHour")}</span>
                   </>
                 ) : (
-                  "ไม่จำกัด"
+                  t("unlimited")
                 )}
               </dd>
             </div>
@@ -103,11 +128,15 @@ function LimitTile({
 
 export default async function SettingsPage() {
   const db = getDb();
-  const [pages, status, igAccounts, igConfig] = await Promise.all([
+  const [pages, status, igAccounts, igConfig, t, tNav, tAppearance, f] = await Promise.all([
     listConnectedPages(db),
     getSetupStatus(db),
     listInstagramAccounts(db),
     getInstagramConfig(db),
+    getT("settings"),
+    getT("nav"),
+    getT("appearance"),
+    getFormat(),
   ]);
   const progress = setupProgress(status);
   const urlFromHost = Boolean(process.env.PUBLIC_BASE_URL || process.env.RAILWAY_PUBLIC_DOMAIN);
@@ -121,11 +150,11 @@ export default async function SettingsPage() {
   const igWebhookOk = Boolean(ig.webhookVerifiedAt || ig.lastWebhookAt);
 
   const nav: SettingsNavItem[] = [
-    { id: "pages", label: "เพจที่เชื่อมต่อ", icon: <Store />, group: "เพจ", status: pagesNeedFix ? "attention" : undefined },
-    { id: "connect", label: "เชื่อมต่อเพจใหม่", icon: <Plug />, group: "เพจ" },
+    { id: "pages", label: t("pagesTitle"), icon: <Store />, group: t("groupPages"), status: pagesNeedFix ? "attention" : undefined },
+    { id: "connect", label: t("connectTitle"), icon: <Plug />, group: t("groupPages") },
     {
       id: "instagram",
-      label: "บัญชี Instagram",
+      label: t("igTitle"),
       icon: <PlatformIcon platform="instagram" variant="mono" />,
       group: "Instagram",
       status: igNeedsFix ? "attention" : undefined,
@@ -133,7 +162,7 @@ export default async function SettingsPage() {
     { id: "instagram-app", label: "Instagram App", icon: <KeyRound />, group: "Instagram", status: ig.appSecretSet ? undefined : "attention" },
     {
       id: "instagram-webhook",
-      label: "Webhook Instagram",
+      label: t("igWebhookTitle"),
       icon: <Webhook />,
       group: "Instagram",
       status: !igWebhookOk || ig.badSignatureAt ? "attention" : undefined,
@@ -141,10 +170,10 @@ export default async function SettingsPage() {
     { id: "meta-app", label: "Meta App", icon: <KeyRound />, group: "Meta", status: metaReady ? undefined : "attention" },
     { id: "webhook", label: "Webhook", icon: <Webhook />, group: "Meta", status: status.webhookVerifiedAt ? undefined : "attention" },
     { id: "app-review", label: "App Review", icon: <ShieldCheck />, group: "Meta" },
-    { id: "url", label: "ที่อยู่เว็บ", icon: <Globe />, group: "ระบบ", status: status.baseUrl ? undefined : "attention" },
-    { id: "limits", label: "ลิมิตการส่ง", icon: <Gauge />, group: "ระบบ" },
-    { id: "appearance", label: "การแสดงผล", icon: <SunMoon />, group: "ระบบ" },
-    { id: "password", label: "รหัสผ่าน", icon: <LockKeyhole />, group: "ระบบ" },
+    { id: "url", label: t("urlTitle"), icon: <Globe />, group: t("groupSystem"), status: status.baseUrl ? undefined : "attention" },
+    { id: "limits", label: t("limitsTitle"), icon: <Gauge />, group: t("groupSystem") },
+    { id: "appearance", label: tAppearance("title"), icon: <SunMoon />, group: t("groupSystem") },
+    { id: "password", label: t("navPassword"), icon: <LockKeyhole />, group: t("groupSystem") },
   ];
 
   return (
@@ -152,21 +181,19 @@ export default async function SettingsPage() {
       <PageHeader
         title={<NavTitle name="settings" />}
         description={
-          setupDone ? (
-            "การเชื่อมต่อกับ Facebook / Instagram และค่าของระบบ"
-          ) : (
-            <>
-              ตั้งค่าครั้งแรก? ทำตาม{" "}
-              <Link href="/guide" className="font-medium text-accent hover:underline">
-                คู่มือตั้งค่า
-              </Link>{" "}
-              ทีละขั้นจะง่ายกว่า
-            </>
-          )
+          setupDone
+            ? t("headerDescription")
+            : t.rich("headerFirstTime", {
+                guide: (
+                  <Link href="/guide" className="font-medium text-accent hover:underline">
+                    {tNav("guide")}
+                  </Link>
+                ),
+              })
         }
         actions={
           <ButtonLink href="/guide" variant="secondary" icon={<BookOpenCheck />} className="max-sm:hidden">
-            คู่มือตั้งค่า
+            {tNav("guide")}
             {!setupDone && (
               <Badge tone="warning" className="-mr-1 tabular">
                 {progress.done}/{progress.total}
@@ -184,8 +211,8 @@ export default async function SettingsPage() {
             id="pages"
             className={SECTION}
             icon={<Store />}
-            title="เพจที่เชื่อมต่อ"
-            description="เพจ Facebook ที่ระบบตอบให้อัตโนมัติ"
+            title={t("pagesTitle")}
+            description={t("pagesDescription")}
             padding="none"
           >
             <PagesList pages={pages} igLoginIds={igAccounts.map((a) => a.id)} />
@@ -195,8 +222,8 @@ export default async function SettingsPage() {
             id="connect"
             className={SECTION}
             icon={<Plug />}
-            title="เชื่อมต่อเพจใหม่"
-            description="ใช้ได้ทั้งเพจใหม่และเชื่อมเพจเดิมซ้ำ (เช่น เมื่อ token ใช้ไม่ได้)"
+            title={t("connectTitle")}
+            description={t("connectDescription")}
           >
             <ConnectForm connectedIds={pages.map((p) => p.id)} />
           </Card>
@@ -210,37 +237,36 @@ export default async function SettingsPage() {
                 badge={
                   igAccounts.length === 0 ? (
                     <Badge tone="neutral" dot>
-                      ยังไม่เชื่อม
+                      {t("igNotConnected")}
                     </Badge>
                   ) : igReady ? (
                     <Badge tone="good" dot>
-                      พร้อมใช้งาน
+                      {t("statusReady")}
                     </Badge>
                   ) : (
                     <Badge tone="warning" dot>
-                      ต้องตรวจสอบ
+                      {t("statusAttention")}
                     </Badge>
                   )
                 }
               >
-                บัญชี Instagram
+                {t("igTitle")}
               </Titled>
             }
-            description="เชื่อมผ่าน Instagram Login แยกจากเพจ Facebook — ใช้ตอบคอมเมนต์และ DM ของ Instagram"
+            description={t("igDescription")}
             padding="none"
           >
             <InstagramAccountsList accounts={igAccounts} pages={pages} />
             <p className="flex items-start gap-2 border-t border-line bg-surface-2/40 px-5 py-3 text-xs leading-5 text-fg-2">
               <Gauge className="mt-0.5 size-3.5 shrink-0 text-fg-3" aria-hidden />
-              <span>
-                ระบบไม่จำกัดจำนวนข้อความหรือจำนวนลูกค้า · Meta ให้ส่ง DM ตอบคอมเมนต์ได้ราว 750 ครั้ง/ชม. ต่อบัญชี (เกินจะรอคิวส่งให้เองอัตโนมัติ
-                ไม่มีข้อความหาย) ส่วนการตอบแชทแทบไม่จำกัด
-              </span>
+              <span>{t("igLimitsNote")}</span>
             </p>
             <div id="connect-instagram" className={cx("space-y-4 border-t border-line p-5", SECTION)}>
               <div>
-                <p className="text-sm leading-6 font-semibold text-fg">{igAccounts.length ? "วาง token ใหม่ / เชื่อมบัญชีเพิ่ม" : "เชื่อมบัญชี Instagram"}</p>
-                <p className="text-xs leading-5 text-fg-3">วาง token บัญชีเดิมซ้ำได้ (เช่น เมื่อ token ใช้ไม่ได้) — กฎและข้อมูลเดิมยังอยู่ครบ</p>
+                <p className="text-sm leading-6 font-semibold text-fg">
+                  {igAccounts.length ? t("igConnectTitleMore") : t("igConnectTitleFirst")}
+                </p>
+                <p className="text-xs leading-5 text-fg-3">{t("igConnectHint")}</p>
               </div>
               <InstagramConnectForm hasAppSecret={ig.appSecretSet} />
             </div>
@@ -255,11 +281,11 @@ export default async function SettingsPage() {
                 badge={
                   ig.appSecretSet ? (
                     <Badge tone="good" dot>
-                      บันทึกแล้ว
+                      {t("badgeSaved")}
                     </Badge>
                   ) : (
                     <Badge tone="warning" dot>
-                      ยังไม่ครบ
+                      {t("badgeIncomplete")}
                     </Badge>
                   )
                 }
@@ -267,7 +293,7 @@ export default async function SettingsPage() {
                 Instagram App
               </Titled>
             }
-            description="Instagram app secret จากหน้า API setup with Instagram login และ App secret จาก App settings → Basic ของแอป Instagram ที่สร้างแยก"
+            description={t("igAppDescription")}
           >
             <InstagramAppForm hasSecret={ig.appSecretSet} hasMetaAppSecret={Boolean(igConfig.metaAppSecret)} fromEnv={ig.fromEnv} />
           </Card>
@@ -281,77 +307,70 @@ export default async function SettingsPage() {
                 badge={
                   igWebhookOk ? (
                     <Badge tone="good" dot>
-                      Meta ยืนยันแล้ว
+                      {t("badgeVerified")}
                     </Badge>
                   ) : (
                     <Badge tone="warning" dot>
-                      ยังไม่ยืนยัน
+                      {t("badgeNotVerified")}
                     </Badge>
                   )
                 }
               >
-                Webhook Instagram
+                {t("igWebhookTitle")}
               </Titled>
             }
-            description="ค่าที่ใส่ในหัวข้อ Configure webhooks ของหน้า API setup with Instagram login"
+            description={t("igWebhookDescription")}
           >
             <div className="space-y-5">
               {ig.badSignatureAt && (
                 <Notice
                   tone="critical"
-                  title="Meta ส่งข้อมูล Instagram มาแล้ว แต่ลายเซ็นไม่ตรงกับ secret ที่บันทึกไว้"
+                  title={t("igBadSignatureTitle")}
                   actions={
                     <ButtonLink href="#instagram-app" variant="secondary" size="sm">
-                      ใส่ secret ใหม่
+                      {t("igBadSignatureAction")}
                     </ButtonLink>
                   }
                 >
-                  ครั้งล่าสุด {formatDateTime(ig.badSignatureAt)} — คัดลอก Instagram app secret ล่าสุด (และ App secret จาก App settings → Basic
-                  ถ้าใช้แอปแยก) มาวางในหัวข้อ Instagram App
+                  {t("igBadSignatureBody", { time: f.dateTime(ig.badSignatureAt) })}
                 </Notice>
               )}
               {!igWebhookOk && (
                 <Notice
                   tone="warning"
-                  title="Meta ยังไม่ได้ยืนยันลิงก์ของ Instagram"
+                  title={t("igNotVerifiedTitle")}
                   actions={
                     <ButtonLink href="/guide#step-5-webhook" variant="secondary" size="sm">
-                      ดูวิธีตั้ง
+                      {t("seeHow")}
                     </ButtonLink>
                   }
                 >
-                  คัดลอก 2 ค่าด้านล่างไปวางในหัวข้อ Configure webhooks แล้วกด Verify and save
+                  {t("igNotVerifiedBody")}
                 </Notice>
               )}
               <div className="grid gap-4">
                 {status.baseUrl ? (
                   <CopyField label="Callback URL" value={`${status.baseUrl}${WEBHOOK_PATHS.instagram}`} />
                 ) : (
-                  <Notice tone="warning">
-                    ใส่{" "}
-                    <a href="#url" className="font-medium underline">
-                      ที่อยู่เว็บของระบบ
-                    </a>{" "}
-                    ก่อน แล้วระบบจะสร้าง Callback URL ให้
-                  </Notice>
+                  <NeedBaseUrl t={t} />
                 )}
                 <CopyField label="Verify token" value={status.meta.verifyToken} />
               </div>
               <div className="space-y-3 rounded-lg border border-line p-4">
-                <p className="text-sm font-medium text-fg">Fields ที่ต้อง Subscribe</p>
+                <p className="text-sm font-medium text-fg">{t("fieldsToSubscribe")}</p>
                 <FieldChips label="Instagram" fields={INSTAGRAM_WEBHOOK_FIELDS} />
               </div>
               <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                 <div className="flex justify-between gap-3 sm:block">
-                  <dt className="text-fg-2">Meta ยืนยัน URL เมื่อ</dt>
+                  <dt className="text-fg-2">{t("verifiedAtLabel")}</dt>
                   <dd className="text-right font-medium text-fg tabular sm:text-left">
-                    {ig.webhookVerifiedAt ? formatDateTime(ig.webhookVerifiedAt) : "ยังไม่ยืนยัน"}
+                    {ig.webhookVerifiedAt ? f.dateTime(ig.webhookVerifiedAt) : t("notVerifiedYet")}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-3 sm:block">
-                  <dt className="text-fg-2">ได้รับ webhook ทาง Instagram Login ล่าสุด</dt>
+                  <dt className="text-fg-2">{t("igLastWebhookLabel")}</dt>
                   <dd className="text-right font-medium text-fg tabular sm:text-left">
-                    {ig.lastWebhookAt ? formatDateTime(ig.lastWebhookAt) : "ยังไม่เคยได้รับ"}
+                    {ig.lastWebhookAt ? f.dateTime(ig.lastWebhookAt) : t("neverReceived")}
                   </dd>
                 </div>
               </dl>
@@ -367,11 +386,11 @@ export default async function SettingsPage() {
                 badge={
                   metaReady ? (
                     <Badge tone="good" dot>
-                      บันทึกแล้ว
+                      {t("badgeSaved")}
                     </Badge>
                   ) : (
                     <Badge tone="warning" dot>
-                      ยังไม่ครบ
+                      {t("badgeIncomplete")}
                     </Badge>
                   )
                 }
@@ -379,9 +398,8 @@ export default async function SettingsPage() {
                 Meta App
               </Titled>
             }
-            description={
-              <>
-                จาก{" "}
+            description={t.rich("metaAppDescription", {
+              link: (
                 <a
                   href="https://developers.facebook.com/apps"
                   target="_blank"
@@ -390,11 +408,10 @@ export default async function SettingsPage() {
                 >
                   developers.facebook.com
                   <ArrowUpRight className="size-3.5" aria-hidden />
-                  <span className="sr-only">(เปิดแท็บใหม่)</span>
-                </a>{" "}
-                → แอปของคุณ → App settings → Basic
-              </>
-            }
+                  <span className="sr-only">{t("opensNewTab")}</span>
+                </a>
+              ),
+            })}
           >
             <MetaAppForm appId={status.meta.appId} hasSecret={Boolean(status.meta.appSecret)} fromEnv={status.meta.fromEnv} />
           </Card>
@@ -408,11 +425,11 @@ export default async function SettingsPage() {
                 badge={
                   status.webhookVerifiedAt ? (
                     <Badge tone="good" dot>
-                      Meta ยืนยันแล้ว
+                      {t("badgeVerified")}
                     </Badge>
                   ) : (
                     <Badge tone="warning" dot>
-                      ยังไม่ยืนยัน
+                      {t("badgeNotVerified")}
                     </Badge>
                   )
                 }
@@ -420,63 +437,58 @@ export default async function SettingsPage() {
                 Webhook
               </Titled>
             }
-            description="ค่าที่ใส่ในเมนู Webhooks ของแอปใน Meta เพื่อให้ Meta ส่งคอมเมนต์และข้อความใหม่มาที่ระบบ"
+            description={t("webhookDescription")}
           >
             <div className="space-y-5">
               {status.badSignatureAt && (
                 <Notice
                   tone="critical"
-                  title="Meta ส่งข้อมูลมาแล้ว แต่ App Secret ไม่ตรงกัน"
+                  title={t("badSignatureTitle")}
                   actions={
                     <ButtonLink href="#meta-app" variant="secondary" size="sm">
-                      ใส่ App Secret ใหม่
+                      {t("badSignatureAction")}
                     </ButtonLink>
                   }
                 >
-                  ครั้งล่าสุด {formatDateTime(status.badSignatureAt)} — คัดลอกข้อมูลลับของแอปล่าสุดจาก Meta (การตั้งค่าแอป → ข้อมูลพื้นฐาน)
-                  มาวางในหัวข้อ Meta App ด้านบน (ถ้าเป็นข้อมูล Instagram ให้ตรวจ Instagram app secret ด้วย)
+                  {t("badSignatureBody", { time: f.dateTime(status.badSignatureAt) })}
                 </Notice>
               )}
               {!status.webhookVerifiedAt && (
                 <Notice
                   tone="warning"
-                  title="Meta ยังไม่ได้ยืนยันลิงก์ของระบบ"
+                  title={t("notVerifiedTitle")}
                   actions={
                     <ButtonLink href="/guide#step-3" variant="secondary" size="sm">
-                      ดูวิธีตั้ง
+                      {t("seeHow")}
                     </ButtonLink>
                   }
                 >
-                  คัดลอก 2 ค่าด้านล่างไปวางในหน้า Webhooks ของแอป แล้วกด Verify and save
+                  {t("notVerifiedBody")}
                 </Notice>
               )}
               <div className="grid gap-4">
                 {status.baseUrl ? (
                   <CopyField label="Callback URL" value={`${status.baseUrl}${WEBHOOK_PATHS.meta}`} />
                 ) : (
-                  <Notice tone="warning">
-                    ใส่{" "}
-                    <a href="#url" className="font-medium underline">
-                      ที่อยู่เว็บของระบบ
-                    </a>{" "}
-                    ก่อน แล้วระบบจะสร้าง Callback URL ให้
-                  </Notice>
+                  <NeedBaseUrl t={t} />
                 )}
                 <CopyField label="Verify token" value={status.meta.verifyToken} />
               </div>
               <div className="space-y-3 rounded-lg border border-line p-4">
-                <p className="text-sm font-medium text-fg">Fields ที่ต้อง Subscribe</p>
+                <p className="text-sm font-medium text-fg">{t("fieldsToSubscribe")}</p>
                 <FieldChips label="Page" fields={PAGE_WEBHOOK_FIELDS} />
-                <FieldChips label="Instagram (ผ่านเพจ)" fields={INSTAGRAM_WEBHOOK_FIELDS} />
+                <FieldChips label={t("fieldsIgViaPage")} fields={INSTAGRAM_WEBHOOK_FIELDS} />
               </div>
               <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                 <div className="flex justify-between gap-3 sm:block">
-                  <dt className="text-fg-2">Meta ยืนยัน URL เมื่อ</dt>
-                  <dd className="font-medium text-fg tabular">{status.webhookVerifiedAt ? formatDateTime(status.webhookVerifiedAt) : "ยังไม่ยืนยัน"}</dd>
+                  <dt className="text-fg-2">{t("verifiedAtLabel")}</dt>
+                  <dd className="font-medium text-fg tabular">
+                    {status.webhookVerifiedAt ? f.dateTime(status.webhookVerifiedAt) : t("notVerifiedYet")}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3 sm:block">
-                  <dt className="text-fg-2">ได้รับ webhook ล่าสุด</dt>
-                  <dd className="font-medium text-fg tabular">{status.lastWebhookAt ? formatDateTime(status.lastWebhookAt) : "ยังไม่เคยได้รับ"}</dd>
+                  <dt className="text-fg-2">{t("lastWebhookLabel")}</dt>
+                  <dd className="font-medium text-fg tabular">{status.lastWebhookAt ? f.dateTime(status.lastWebhookAt) : t("neverReceived")}</dd>
                 </div>
               </dl>
             </div>
@@ -491,40 +503,36 @@ export default async function SettingsPage() {
                 badge={
                   status.appReviewDone ? (
                     <Badge tone="good" dot>
-                      เปิดใช้กับทุกคนแล้ว
+                      {t("reviewLive")}
                     </Badge>
                   ) : (
                     <Badge tone="neutral" dot>
-                      โหมดทดสอบ
+                      {t("reviewTestMode")}
                     </Badge>
                   )
                 }
               >
-                สถานะ App Review
+                {t("reviewTitle")}
               </Titled>
             }
-            description="Meta ต้องตรวจแอป Facebook ก่อน เพจ Facebook จึงจะตอบลูกค้าทุกคนได้ (Instagram ที่เชื่อมผ่าน Instagram Login ไม่ต้องยื่น)"
+            description={t("reviewDescription")}
           >
             <div className="space-y-4">
-              <p className="text-sm leading-6 text-fg-2">
-                {status.appReviewDone
-                  ? "แอปผ่าน App Review และเปิด Live แล้ว เพจ Facebook ตอบได้ทุกคนที่คอมเมนต์หรือทักแชท"
-                  : "ตอนนี้เพจ Facebook ตอบได้เฉพาะบัญชีที่มีชื่ออยู่ในแอป (แอดมินและ Tester) ทำขั้นนี้หลังทดสอบผ่านแล้ว Meta ใช้เวลาตรวจหลายวันถึงหลายสัปดาห์ — Instagram ที่เชื่อมผ่าน Instagram Login ไม่ต้องยื่น"}
-              </p>
+              <p className="text-sm leading-6 text-fg-2">{status.appReviewDone ? t("reviewDoneBody") : t("reviewPendingBody")}</p>
               <div className="flex flex-wrap gap-2">
                 {!status.appReviewDone && (
                   <ButtonLink href="/guide#step-8" variant="secondary" className="max-sm:w-full">
-                    ดูวิธียื่น App Review
+                    {t("reviewHowTo")}
                   </ButtonLink>
                 )}
                 <ActionButton
                   action={setAppReviewAction}
                   fields={{ done: status.appReviewDone ? "0" : "1" }}
                   variant={status.appReviewDone ? "ghost" : "secondary"}
-                  successMessage={status.appReviewDone ? "ยกเลิกเครื่องหมายแล้ว" : "บันทึกแล้ว — เปิดใช้กับทุกคน"}
+                  successMessage={status.appReviewDone ? t("reviewUnmarked") : t("reviewMarked")}
                   className="max-sm:w-full"
                 >
-                  {status.appReviewDone ? "ยกเลิกเครื่องหมายเสร็จ" : "ผ่าน App Review และเปิด Live แล้ว"}
+                  {status.appReviewDone ? t("reviewUnmark") : t("reviewMark")}
                 </ActionButton>
               </div>
             </div>
@@ -534,13 +542,13 @@ export default async function SettingsPage() {
             id="url"
             className={SECTION}
             icon={<Globe />}
-            title="ที่อยู่เว็บ"
-            description="ลิงก์ของระบบนี้ ใช้สร้าง Callback URL และลิงก์ติดตามการคลิก"
+            title={t("urlTitle")}
+            description={t("urlDescription")}
           >
             {urlFromHost && status.baseUrl ? (
               <div className="space-y-2">
                 <CopyField value={status.baseUrl} />
-                <p className="text-xs text-fg-3">ตั้งจากค่าใน Railway อัตโนมัติ (แก้ไขที่นั่น)</p>
+                <p className="text-xs text-fg-3">{t("urlFromHost")}</p>
               </div>
             ) : (
               <BaseUrlForm baseUrl={status.baseUrl} />
@@ -551,29 +559,37 @@ export default async function SettingsPage() {
             id="limits"
             className={SECTION}
             icon={<Gauge />}
-            title="ลิมิตการส่ง"
-            description="ต่อบัญชี ตามที่ Meta กำหนด — ข้อความที่เกินจะรอคิวส่งเมื่อพ้นช่วง 1 ชั่วโมง ไม่หาย"
+            title={t("limitsTitle")}
+            description={t("limitsDescription")}
           >
             <div className="grid gap-3 sm:grid-cols-2">
               <LimitTile
                 platform="instagram"
                 privateReplyPerHour={env.instagramPrivateReplyPerHour}
                 dmPerHour={env.instagramDmPerHour}
+                t={t}
+                f={f}
               />
               <LimitTile
                 platform="facebook"
                 privateReplyPerHour={env.facebookPrivateReplyPerHour}
                 dmPerHour={env.facebookDmPerHour}
+                t={t}
+                f={f}
               />
             </div>
-            <p className="mt-3 text-xs leading-5 text-fg-3">
-              ถ้า Meta แจ้งว่าส่งถี่เกิน ระบบจะพักแล้วส่งต่อเอง (ดูได้ในหน้ากิจกรรม) ไม่ต้องทำอะไร
-            </p>
+            <p className="mt-3 text-xs leading-5 text-fg-3">{t("limitsFooter")}</p>
           </Card>
 
           <AppearanceCard />
 
-          <Card id="password" className={SECTION} icon={<LockKeyhole />} title="เปลี่ยนรหัสผ่าน" description="รหัสผ่านที่ใช้เข้าหน้าจัดการนี้">
+          <Card
+            id="password"
+            className={SECTION}
+            icon={<LockKeyhole />}
+            title={t("passwordTitle")}
+            description={t("passwordDescription")}
+          >
             <ChangePasswordForm managedByEnv={passwordFromEnv} />
           </Card>
         </div>

@@ -15,10 +15,28 @@ import {
   setPassword,
   verifyPassword,
 } from "@/lib/config";
+import { createT, type MessageKey, type TFunction } from "@/lib/i18n/core";
+import { settingsMessages } from "@/lib/i18n/messages/settings";
+import { getT } from "@/lib/i18n/server";
 import { connectInstagramWithToken, disconnectInstagram, InstagramConnectError, resubscribeInstagram } from "@/lib/instagram/connect";
 import { refreshInstagramAccountToken } from "@/lib/instagram/token";
 import { exchangeForLongLivedUserToken, listManagedPages, subscribePageToApp } from "@/lib/meta/graph";
 import { getPageById, savePage } from "@/lib/pages";
+import { localizeSetupMessage } from "./setup-errors";
+
+type SettingsT = TFunction<MessageKey<typeof settingsMessages>>;
+
+/**
+ * ตัวแปลข้อความของ action ตามภาษาในคุกกี้
+ * เรียกนอก request ของ Next (เช่นในเทส) อ่านคุกกี้ไม่ได้ → ภาษาไทย (เหมือนไม่มีคุกกี้)
+ */
+async function settingsT(): Promise<SettingsT> {
+  try {
+    return await getT("settings");
+  } catch {
+    return createT(settingsMessages);
+  }
+}
 
 export interface ConnectState {
   step: "token" | "pick" | "done";
@@ -35,14 +53,15 @@ export async function connectAction(prev: ConnectState, formData: FormData): Pro
 
   if (intent === "reset") return { step: "token" };
 
+  const t = await settingsT();
   if (intent === "fetch") {
     const token = String(formData.get("token") ?? "").trim();
-    if (!token) return { step: "token", error: "กรุณาวาง User Access Token" };
+    if (!token) return { step: "token", error: t("errPasteUserToken") };
     try {
       const longLived = await exchangeForLongLivedUserToken(token);
       const managed = await listManagedPages(longLived);
       if (managed.length === 0) {
-        return { step: "token", error: "ไม่พบเพจที่บัญชีนี้เป็นแอดมิน — ตอนสร้าง token ต้องติ๊กเลือกเพจด้วย" };
+        return { step: "token", error: t("errNoPages") };
       }
       return {
         step: "pick",
@@ -50,14 +69,14 @@ export async function connectAction(prev: ConnectState, formData: FormData): Pro
         pages: managed.map((p) => ({ id: p.id, name: p.name, igUsername: p.instagram_business_account?.username ?? null })),
       };
     } catch (err) {
-      return { step: "token", error: `เชื่อมต่อไม่สำเร็จ: ${(err as Error).message}` };
+      return { step: "token", error: t("errConnectFailed", { detail: (err as Error).message }) };
     }
   }
 
   if (intent === "save") {
     const userToken = String(formData.get("userToken") ?? "");
     const selected = new Set(formData.getAll("pageIds").map(String));
-    if (selected.size === 0) return { ...prev, error: "เลือกอย่างน้อย 1 เพจ" };
+    if (selected.size === 0) return { ...prev, error: t("errPickOnePage") };
     try {
       const db = getDb();
       const managed = (await listManagedPages(userToken)).filter((p) => selected.has(p.id));
@@ -70,17 +89,17 @@ export async function connectAction(prev: ConnectState, formData: FormData): Pro
           igUserId: p.instagram_business_account?.id ?? null,
           igUsername: p.instagram_business_account?.username ?? null,
         });
-        problems.push(...(await subscribe(p.id)));
+        problems.push(...(await subscribe(p.id, t)));
       }
       revalidatePath("/settings");
       revalidatePath("/guide");
       return {
         step: "done",
-        message: `เชื่อมต่อ ${managed.length} เพจเรียบร้อย`,
+        message: t("pagesConnected", { count: managed.length }),
         error: problems.length ? problems.join(" · ") : undefined,
       };
     } catch (err) {
-      return { ...prev, error: `บันทึกไม่สำเร็จ: ${(err as Error).message}` };
+      return { ...prev, error: t("errSaveFailed", { detail: (err as Error).message }) };
     }
   }
 
@@ -88,11 +107,11 @@ export async function connectAction(prev: ConnectState, formData: FormData): Pro
 }
 
 /** ให้เพจส่ง webhook มาที่แอป แล้วบันทึกผลไว้แสดงในหน้าตั้งค่า */
-async function subscribe(pageId: string): Promise<string[]> {
+async function subscribe(pageId: string, t: SettingsT): Promise<string[]> {
   const db = getDb();
   const page = await getPageById(db, pageId);
   if (!page) return [];
-  if (!page.token) return [`${page.name}: token ใช้ไม่ได้ กรุณาเชื่อมต่อเพจใหม่`];
+  if (!page.token) return [t("errPageTokenBroken", { page: page.name })];
   try {
     await subscribePageToApp(page.id, page.token);
     await db.update(pages).set({ subscribed: true, lastError: null }).where(eq(pages.id, page.id));
@@ -100,14 +119,14 @@ async function subscribe(pageId: string): Promise<string[]> {
   } catch (err) {
     const message = (err as Error).message;
     await db.update(pages).set({ subscribed: false, lastError: message }).where(eq(pages.id, page.id));
-    return [`${page.name}: subscribe webhook ไม่สำเร็จ (${message})`];
+    return [t("errPageSubscribeFailed", { page: page.name, detail: message })];
   }
 }
 
 /** ลองให้เพจส่ง webhook มาใหม่ — คืนผลเพื่อให้หน้าเว็บแจ้งว่าสำเร็จหรือยัง */
 export async function resubscribePage(formData: FormData): Promise<FormResult> {
   await requireAuth();
-  const problems = await subscribe(String(formData.get("pageId")));
+  const problems = await subscribe(String(formData.get("pageId")), await settingsT());
   revalidatePath("/settings");
   revalidatePath("/guide");
   return problems.length ? { error: problems.join(" · ") } : { ok: true };
@@ -132,9 +151,9 @@ export async function saveMetaAppAction(_prev: FormResult, formData: FormData): 
   await requireAuth();
   const appId = String(formData.get("appId") ?? "").trim();
   const appSecret = String(formData.get("appSecret") ?? "").trim();
-  if (!/^\d{5,20}$/.test(appId)) return { error: "App ID ต้องเป็นตัวเลขล้วน (คัดลอกจากหน้า App settings → Basic)", field: "appId" };
+  if (!/^\d{5,20}$/.test(appId)) return { error: (await settingsT())("errAppId"), field: "appId" };
   if (appSecret && !/^[a-f0-9]{32}$/i.test(appSecret)) {
-    return { error: "App Secret ไม่ถูกต้อง (ควรเป็นตัวอักษร a-f และตัวเลข 32 ตัว — กด Show ก่อนคัดลอก)", field: "appSecret" };
+    return { error: (await settingsT())("errAppSecret"), field: "appSecret" };
   }
   await saveMetaApp(getDb(), appId, appSecret);
   revalidatePath("/guide");
@@ -145,7 +164,7 @@ export async function saveMetaAppAction(_prev: FormResult, formData: FormData): 
 export async function saveBaseUrlAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
   await requireAuth();
   const url = String(formData.get("baseUrl") ?? "").trim();
-  if (!/^https?:\/\/[^\s/]+/.test(url)) return { error: "ใส่ URL ให้ครบ เช่น https://dm-automation-production.up.railway.app", field: "baseUrl" };
+  if (!/^https?:\/\/[^\s/]+/.test(url)) return { error: (await settingsT())("errBaseUrl"), field: "baseUrl" };
   await savePublicBaseUrl(getDb(), url);
   revalidatePath("/guide");
   revalidatePath("/settings");
@@ -159,14 +178,18 @@ export async function setAppReviewAction(formData: FormData): Promise<void> {
   revalidatePath("/settings");
 }
 
+/** ความยาวรหัสผ่านใหม่ขั้นต่ำ (ตรงกับ minLength ของช่องในฟอร์ม) */
+const MIN_PASSWORD_LENGTH = 8;
+
 export async function changePasswordAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
   await requireAuth();
-  if (process.env.ADMIN_PASSWORD) return { error: "รหัสผ่านถูกตั้งผ่าน ADMIN_PASSWORD ใน Railway — เปลี่ยนที่นั่นแทน" };
+  const t = await settingsT();
+  if (process.env.ADMIN_PASSWORD) return { error: t("errPasswordFromEnv") };
   const db = getDb();
   const current = String(formData.get("current") ?? "");
   const next = String(formData.get("next") ?? "");
-  if (!(await verifyPassword(db, current))) return { error: "รหัสผ่านปัจจุบันไม่ถูกต้อง", field: "current" };
-  if (next.length < 8) return { error: "รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร", field: "next" };
+  if (!(await verifyPassword(db, current))) return { error: t("errWrongPassword"), field: "current" };
+  if (next.length < MIN_PASSWORD_LENGTH) return { error: t("errPasswordShort", { min: MIN_PASSWORD_LENGTH }), field: "next" };
   await setPassword(db, next);
   return { ok: true };
 }
@@ -195,21 +218,22 @@ export interface InstagramConnectState {
 export async function connectInstagramAction(_prev: InstagramConnectState, formData: FormData): Promise<InstagramConnectState> {
   await requireAuth();
   const db = getDb();
+  const t = await settingsT();
   try {
     const result = await connectInstagramWithToken(db, String(formData.get("token") ?? ""));
     const linked = await db.query.pages.findFirst({ where: eq(pages.igUserId, result.accountId), columns: { name: true } });
     revalidateSetup();
     return {
       ok: true,
-      message: `เชื่อมต่อ @${result.username} แล้ว`,
-      notices: result.notices,
+      message: t("igConnected", { username: result.username }),
+      notices: result.notices.map((n) => localizeSetupMessage(n, t)),
       subscribed: result.subscribed,
       linkedPage: linked?.name,
     };
   } catch (err) {
-    if (err instanceof InstagramConnectError) return { error: err.message, field: err.field ?? undefined };
+    if (err instanceof InstagramConnectError) return { error: localizeSetupMessage(err.message, t), field: err.field ?? undefined };
     console.error("[instagram] เชื่อมต่อไม่สำเร็จ:", err);
-    return { error: `เชื่อมต่อไม่สำเร็จ: ${(err as Error)?.message ?? String(err)}` };
+    return { error: t("errConnectFailed", { detail: (err as Error)?.message ?? String(err) }) };
   }
 }
 
@@ -219,25 +243,23 @@ const IG_SECRET_PATTERN = /^[A-Za-z0-9]{20,64}$/;
 export async function saveInstagramAppAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
   await requireAuth();
   const db = getDb();
+  const t = await settingsT();
   const current = await getInstagramConfig(db);
-  if (current.fromEnv) return { error: "ตั้งค่าไว้ใน Railway (INSTAGRAM_APP_SECRET) — แก้ที่นั่น" };
+  if (current.fromEnv) return { error: t("errIgSecretFromEnv") };
 
   const appSecret = String(formData.get("igAppSecret") ?? "").trim();
   const metaAppSecret = String(formData.get("igMetaAppSecret") ?? "").trim();
   if (!appSecret && !current.appSecret) {
-    return { error: "วาง Instagram app secret จากหน้า API setup with Instagram login", field: "igAppSecret" };
+    return { error: t("errIgSecretMissing"), field: "igAppSecret" };
   }
   if (appSecret && !IG_SECRET_PATTERN.test(appSecret)) {
-    return { error: "Instagram app secret ไม่ถูกต้อง (ควรเป็นตัวอักษรและตัวเลขติดกัน — กด Show ก่อนคัดลอก)", field: "igAppSecret" };
+    return { error: t("errIgSecretFormat"), field: "igAppSecret" };
   }
   if (metaAppSecret && !IG_SECRET_PATTERN.test(metaAppSecret)) {
-    return { error: "App secret ไม่ถูกต้อง (ควรเป็นตัวอักษรและตัวเลขติดกัน — กด Show ก่อนคัดลอก)", field: "igMetaAppSecret" };
+    return { error: t("errIgMetaSecretFormat"), field: "igMetaAppSecret" };
   }
   if (appSecret && appSecret === (await getMetaConfig(db)).appSecret) {
-    return {
-      error: "นี่คือ App Secret ของ Facebook (App settings → Basic) — ต้องใช้ Instagram app secret จากหน้า API setup with Instagram login",
-      field: "igAppSecret",
-    };
+    return { error: t("errIgSecretIsFacebook"), field: "igAppSecret" };
   }
   await saveInstagramApp(db, { appSecret, metaAppSecret });
   revalidateSetup();
@@ -249,7 +271,7 @@ export async function resubscribeInstagramAction(formData: FormData): Promise<Fo
   await requireAuth();
   const result = await resubscribeInstagram(getDb(), String(formData.get("accountId") ?? ""));
   revalidateSetup();
-  return result.ok ? { ok: true } : { error: result.error };
+  return result.ok ? { ok: true } : { error: localizeSetupMessage(result.error, await settingsT()) };
 }
 
 /** ปุ่ม "ต่ออายุ token" (ปกติระบบต่ออายุให้เอง — ปุ่มนี้ไว้ลองทันที) */
@@ -257,7 +279,7 @@ export async function refreshInstagramTokenAction(formData: FormData): Promise<F
   await requireAuth();
   const result = await refreshInstagramAccountToken(getDb(), String(formData.get("accountId") ?? ""), { manual: true });
   revalidateSetup();
-  return result.ok ? { ok: true } : { error: result.error };
+  return result.ok ? { ok: true } : { error: localizeSetupMessage(result.error, await settingsT()) };
 }
 
 export async function disconnectInstagramAction(formData: FormData): Promise<void> {

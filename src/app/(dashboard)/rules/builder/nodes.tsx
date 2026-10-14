@@ -18,8 +18,10 @@ import {
   TriangleAlert,
   Zap,
 } from "lucide-react";
-import { cx, formatNumber, formatPercent } from "@/components/ui";
+import { cx } from "@/components/ui";
 import type { FlowStep } from "@/lib/flows/types";
+import { useFormat, useT } from "@/lib/i18n/client";
+import { builderMessages } from "@/lib/i18n/messages/builder";
 import type { StepStats } from "@/lib/stats";
 import {
   CARD_WIDTH,
@@ -84,6 +86,7 @@ function useMeasure(id: string, onMeasure: (id: string, m: MeasuredNode) => void
 
 /** แสดงข้อความ โดยแทน {name} ด้วยชิป "ชื่อลูกค้า" */
 export function TextWithName({ text, chipClassName }: { text: string; chipClassName?: string }) {
+  const t = useT(builderMessages);
   const parts = text.split("{name}");
   return (
     <>
@@ -97,7 +100,7 @@ export function TextWithName({ text, chipClassName }: { text: string; chipClassN
                 chipClassName,
               )}
             >
-              ชื่อลูกค้า
+              {t("customerName")}
             </span>
           )}
         </Fragment>
@@ -108,12 +111,13 @@ export function TextWithName({ text, chipClassName }: { text: string; chipClassN
 
 /** จุดต่อเส้นขาออก (ลากเพื่อเชื่อม/สร้างการ์ดใหม่ หรือแตะเพื่อสร้างการ์ดถัดไป) */
 function OutHandle({ handle, connected, label, className }: { handle: string; connected: boolean; label: string; className?: string }) {
+  const t = useT(builderMessages);
   return (
     <button
       type="button"
       data-handle={handle}
       aria-label={label}
-      title={connected ? "ลากไปการ์ดอื่นเพื่อเปลี่ยน · แตะเพื่อเลือกเส้น" : "ลากไปวางเพื่อสร้าง/เชื่อมข้อความถัดไป · แตะเพื่อสร้างข้อความใหม่"}
+      title={t(connected ? "handleConnectedTitle" : "handleOpenTitle")}
       className={cx(
         // จอสัมผัส: ขยายพื้นที่แตะรอบจุด (before) — ตอนซูมออกจุดจะเล็กมาก
         "group/handle absolute top-[calc(50%-14px)] flex h-7 w-7 cursor-crosshair items-center justify-center rounded-full pointer-coarse:before:absolute pointer-coarse:before:-inset-2 pointer-coarse:before:rounded-full focus-visible:outline-none",
@@ -134,11 +138,12 @@ function OutHandle({ handle, connected, label, className }: { handle: string; co
 export const NODE_TOOLBAR_W = 232;
 
 function NodeToolbar({ zoom, children }: { zoom: number; children: ReactNode }) {
+  const t = useT(builderMessages);
   return (
     <div
       data-no-drag
       role="toolbar"
-      aria-label="จัดการการ์ด"
+      aria-label={t("cardActions")}
       className="absolute bottom-full left-0 mb-2 flex items-center gap-0.5 rounded-lg border border-line bg-surface p-1 shadow-lg"
       style={{ transform: `scale(${1 / zoom})`, transformOrigin: "bottom left" }}
     >
@@ -176,6 +181,7 @@ const missingText = (strict: boolean) => (strict ? "text-critical-text" : "text-
 
 /** บรรทัดสรุปว่ากฎใช้กับโพสต์/รีลไหน */
 function PostScopeLine({ doc, strict }: { doc: BuilderDoc; strict: boolean }) {
+  const t = useT(builderMessages);
   const row = "flex items-start gap-2";
   const icon = "mt-px shrink-0 text-fg-3";
   if (doc.postScope === "specific") {
@@ -183,7 +189,11 @@ function PostScopeLine({ doc, strict }: { doc: BuilderDoc; strict: boolean }) {
     return (
       <li className={row}>
         <ListChecks size={14} className={icon} aria-hidden="true" />
-        {count ? <span>โพสต์/รีลที่เลือก ({count})</span> : <span className={cx("font-medium", missingText(strict))}>ยังไม่ได้เลือกโพสต์หรือรีล</span>}
+        {count ? (
+          <span>{t("scopeSelected", { count })}</span>
+        ) : (
+          <span className={cx("font-medium", missingText(strict))}>{t("scopeNoneSelected")}</span>
+        )}
       </li>
     );
   }
@@ -193,17 +203,17 @@ function PostScopeLine({ doc, strict }: { doc: BuilderDoc; strict: boolean }) {
       <li className={row}>
         <CalendarClock size={14} className={icon} aria-hidden="true" />
         <span className="min-w-0">
-          โพสต์หรือรีลถัดไป
+          {t("scopeNext")}
           <span aria-hidden="true"> · </span>
           {status.kind === "bound" ? (
             <span className="inline-flex flex-wrap items-center gap-x-1 align-bottom">
-              <span className="font-medium text-good-text">ผูกแล้ว</span>
+              <span className="font-medium text-good-text">{t("scopeBound")}</span>
               {status.bound.map((p) => (
                 <PlatformMark key={p} platform={p} />
               ))}
               {status.waiting.length > 0 && (
                 <>
-                  <span aria-hidden="true">·</span> รอ
+                  <span aria-hidden="true">·</span> {t("scopeWaitingFor")}
                   {status.waiting.map((p) => (
                     <PlatformMark key={p} platform={p} />
                   ))}
@@ -211,9 +221,9 @@ function PostScopeLine({ doc, strict }: { doc: BuilderDoc; strict: boolean }) {
               )}
             </span>
           ) : status.kind === "waiting" ? (
-            <span className="font-medium text-accent">รอโพสต์ใหม่</span>
+            <span className="font-medium text-accent">{t("scopeWaiting")}</span>
           ) : (
-            <span>{status.kind === "rearm" ? "เริ่มนับใหม่หลังบันทึก" : "เริ่มนับหลังบันทึก"}</span>
+            <span>{t(status.kind === "rearm" ? "scopeRearm" : "scopeStart")}</span>
           )}
         </span>
       </li>
@@ -222,7 +232,7 @@ function PostScopeLine({ doc, strict }: { doc: BuilderDoc; strict: boolean }) {
   return (
     <li className={row}>
       <Layers size={14} className={icon} aria-hidden="true" />
-      ทุกโพสต์และรีล
+      {t("scopeAny")}
     </li>
   );
 }
@@ -239,6 +249,7 @@ interface TriggerNodeProps {
 const KEYWORD_LIMIT = 6;
 
 export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, showErrors, onMeasure }: TriggerNodeProps) {
+  const t = useT(builderMessages);
   const ref = useMeasure(TRIGGER_NODE, onMeasure);
   const { trigger, platforms, matchType, keywords, triggerPos } = doc;
   const replies = doc.publicReplies.filter((r) => r.trim()).length;
@@ -251,7 +262,7 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, s
       ref={ref}
       data-node={TRIGGER_NODE}
       tabIndex={0}
-      aria-label="การ์ด เมื่อ…"
+      aria-label={t("triggerCardAria")}
       className={cx(
         cardBase,
         "cursor-grab active:cursor-grabbing",
@@ -263,7 +274,7 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, s
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-accent-fg">
           <Zap size={15} strokeWidth={2.25} aria-hidden="true" />
         </span>
-        <span className="text-sm font-semibold">เมื่อ…</span>
+        <span className="text-sm font-semibold">{t("triggerCard")}</span>
         {problem && (
           <span
             className={cx(
@@ -271,7 +282,7 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, s
               showErrors ? "bg-critical-soft text-critical-text" : "bg-warning-soft text-warning-text",
             )}
           >
-            <CircleAlert size={12} aria-hidden="true" /> {showErrors ? "ต้องแก้ไข" : "ยังไม่ครบ"}
+            <CircleAlert size={12} aria-hidden="true" /> {t(showErrors ? "needsFix" : "incomplete")}
           </span>
         )}
       </div>
@@ -279,12 +290,12 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, s
         <div className="flex items-start gap-2.5">
           <TriggerIcon size={16} className="mt-0.5 shrink-0 text-fg-2" aria-hidden="true" />
           <div className="min-w-0">
-            <div className="font-medium leading-snug">{trigger === "comment" ? "มีคนคอมเมนต์ใต้โพสต์" : "มีคนทักแชท (DM) มา"}</div>
+            <div className="font-medium leading-snug">{t(trigger === "comment" ? "whenComment" : "whenDm")}</div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-fg-2">
               {platforms.length ? (
                 platforms.map((p) => <PlatformMark key={p} platform={p} withLabel />)
               ) : (
-                <span className={missingText(showErrors)}>ยังไม่ได้เลือกแพลตฟอร์ม</span>
+                <span className={missingText(showErrors)}>{t("noPlatform")}</span>
               )}
             </div>
           </div>
@@ -292,10 +303,10 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, s
 
         <div className="rounded-lg bg-surface-2 p-2.5">
           {matchType === "any" ? (
-            <div className="text-xs text-fg-2">ทุกข้อความ (ไม่ต้องมีคำเฉพาะ)</div>
+            <div className="text-xs text-fg-2">{t("matchAny")}</div>
           ) : (
             <>
-              <div className="mb-1.5 text-xs text-fg-2">{matchType === "exact" ? "พิมพ์ตรงทั้งข้อความว่า" : "มีคำว่า"}</div>
+              <div className="mb-1.5 text-xs text-fg-2">{t(matchType === "exact" ? "matchExact" : "matchContains")}</div>
               {keywords.length ? (
                 <div className="flex flex-wrap gap-1">
                   {shown.map((k, i) => (
@@ -308,7 +319,7 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, s
                   )}
                 </div>
               ) : (
-                <div className={cx("text-xs font-medium", missingText(showErrors))}>ยังไม่ได้ใส่คำ</div>
+                <div className={cx("text-xs font-medium", missingText(showErrors))}>{t("noKeywords")}</div>
               )}
             </>
           )}
@@ -323,15 +334,15 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, s
               ) : (
                 <MessageSquareOff size={14} className="shrink-0 text-fg-3" aria-hidden="true" />
               )}
-              {replies ? `ตอบใต้คอมเมนต์ ${replies} แบบ (สุ่ม)` : "ไม่ตอบใต้คอมเมนต์"}
+              {replies ? t("publicReplies", { count: replies }) : t("noPublicReply")}
             </li>
           </ul>
         )}
       </div>
       <div className="relative flex h-11 items-center justify-end gap-2 border-t border-line px-3.5 text-xs">
-        {!connected && <span className={cx("mr-auto font-medium", missingText(showErrors))}>ยังไม่ได้เชื่อมข้อความแรก</span>}
-        <span className="font-medium text-fg-2">แล้วส่ง</span>
-        <OutHandle handle="out" connected={connected} label="จุดต่อ แล้วส่ง — ลากไปที่ข้อความแรก" className="-right-[15px]" />
+        {!connected && <span className={cx("mr-auto font-medium", missingText(showErrors))}>{t("noFirstMessage")}</span>}
+        <span className="font-medium text-fg-2">{t("thenSend")}</span>
+        <OutHandle handle="out" connected={connected} label={t("thenSendHandle")} className="-right-[15px]" />
       </div>
     </div>
   );
@@ -366,6 +377,8 @@ interface MessageNodeProps {
 
 export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
   const { step, number, isStart, x, y, selected, dropTarget, linking, unreachable, error, showErrors, stat, stepIds, zoom } = props;
+  const t = useT(builderMessages);
+  const f = useFormat();
   const ref = useMeasure(step.id, props.onMeasure);
   const text = step.text.trim();
   const ctr = stepCtr(stat);
@@ -375,7 +388,7 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
       ref={ref}
       data-node={step.id}
       tabIndex={0}
-      aria-label={`ข้อความ #${number}`}
+      aria-label={t("messageCard", { n: number })}
       className={cx(
         cardBase,
         "cursor-grab active:cursor-grabbing",
@@ -396,9 +409,9 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
     >
       {selected && (
         <NodeToolbar zoom={zoom}>
-          <ToolbarButton onClick={() => props.onEdit(step.id)} icon={<Pencil size={14} aria-hidden="true" />} label="แก้ไข" />
-          <ToolbarButton onClick={() => props.onDuplicate(step.id)} icon={<Copy size={14} aria-hidden="true" />} label="ทำสำเนา" />
-          <ToolbarButton onClick={() => props.onDelete(step.id)} icon={<Trash2 size={14} aria-hidden="true" />} label="ลบ" danger />
+          <ToolbarButton onClick={() => props.onEdit(step.id)} icon={<Pencil size={14} aria-hidden="true" />} label={t("edit")} />
+          <ToolbarButton onClick={() => props.onDuplicate(step.id)} icon={<Copy size={14} aria-hidden="true" />} label={t("duplicate")} />
+          <ToolbarButton onClick={() => props.onDelete(step.id)} icon={<Trash2 size={14} aria-hidden="true" />} label={t("delete")} danger />
         </NodeToolbar>
       )}
 
@@ -424,14 +437,14 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
         </span>
         <span className="flex items-center gap-1.5 text-sm font-semibold">
           <MessageSquareText size={15} className="text-fg-3" aria-hidden="true" />
-          ส่งข้อความ
+          {t("sendMessage")}
         </span>
-        {isStart && <span className="ml-auto rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">ข้อความแรก</span>}
+        {isStart && <span className="ml-auto rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">{t("firstMessage")}</span>}
       </div>
 
       <div className="space-y-2 p-3.5">
         <p className={cx("line-clamp-6 text-sm leading-relaxed break-words whitespace-pre-line", !text && "text-fg-3 italic")}>
-          {text ? <TextWithName text={text} /> : "ยังไม่มีข้อความ — กดเพื่อพิมพ์"}
+          {text ? <TextWithName text={text} /> : t("emptyCardText")}
         </p>
         {step.buttons.length > 0 && (
           <div className="space-y-1.5 pt-1">
@@ -442,14 +455,14 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
                   key={b.id}
                   className="relative flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface-2/70 px-3 text-sm font-medium"
                 >
-                  <span className={cx("truncate", !b.title.trim() && "font-normal text-fg-3")}>{b.title.trim() || "ชื่อปุ่ม"}</span>
+                  <span className={cx("truncate", !b.title.trim() && "font-normal text-fg-3")}>{b.title.trim() || t("buttonNamePlaceholder")}</span>
                   {b.type === "link" ? (
-                    <ExternalLink size={13} className="shrink-0 text-fg-3" aria-label="เปิดลิงก์" />
+                    <ExternalLink size={13} className="shrink-0 text-fg-3" aria-label={t("opensLink")} />
                   ) : (
                     <OutHandle
                       handle={b.id}
                       connected={connected}
-                      label={`จุดต่อของปุ่ม ${b.title || "ไม่มีชื่อ"}`}
+                      label={t("buttonHandle", { button: b.title || t("untitledButton") })}
                       className="-right-[29px]"
                     />
                   )}
@@ -465,13 +478,13 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
           {error && text && (
             <div className={cx("flex items-start gap-1.5 text-xs font-medium", missingText(showErrors))} title={error}>
               <CircleAlert size={13} className="mt-px shrink-0" aria-hidden="true" />
-              <span className="line-clamp-2">{error.replace(/^ข้อความที่ \d+\s*/, "").replace(/^:\s*/, "")}</span>
+              <span className="line-clamp-2">{error}</span>
             </div>
           )}
           {unreachable && (
             <div className="flex items-center gap-1.5 text-xs font-medium text-fg-2">
               <TriangleAlert size={13} className="shrink-0 text-warning" aria-hidden="true" />
-              ยังไม่ได้เชื่อม — จะไม่ถูกส่ง
+              {t("notConnected")}
             </div>
           )}
         </div>
@@ -479,15 +492,11 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
 
       {stat && stat.sent > 0 && (
         <div className="flex items-center gap-1.5 rounded-b-xl border-t border-line bg-surface-2/50 px-3.5 py-2 text-xs text-fg-2 tabular">
-          <span>
-            ส่ง <span className="font-semibold text-fg">{formatNumber(stat.sent)}</span> ครั้ง
-          </span>
+          <span>{t.rich("cardSent", { count: <span className="font-semibold text-fg">{f.number(stat.sent)}</span> })}</span>
           {step.buttons.length > 0 && (
             <>
               <span aria-hidden="true">·</span>
-              <span>
-                อัตราการกด <span className="font-semibold text-fg">{formatPercent(ctr)}</span>
-              </span>
+              <span>{t.rich("cardCtr", { rate: <span className="font-semibold text-fg">{f.percent(ctr)}</span> })}</span>
             </>
           )}
         </div>

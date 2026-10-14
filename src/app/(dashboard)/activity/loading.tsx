@@ -1,10 +1,14 @@
 import { Skeleton } from "@/components/ui";
+import { activityMessages } from "@/lib/i18n/messages/activity";
+import { LocaleText } from "./locale-text";
 
 /** โครงหน้ากิจกรรมระหว่างรอข้อมูล */
 export default function ActivityLoading() {
   return (
     <div role="status">
-      <span className="sr-only">กำลังโหลดกิจกรรม…</span>
+      <span className="sr-only">
+        <LocaleText text={{ th: activityMessages.th.loading, en: activityMessages.en.loading }} />
+      </span>
       <div className="mb-6 sm:mb-8">
         <Skeleton className="h-8 w-32" />
         <Skeleton className="mt-3 h-4 w-full max-w-lg" />

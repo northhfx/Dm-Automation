@@ -3,13 +3,15 @@ import { getDb } from "@/db/client";
 import { rules } from "@/db/schema";
 import { NavTitle } from "@/components/localized";
 import { Badge, PageHeader } from "@/components/ui";
+import { getT } from "@/lib/i18n/server";
 import { getAllTimeRuleStats, rate } from "@/lib/stats";
 import { RuleList, RulesEmptyState, type RuleListItem } from "./rule-list";
 import { NewRuleButton } from "./template-chooser";
 
 export default async function RulesPage() {
   const db = getDb();
-  const [list, stats] = await Promise.all([
+  const [t, list, stats] = await Promise.all([
+    getT("rules"),
     db
       .select({
         id: rules.id,
@@ -62,11 +64,11 @@ export default async function RulesPage() {
     <>
       <PageHeader
         title={<NavTitle name="automation" />}
-        description="ตอบคอมเมนต์และแชทให้อัตโนมัติ เมื่อลูกค้าพิมพ์คำที่คุณตั้งไว้"
+        description={t("pageDescription")}
         badge={
           items.length > 0 && (
             <Badge tone={activeCount > 0 ? "good" : "neutral"} dot>
-              เปิดอยู่ {activeCount} จาก {items.length} กฎ
+              {t("activeBadge", { active: activeCount, total: items.length })}
             </Badge>
           )
         }

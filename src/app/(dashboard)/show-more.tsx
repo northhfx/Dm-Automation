@@ -8,17 +8,16 @@ import { cx } from "@/components/ui";
  * ปุ่ม "แสดงอีก N รายการ" สำหรับรายการยาวในหน้าภาพรวม
  * - table: ส่งแถว <tr> ที่ซ่อนไว้เป็น children และจำนวนคอลัมน์ของตาราง
  * - list: ส่ง <li> ที่ซ่อนไว้เป็น children
+ * - labels: ข้อความบนปุ่ม (ผู้เรียกแปลมาแล้ว) more = ตอนยังซ่อนอยู่ เช่น "แสดงอีก 3 กฎ", less = ตอนเปิดอยู่
  */
 export function ShowMore({
   children,
-  count,
-  noun = "รายการ",
+  labels,
   table,
   listClassName,
 }: {
   children: ReactNode;
-  count: number;
-  noun?: string;
+  labels: { more: string; less: string };
   /** ใช้ภายใน <table>: จำนวนคอลัมน์ */
   table?: { colSpan: number };
   listClassName?: string;
@@ -31,7 +30,7 @@ export function ShowMore({
       onClick={() => setOpen((v) => !v)}
       className="inline-flex h-10 w-full items-center justify-center gap-1.5 text-[13px] font-medium text-fg-2 transition-colors hover:bg-surface-2/60 hover:text-fg"
     >
-      {open ? "ย่อรายการ" : `แสดงอีก ${count} ${noun}`}
+      {open ? labels.less : labels.more}
       <ChevronDown className={cx("size-4 transition-transform", open && "rotate-180")} aria-hidden />
     </button>
   );

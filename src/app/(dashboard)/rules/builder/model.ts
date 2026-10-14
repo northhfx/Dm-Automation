@@ -6,7 +6,10 @@ import type { BoundPosts, MatchType, Platform, PostScope, TriggerType } from "@/
 import { estimateStepHeight, layoutCanvas, type CanvasLayout, type NodeSize } from "@/lib/flows/layout";
 import { FLOW_LIMITS, type CanvasPoint, type FlowButton, type FlowStep } from "@/lib/flows/types";
 import { validateSteps } from "@/lib/flows/validate";
-import { INVALID_POST_ID_MESSAGE, isPostId } from "@/lib/rules/post-scope";
+import { createT } from "@/lib/i18n/core";
+import { DEFAULT_LOCALE, type Locale } from "@/lib/i18n/locale";
+import { builderMessages } from "@/lib/i18n/messages/builder";
+import { invalidPostIdMessage, isPostId } from "@/lib/rules/post-scope";
 import type { RuleFormValues } from "../form-values";
 
 /** id ของการ์ด "เมื่อ…" บนแผนผัง (มี @ จึงไม่มีทางชนกับ id ของข้อความ) */
@@ -267,38 +270,41 @@ export interface Problem {
 /**
  * ตรวจแบบเดียวกับฝั่งเซิร์ฟเวอร์ (validateRule) แต่รวบรวมทุกจุดที่ต้องแก้ แทนที่จะหยุดที่จุดแรก
  * เรียงตามลำดับเดียวกับที่เซิร์ฟเวอร์ตรวจ — ปัญหาแรกที่ blocking คือสิ่งที่ต้องแก้ก่อน
+ * ข้อความตามภาษาของหน้าจัดการ (ไม่ส่ง = ไทย)
  */
-export function findProblems(doc: BuilderDoc): Problem[] {
+export function findProblems(doc: BuilderDoc, locale: Locale = DEFAULT_LOCALE): Problem[] {
+  const t = createT(builderMessages, locale);
   const out: Problem[] = [];
   const add = (key: string, message: string, target: ProblemTarget, blocking = true) => out.push({ key, message, target, blocking });
   const trigger = { kind: "trigger" } as const;
   const name = doc.name.trim();
-  if (!name) add("name", "ตั้งชื่อกฎ (ไว้ดูเองว่ากฎนี้ทำอะไร)", { kind: "name" });
-  else if (name.length > 100) add("name", "ชื่อกฎยาวเกิน 100 ตัวอักษร", { kind: "name" });
-  if (doc.platforms.length === 0) add("platforms", "เลือกอย่างน้อย 1 แพลตฟอร์ม (Facebook หรือ Instagram)", trigger);
-  if (doc.matchType !== "any" && doc.keywords.length === 0) add("keywords", "ใส่คำที่ให้ระบบจับอย่างน้อย 1 คำ (หรือเลือก 'ทุกข้อความ')", trigger);
-  if (doc.keywords.some((k) => k.length > 100)) add("keyword-long", "คำที่ให้จับยาวได้ไม่เกิน 100 ตัวอักษร", trigger);
+  if (!name) add("name", t("nameMissing"), { kind: "name" });
+  else if (name.length > 100) add("name", t("nameTooLong"), { kind: "name" });
+  if (doc.platforms.length === 0) add("platforms", t("platformsMissing"), trigger);
+  if (doc.matchType !== "any" && doc.keywords.length === 0) add("keywords", t("keywordsMissing"), trigger);
+  if (doc.keywords.some((k) => k.length > 100)) add("keyword-long", t("keywordTooLong"), trigger);
   if (doc.trigger === "comment") {
-    if (doc.publicReplies.some((r) => r.trim().length > 500)) add("replies", "ข้อความตอบใต้คอมเมนต์ยาวเกิน 500 ตัวอักษร", trigger);
+    if (doc.publicReplies.some((r) => r.trim().length > 500)) add("replies", t("repliesTooLong"), trigger);
     const postIds = postIdsOf(doc);
-    if (doc.postScope === "specific" && postIds.length === 0) add("posts", "เลือกโพสต์หรือรีลอย่างน้อย 1 รายการ", trigger);
-    else if (postIds.some((id) => !isPostId(id))) add("posts", INVALID_POST_ID_MESSAGE, trigger);
+    if (doc.postScope === "specific" && postIds.length === 0) add("posts", t("postsMissing"), trigger);
+    else if (postIds.some((id) => !isPostId(id))) add("posts", invalidPostIdMessage(locale), trigger);
   }
   if (!doc.startStepId || !doc.steps.some((s) => s.id === doc.startStepId)) {
-    add("start", 'ยังไม่ได้เชื่อมการ์ด "เมื่อ…" กับข้อความแรก — ลากเส้นจากจุด "แล้วส่ง" ไปที่การ์ดข้อความ', trigger);
+    add("start", t("startMissing"), trigger);
   }
 
   // ตรวจข้อความทีละการ์ด: เจอปัญหาแล้วแทนการ์ดนั้นด้วยการ์ดที่ถูกต้องชั่วคราว แล้วตรวจต่อ (เลขการ์ดใน error ยังตรง)
+  // ใช้ชื่อเรียกเดียวกับบนการ์ด ("ข้อความ #2")
+  const options = { locale, stepLabel: (n: number) => t("messageCard", { n }) };
   let steps = orderedSteps(doc);
   for (let guard = 0; guard <= steps.length; guard++) {
-    const result = validateSteps(steps);
+    const result = validateSteps(steps, options);
     if (result.ok) break;
     if (!result.stepId) {
       add("steps", result.error, trigger);
       break;
     }
-    // ใช้ชื่อเรียกเดียวกับบนการ์ด ("ข้อความ #2")
-    add(`step:${result.stepId}`, result.error.replace(/^ข้อความที่ (\d+)/, "ข้อความ #$1"), { kind: "step", id: result.stepId });
+    add(`step:${result.stepId}`, result.error, { kind: "step", id: result.stepId });
     const bad = result.stepId;
     steps = steps.map((s) => (s.id === bad ? { id: s.id, text: "x", buttons: [] } : s));
   }
@@ -307,7 +313,7 @@ export function findProblems(doc: BuilderDoc): Problem[] {
   const numbers = stepNumbers(doc);
   if (doc.startStepId) {
     for (const s of doc.steps) {
-      if (!reach.has(s.id)) add(`lost:${s.id}`, `ข้อความ #${numbers.get(s.id)} ยังไม่ได้เชื่อม — จะไม่ถูกส่ง`, { kind: "step", id: s.id }, false);
+      if (!reach.has(s.id)) add(`lost:${s.id}`, t("unreachable", { n: numbers.get(s.id) ?? "" }), { kind: "step", id: s.id }, false);
     }
   }
   return out;

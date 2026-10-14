@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui";
 
 /** การ์ดจำลองบนแผนผังระหว่างโหลด */
@@ -22,7 +23,7 @@ function CardSkeleton({ className, lines = 2 }: { className: string; lines?: num
  * โครงหน้าแผนผังกฎระหว่างรอเซิร์ฟเวอร์ (ดึงโพสต์ล่าสุดจาก Meta อาจใช้เวลา 1–3 วินาที)
  * หน้าตาเหมือนหน้าจริง: แถบบน 64px · แผนผังลายจุด · แผงด้านขวา (จอใหญ่) / แถบล่าง 56px (มือถือ)
  */
-export function BuilderSkeleton({ label }: { label: string }) {
+export function BuilderSkeleton({ label }: { label: ReactNode }) {
   return (
     <div role="status" className="flex min-h-0 flex-1 flex-col bg-bg">
       <span className="sr-only">{label}</span>

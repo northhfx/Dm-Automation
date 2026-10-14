@@ -1,4 +1,6 @@
-import { formatDateTime } from "@/components/ui";
+import { createT, DEFAULT_LOCALE, formatters, type Locale } from "@/lib/i18n";
+import { commonMessages } from "@/lib/i18n/messages/common";
+import { guideMessages } from "@/lib/i18n/messages/guide";
 import {
   instagramAccountHealth,
   isInstagramAccountUsable,
@@ -6,9 +8,10 @@ import {
   type InstagramAccount,
 } from "@/lib/instagram/accounts";
 
-/** "token ใช้ได้ถึง 11 ธ.ค. 20:04 (โดยประมาณ)" — วันหมดอายุของบัญชี */
-function expiryText(a: Pick<InstagramAccount, "tokenExpiresAt" | "tokenExpiryEstimated">): string {
-  return `${formatDateTime(a.tokenExpiresAt)}${a.tokenExpiryEstimated ? " (โดยประมาณ)" : ""}`;
+/** "11 ธ.ค. 20:04 (โดยประมาณ)" — วันหมดอายุของ token ของบัญชี */
+function expiryText(a: Pick<InstagramAccount, "tokenExpiresAt" | "tokenExpiryEstimated">, locale: Locale): string {
+  const date = formatters(locale).dateTime(a.tokenExpiresAt);
+  return a.tokenExpiryEstimated ? createT(guideMessages, locale)("igExpiryEstimated", { date }) : date;
 }
 
 /**
@@ -17,23 +20,25 @@ function expiryText(a: Pick<InstagramAccount, "tokenExpiresAt" | "tokenExpiryEst
  * ถ้า token ตายหมดแล้ว ขั้นนี้กลับเป็น "ยังไม่เสร็จ" (การ์ดเปิดอยู่) และบอกให้วาง token ใหม่ในข้อ 7
  * webhookOk = Meta ยืนยัน Callback URL ของ Instagram แล้ว หรือเคยได้รับข้อมูลทาง Instagram Login
  * (ยังไม่ครบ → ยังไม่เสร็จ การ์ดไม่พับ เพื่อให้เห็นข้อ 8–11 ที่เหลือ)
+ * locale = ภาษาของข้อความสรุป (ไม่ใส่ = ไทย)
  */
 export function instagramStepStatus(
   accounts: InstagramAccount[],
   now: Date = new Date(),
   webhookOk = true,
+  locale: Locale = DEFAULT_LOCALE,
 ): { done: boolean; summary: string } {
+  const t = createT(guideMessages, locale);
   const ready = accounts.filter((a) => isInstagramAccountUsable(a, now));
   if (ready.length > 0 && !webhookOk) {
-    return {
-      done: false,
-      summary: `เชื่อม @${ready[0].username} แล้ว — เหลือข้อ 8 ตั้ง Webhook ของ Instagram และข้อ 11 เผยแพร่แอป`,
-    };
+    return { done: false, summary: t("igPendingWebhook", { username: ready[0].username }) };
   }
   if (ready.length > 0) {
     return {
       done: true,
-      summary: `เชื่อมแล้ว: ${ready.map((a) => `@${a.username} (token ใช้ได้ถึง ${expiryText(a)})`).join(", ")}`,
+      summary: t("igConnected", {
+        accounts: ready.map((a) => t("igAccountValid", { username: a.username, expiry: expiryText(a, locale) })).join(", "),
+      }),
     };
   }
   const dead = accounts.find((a) => needsNewInstagramToken(instagramAccountHealth(a, now)));
@@ -43,15 +48,15 @@ export function instagramStepStatus(
       done: false,
       summary:
         health === "expired"
-          ? `token ของ @${dead.username} หมดอายุเมื่อ ${expiryText(dead)} — วาง token ใหม่ในข้อ 7`
-          : `token ของ @${dead.username} ใช้ไม่ได้แล้ว — วาง token ใหม่ในข้อ 7`,
+          ? t("igTokenExpired", { username: dead.username, expiry: expiryText(dead, locale) })
+          : t("igTokenInvalid", { username: dead.username }),
     };
   }
   if (accounts.length > 0) {
     return {
       done: false,
-      summary: `เชื่อม @${accounts[0].username} แล้ว แต่ยังไม่รับ webhook — กด "ลองใหม่" ในรายการบัญชีที่ข้อ 7`,
+      summary: t("igNotSubscribed", { username: accounts[0].username, retry: createT(commonMessages, locale)("retry") }),
     };
   }
-  return { done: false, summary: "ให้ระบบตอบคอมเมนต์และ DM ของ Instagram โดยเชื่อมตรงกับ Instagram แยกจาก Facebook" };
+  return { done: false, summary: t("igIntro") };
 }

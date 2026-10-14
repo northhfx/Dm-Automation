@@ -2,7 +2,9 @@
 
 import type { Dispatch, ReactNode } from "react";
 import { ChevronRight, CircleAlert, CircleCheck, Hand, MousePointerClick, Spline, TriangleAlert, Unlink, Zap } from "lucide-react";
-import { Button, cx, formatNumber, formatPercent, Notice } from "@/components/ui";
+import { Button, cx, Notice } from "@/components/ui";
+import { useFormat, useT } from "@/lib/i18n/client";
+import { rulesMessages } from "@/lib/i18n/messages/rules";
 import { targetOf, type BuilderAction, type BuilderDoc, type Problem, type ProblemTarget, type Selection } from "./model";
 import { PanelSection } from "./trigger-panel";
 
@@ -33,16 +35,23 @@ function Tip({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 }
 
 export function OverviewPanel({ doc, selection, problems, numbers, serverError, stats, dispatch, onGoTo }: Props) {
+  const t = useT(rulesMessages);
+  const f = useFormat();
+  const bold = (text: string) => <b className="font-medium text-fg">{text}</b>;
   const blocking = problems.filter((p) => p.blocking);
   const warnings = problems.filter((p) => !p.blocking);
   const edge = selection?.kind === "edge" ? selection.from : null;
   const edgeTarget = edge ? targetOf(doc, edge) : undefined;
   let edgeLabel = "";
   if (edge && edgeTarget) {
-    if (edge.kind === "trigger") edgeLabel = `การ์ด "เมื่อ…" → ข้อความ #${numbers.get(edgeTarget)}`;
+    if (edge.kind === "trigger") edgeLabel = t("edgeFromTrigger", { to: String(numbers.get(edgeTarget)) });
     else {
       const button = doc.steps.find((s) => s.id === edge.stepId)?.buttons.find((b) => b.id === edge.buttonId);
-      edgeLabel = `ปุ่ม "${button?.title.trim() || "ไม่มีชื่อ"}" ของข้อความ #${numbers.get(edge.stepId)} → ข้อความ #${numbers.get(edgeTarget)}`;
+      edgeLabel = t("edgeFromButton", {
+        button: button?.title.trim() || t("untitledButton"),
+        from: String(numbers.get(edge.stepId)),
+        to: String(numbers.get(edgeTarget)),
+      });
     }
   }
 
@@ -52,11 +61,11 @@ export function OverviewPanel({ doc, selection, problems, numbers, serverError, 
         <div className="px-5 pt-5">
           <div className="space-y-3 rounded-xl border border-accent/30 bg-accent-soft/50 p-4">
             <div>
-              <p className="text-xs font-medium text-fg-2">เส้นที่เลือก</p>
+              <p className="text-xs font-medium text-fg-2">{t("selectedEdge")}</p>
               <p className="mt-0.5 text-sm font-medium">{edgeLabel}</p>
             </div>
             <Button variant="danger" size="sm" icon={<Unlink />} onClick={() => dispatch({ type: "disconnect", from: edge })}>
-              ลบเส้นนี้
+              {t("deleteEdge")}
             </Button>
           </div>
         </div>
@@ -64,17 +73,17 @@ export function OverviewPanel({ doc, selection, problems, numbers, serverError, 
 
       {serverError && (
         <div className="px-5 pt-5">
-          <Notice tone="critical" title="บันทึกไม่สำเร็จ">
+          <Notice tone="critical" title={t("saveFailed")}>
             {serverError}
           </Notice>
         </div>
       )}
 
-      <PanelSection title="ก่อนบันทึก" description={blocking.length ? "แตะรายการเพื่อไปแก้ที่การ์ดนั้น" : undefined}>
+      <PanelSection title={t("beforeSave")} description={blocking.length ? t("beforeSaveHint") : undefined}>
         {blocking.length === 0 ? (
           <div className="flex items-center gap-2.5 rounded-lg bg-good-soft px-3 py-2.5 text-sm font-medium text-good-text">
             <CircleCheck size={18} aria-hidden="true" />
-            ครบแล้ว พร้อมบันทึก
+            {t("readyToSave")}
           </div>
         ) : null}
         {(blocking.length > 0 || warnings.length > 0) && (
@@ -104,12 +113,12 @@ export function OverviewPanel({ doc, selection, problems, numbers, serverError, 
       </PanelSection>
 
       {stats && (
-        <PanelSection title="ผลลัพธ์ของกฎนี้" description="นับตั้งแต่เริ่มใช้งาน">
+        <PanelSection title={t("resultsTitle")} description={t("resultsSince")}>
           <dl className="grid grid-cols-3 gap-2 text-center">
             {[
-              ["ทำงาน", formatNumber(stats.triggers), "ครั้ง"],
-              ["ส่ง DM", formatNumber(stats.sent), "ข้อความ"],
-              ["อัตราการกด", formatPercent(stats.ctr), "จากคนที่ได้รับ"],
+              [t("resultRuns"), f.number(stats.triggers), t("resultRunsUnit")],
+              [t("resultSent"), f.number(stats.sent), t("resultSentUnit")],
+              [t("resultCtr"), f.percent(stats.ctr), t("resultCtrUnit")],
             ].map(([label, value, sub]) => (
               <div key={label} className="rounded-lg border border-line bg-surface p-2.5">
                 <dt className="text-xs text-fg-2">{label}</dt>
@@ -121,20 +130,14 @@ export function OverviewPanel({ doc, selection, problems, numbers, serverError, 
         </PanelSection>
       )}
 
-      <PanelSection title="วิธีใช้">
+      <PanelSection title={t("howTo")}>
         <ul className="space-y-3.5">
-          <Tip icon={<MousePointerClick />}>
-            <b className="font-medium text-fg">แตะการ์ด</b>เพื่อแก้ไข · ลากการ์ดเพื่อย้ายตำแหน่ง
-          </Tip>
-          <Tip icon={<Spline />}>
-            <b className="font-medium text-fg">ลากจากจุดกลม</b>ข้างปุ่ม ไปวางที่ว่างเพื่อสร้างข้อความถัดไป หรือวางบนการ์ดเพื่อเชื่อม
-          </Tip>
-          <Tip icon={<Hand />}>
-            <b className="font-medium text-fg">ลากพื้นที่ว่าง</b>เพื่อเลื่อน · Ctrl + ล้อเมาส์ หรือถ่างสองนิ้วเพื่อซูม
-          </Tip>
+          <Tip icon={<MousePointerClick />}>{t.rich("tipTap", { action: bold(t("tipTapAction")) })}</Tip>
+          <Tip icon={<Spline />}>{t.rich("tipConnect", { action: bold(t("tipConnectAction")) })}</Tip>
+          <Tip icon={<Hand />}>{t.rich("tipPan", { action: bold(t("tipPanAction")) })}</Tip>
         </ul>
         <Button variant="secondary" size="sm" icon={<Zap />} onClick={() => dispatch({ type: "select", selection: { kind: "trigger" } })}>
-          ตั้งค่าเงื่อนไข (การ์ด &quot;เมื่อ…&quot;)
+          {t("editTrigger")}
         </Button>
       </PanelSection>
     </div>

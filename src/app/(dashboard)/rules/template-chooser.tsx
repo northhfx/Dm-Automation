@@ -16,6 +16,7 @@ import {
 import { Dialog } from "@/components/dialog";
 import { Badge, Button, cx, Spinner, type ButtonSize } from "@/components/ui";
 import { useT } from "@/lib/i18n/client";
+import type { MessageKey } from "@/lib/i18n/core";
 import { rulesMessages } from "@/lib/i18n/messages/rules";
 
 /*
@@ -24,18 +25,20 @@ import { rulesMessages } from "@/lib/i18n/messages/rules";
  * - TemplateOptions: รายการแบบเริ่มต้น (ใช้ในหน้าต่าง และในหน้าว่างตอนยังไม่มีกฎ)
  */
 
+type RulesKey = MessageKey<typeof rulesMessages>;
+
 interface FlowPart {
   icon: ReactNode;
   /** ชื่อสั้นใต้ไอคอน (แสดงเฉพาะแบบการ์ดใหญ่) */
-  label: string;
+  label: RulesKey;
   /** กรอบเส้นประ = ยังว่าง ให้สร้างเอง */
   empty?: boolean;
 }
 
 interface TemplateOption {
   id: "comment" | "dm" | "blank";
-  title: string;
-  description: string;
+  title: RulesKey;
+  description: RulesKey;
   icon: ReactNode;
   /** ลำดับการทำงานย่อส่วน (ภาพประกอบเท่านั้น) */
   flow: FlowPart[];
@@ -45,36 +48,36 @@ interface TemplateOption {
 const TEMPLATES: TemplateOption[] = [
   {
     id: "comment",
-    title: "คอมเมนต์ → ส่ง DM พร้อมปุ่ม",
-    description: "ตอบใต้คอมเมนต์ แล้วส่ง DM ที่มีปุ่มให้ลูกค้ากดรับรายละเอียด",
+    title: "templateCommentTitle",
+    description: "templateCommentBody",
     icon: <MessageCircle />,
     flow: [
-      { icon: <MessageCircle />, label: "คอมเมนต์" },
-      { icon: <Send />, label: "ส่ง DM" },
-      { icon: <MousePointerClick />, label: "กดปุ่ม" },
-      { icon: <Link2 />, label: "ลิงก์" },
+      { icon: <MessageCircle />, label: "flowComment" },
+      { icon: <Send />, label: "flowSendDm" },
+      { icon: <MousePointerClick />, label: "flowTapButton" },
+      { icon: <Link2 />, label: "flowLink" },
     ],
     recommended: true,
   },
   {
     id: "dm",
-    title: "ตอบแชทตามคำที่ลูกค้าพิมพ์",
-    description: "ลูกค้าทักแชทว่า “ราคา” ระบบตอบกลับพร้อมลิงก์ให้ทันที",
+    title: "templateDmTitle",
+    description: "templateDmBody",
     icon: <MessagesSquare />,
     flow: [
-      { icon: <MessagesSquare />, label: "ทักแชท" },
-      { icon: <Send />, label: "ตอบกลับ" },
-      { icon: <Link2 />, label: "ลิงก์" },
+      { icon: <MessagesSquare />, label: "flowChat" },
+      { icon: <Send />, label: "flowReply" },
+      { icon: <Link2 />, label: "flowLink" },
     ],
   },
   {
     id: "blank",
-    title: "เริ่มจากว่าง",
-    description: "เริ่มจากการ์ดเปล่าใบเดียว แล้วสร้างข้อความและปุ่มเองทั้งหมด",
+    title: "templateBlankTitle",
+    description: "templateBlankBody",
     icon: <Plus />,
     flow: [
-      { icon: <Zap />, label: "เงื่อนไข" },
-      { icon: <SquareDashed />, label: "การ์ดเปล่า", empty: true },
+      { icon: <Zap />, label: "flowTrigger" },
+      { icon: <SquareDashed />, label: "flowEmptyCard", empty: true },
     ],
   },
 ];
@@ -96,6 +99,7 @@ function FlowHint({
   size?: "sm" | "lg";
   className?: string;
 }) {
+  const t = useT(rulesMessages);
   const lg = size === "lg";
   return (
     <span aria-hidden className={cx("flex items-start", className)}>
@@ -126,7 +130,7 @@ function FlowHint({
             >
               {part.icon}
             </span>
-            {lg && <span className="text-[11px] leading-4 whitespace-nowrap text-fg-3">{part.label}</span>}
+            {lg && <span className="text-[11px] leading-4 whitespace-nowrap text-fg-3">{t(part.label)}</span>}
           </span>
         </Fragment>
       ))}
@@ -136,10 +140,11 @@ function FlowHint({
 
 /** ลูกศรท้ายการ์ด — เปลี่ยนเป็นวงหมุนระหว่างรอเปิดหน้าสร้างกฎ */
 function GoIndicator() {
+  const t = useT(rulesMessages);
   const { pending } = useLinkStatus();
   return (
     <span className="flex size-5 shrink-0 items-center justify-center text-fg-3 transition group-hover:translate-x-0.5 group-hover:text-accent">
-      {pending ? <Spinner label="กำลังเปิด" /> : <ChevronRight className="size-[18px]" aria-hidden />}
+      {pending ? <Spinner label={t("opening")} /> : <ChevronRight className="size-[18px]" aria-hidden />}
     </span>
   );
 }
@@ -152,34 +157,35 @@ const optionBase =
  * layout="list": แถวเรียงลงมา (ในหน้าต่าง) · layout="grid": การ์ด 3 ใบเรียงกัน (ในหน้าว่าง)
  */
 export function TemplateOptions({ layout = "list", className }: { layout?: "list" | "grid"; className?: string }) {
+  const t = useT(rulesMessages);
   if (layout === "grid") {
     return (
       <ul className={cx("grid gap-3 lg:grid-cols-3", className)}>
-        {TEMPLATES.map((t) => (
-          <li key={t.id} className="flex">
+        {TEMPLATES.map((tpl) => (
+          <li key={tpl.id} className="flex">
             <Link
-              href={hrefOf(t.id)}
+              href={hrefOf(tpl.id)}
               className={cx(
                 optionBase,
                 "w-full flex-col overflow-hidden",
-                t.recommended ? "border-accent/40 hover:border-accent" : "border-line hover:border-line-strong",
+                tpl.recommended ? "border-accent/40 hover:border-accent" : "border-line hover:border-line-strong",
               )}
             >
               <span
                 className={cx(
                   "flex h-24 items-center justify-center border-b px-4",
-                  t.recommended ? "border-accent/20 bg-accent-soft/60" : "border-line bg-surface-2/60",
+                  tpl.recommended ? "border-accent/20 bg-accent-soft/60" : "border-line bg-surface-2/60",
                 )}
               >
-                <FlowHint flow={t.flow} recommended={t.recommended} size="lg" />
+                <FlowHint flow={tpl.flow} recommended={tpl.recommended} size="lg" />
               </span>
               <span className="flex flex-1 items-start gap-3 p-4">
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-[15px] leading-6 font-semibold text-fg">{t.title}</span>
-                    {t.recommended && <Badge tone="accent">แนะนำ</Badge>}
+                    <span className="text-[15px] leading-6 font-semibold text-fg">{t(tpl.title)}</span>
+                    {tpl.recommended && <Badge tone="accent">{t("recommended")}</Badge>}
                   </span>
-                  <span className="mt-1 block text-sm leading-6 text-fg-2">{t.description}</span>
+                  <span className="mt-1 block text-sm leading-6 text-fg-2">{t(tpl.description)}</span>
                 </span>
                 <span className="mt-0.5">
                   <GoIndicator />
@@ -194,14 +200,14 @@ export function TemplateOptions({ layout = "list", className }: { layout?: "list
 
   return (
     <ul className={cx("space-y-2.5", className)}>
-      {TEMPLATES.map((t) => (
-        <li key={t.id}>
+      {TEMPLATES.map((tpl) => (
+        <li key={tpl.id}>
           <Link
-            href={hrefOf(t.id)}
+            href={hrefOf(tpl.id)}
             className={cx(
               optionBase,
               "items-center gap-3.5 p-3.5 sm:gap-4 sm:p-4",
-              t.recommended
+              tpl.recommended
                 ? "border-accent/40 bg-accent-soft/30 hover:border-accent hover:bg-accent-soft/50"
                 : "border-line hover:border-line-strong hover:bg-surface-2/50",
             )}
@@ -209,18 +215,18 @@ export function TemplateOptions({ layout = "list", className }: { layout?: "list
             <span
               className={cx(
                 "flex size-10 shrink-0 items-center justify-center self-start rounded-lg [&_svg]:size-5",
-                t.recommended ? "bg-accent text-accent-fg" : "bg-surface-2 text-fg-2",
+                tpl.recommended ? "bg-accent text-accent-fg" : "bg-surface-2 text-fg-2",
               )}
             >
-              {t.icon}
+              {tpl.icon}
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-[15px] leading-6 font-semibold text-fg">{t.title}</span>
-                {t.recommended && <Badge tone="accent">แนะนำ</Badge>}
+                <span className="text-[15px] leading-6 font-semibold text-fg">{t(tpl.title)}</span>
+                {tpl.recommended && <Badge tone="accent">{t("recommended")}</Badge>}
               </span>
-              <span className="mt-0.5 block text-[13px] leading-5 text-fg-2">{t.description}</span>
-              <FlowHint flow={t.flow} recommended={t.recommended} className="mt-2.5" />
+              <span className="mt-0.5 block text-[13px] leading-5 text-fg-2">{t(tpl.description)}</span>
+              <FlowHint flow={tpl.flow} recommended={tpl.recommended} className="mt-2.5" />
             </span>
             <GoIndicator />
           </Link>
@@ -253,7 +259,7 @@ export function NewRuleButton({
         open={open}
         onClose={() => setOpen(false)}
         title={t("newAutomation")}
-        description="เลือกแบบที่ใกล้เคียงที่สุด แล้วแก้ข้อความ ปุ่ม และการ์ดได้เองทุกอย่าง"
+        description={t("chooserDescription")}
         icon={<Zap aria-hidden />}
         iconTone="accent"
       >

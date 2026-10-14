@@ -1,4 +1,5 @@
-import { formatNumber } from "@/components/ui";
+import { createT, DEFAULT_LOCALE, type Locale } from "@/lib/i18n";
+import { activityMessages } from "@/lib/i18n/messages/activity";
 
 /** ประเภทกิจกรรมที่นับว่า "ไม่สำเร็จ" (ตัวกรอง "ไม่สำเร็จ" ในหน้ากิจกรรม) */
 export const SEND_FAILED_TYPES = ["dm_failed", "public_reply_failed"];
@@ -13,34 +14,35 @@ export interface FailureSummary {
 }
 
 /**
- * แถบแจ้งเตือนบนหน้ากิจกรรม จากจำนวนรายการไม่สำเร็จใน 24 ชม. (แยกตามประเภท)
+ * แถบแจ้งเตือนบนหน้ากิจกรรม จากจำนวนรายการไม่สำเร็จใน 24 ชม. (แยกตามประเภท) — ข้อความตามภาษาที่ส่งมา (ไม่ส่ง = ไทย)
  * ต่ออายุ token ไม่สำเร็จ ไม่ใช่ "ส่งไม่สำเร็จ" — ไม่งั้นเจ้าของร้านจะไปหาข้อความที่ส่งไม่ถึงลูกค้าซึ่งไม่มีอยู่จริง
  */
-export function failureSummary(counts: Record<string, number>): FailureSummary | null {
-  const sum = (types: string[]) => types.reduce((n, t) => n + (counts[t] ?? 0), 0);
+export function failureSummary(counts: Record<string, number>, locale: Locale = DEFAULT_LOCALE): FailureSummary | null {
+  const t = createT(activityMessages, locale);
+  const sum = (types: string[]) => types.reduce((n, type) => n + (counts[type] ?? 0), 0);
   const send = sum(SEND_FAILED_TYPES);
   const token = sum(TOKEN_FAILED_TYPES);
   if (send === 0 && token === 0) return null;
   if (token === 0) {
     return {
-      title: `ส่งไม่สำเร็จ ${formatNumber(send)} รายการ ใน 24 ชั่วโมงที่ผ่านมา`,
-      description: "กดดูสาเหตุและวิธีแก้ของแต่ละรายการ",
+      title: t("failSendTitle", { count: send }),
+      description: t("failSendDescription"),
       href: "/activity?filter=failed",
-      action: "ดูสาเหตุ",
+      action: t("failSendAction"),
     };
   }
   if (send === 0) {
     return {
-      title: `ต่ออายุ token Instagram ไม่สำเร็จ ${formatNumber(token)} ครั้ง ใน 24 ชั่วโมงที่ผ่านมา`,
-      description: "ไม่ใช่ข้อความที่ส่งไม่ถึงลูกค้า — ดูสถานะ token และวิธีแก้ได้ที่ ตั้งค่า → บัญชี Instagram",
+      title: t("failTokenTitle", { count: token }),
+      description: t("failTokenDescription"),
       href: "/settings#instagram",
-      action: "ไปที่ตั้งค่า",
+      action: t("failTokenAction"),
     };
   }
   return {
-    title: `มีรายการไม่สำเร็จ ${formatNumber(send + token)} รายการ ใน 24 ชั่วโมงที่ผ่านมา`,
-    description: `ส่งข้อความไม่สำเร็จ ${formatNumber(send)} รายการ · ต่ออายุ token Instagram ไม่สำเร็จ ${formatNumber(token)} ครั้ง — กดดูสาเหตุและวิธีแก้ของแต่ละรายการ`,
+    title: t("failBothTitle", { count: send + token }),
+    description: t("failBothDescription", { send, token }),
     href: "/activity?filter=failed",
-    action: "ดูสาเหตุ",
+    action: t("failSendAction"),
   };
 }

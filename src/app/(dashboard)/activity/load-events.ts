@@ -16,7 +16,8 @@ export interface TimelineEvent {
   text: string | null;
   /** ชื่อปุ่มที่แนบไปกับ DM (แยกออกจากข้อความ เพื่อแสดงเป็นปุ่ม) */
   buttons: string[];
-  error: { message: string; code: string | null } | null;
+  /** message = null เมื่อ Meta ไม่ได้บอกสาเหตุมา (หน้าเว็บแสดง "ไม่ทราบสาเหตุ" ตามภาษาที่เลือก) */
+  error: { message: string | null; code: string | null } | null;
   /** เหตุผลที่ข้าม (เฉพาะ type = skipped) */
   skipReason: string | null;
   /**
@@ -36,7 +37,7 @@ function displayName(name: string | null, username: string | null): string | nul
 function readError(meta: Record<string, unknown> | null): TimelineEvent["error"] {
   const err = meta?.error as ErrorMeta | undefined;
   if (!err || typeof err !== "object") return null;
-  const message = typeof err.message === "string" && err.message.trim() ? err.message.trim() : "ไม่ทราบสาเหตุ";
+  const message = typeof err.message === "string" && err.message.trim() ? err.message.trim() : null;
   const code = err.code != null ? [err.code, err.subcode].filter((v) => v != null && v !== "").join(" / ") : null;
   return { message, code: code || null };
 }

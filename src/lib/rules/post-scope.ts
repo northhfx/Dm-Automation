@@ -1,4 +1,7 @@
 import type { BoundPosts, Platform, PostScope } from "@/db/schema";
+import { createT } from "@/lib/i18n/core";
+import { DEFAULT_LOCALE, type Locale } from "@/lib/i18n/locale";
+import { builderMessages } from "@/lib/i18n/messages/builder";
 
 /** Facebook ส่ง post_id มาเป็น "<pageId>_<postId>" ส่วนผู้ใช้อาจกรอกแค่ "<postId>" */
 export function postIdMatches(ruleIds: string[], postId: string | null | undefined): boolean {
@@ -16,7 +19,10 @@ export function isPostId(id: string): boolean {
   return /^[A-Za-z0-9_-]{1,100}$/.test(id);
 }
 
-export const INVALID_POST_ID_MESSAGE = "ใส่ ID ของโพสต์ ไม่ใช่ลิงก์ — เลือกจากรายการโพสต์ล่าสุดด้านบนแทนได้";
+/** ข้อความเมื่อใส่ลิงก์แทน ID ของโพสต์ (ใช้ทั้งในหน้าแผนผังและตอนบันทึก) ตามภาษาของหน้าจัดการ */
+export function invalidPostIdMessage(locale: Locale = DEFAULT_LOCALE): string {
+  return createT(builderMessages, locale)("invalidPostId");
+}
 
 export const POST_SCOPES: readonly PostScope[] = ["specific", "next", "any"];
 

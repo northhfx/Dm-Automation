@@ -25,8 +25,12 @@ import {
 import { PlatformIcon } from "@/components/platform-icon";
 import { SegmentedControl } from "@/components/segmented-control";
 import { Switch } from "@/components/switch";
-import { Badge, Button, buttonStyle, cx, Field, formatDateTime, formatRelativeTime, IconButton, inputClass, Notice, textareaClass } from "@/components/ui";
+import { Badge, Button, buttonStyle, cx, Field, IconButton, inputClass, Notice, textareaClass } from "@/components/ui";
 import type { Platform, PostScope } from "@/db/schema";
+import { useFormat, useT } from "@/lib/i18n/client";
+import type { MessageKey, TFunction } from "@/lib/i18n/core";
+import type { Formatters } from "@/lib/i18n/format";
+import { rulesMessages } from "@/lib/i18n/messages/rules";
 import type { RecentPost } from "@/lib/meta/graph";
 import { nextPostStatus, postIdsOf, splitKeywords, type BuilderAction, type BuilderDoc, type Problem } from "./model";
 import { ChipInput } from "./widgets";
@@ -35,6 +39,9 @@ type DocPatch = Extract<BuilderAction, { type: "patch" }>["patch"];
 type PatchFn = (patch: DocPatch, key?: string) => void;
 
 const MAX_REPLIES = 10;
+
+type RulesKey = MessageKey<typeof rulesMessages>;
+type RulesT = TFunction<RulesKey>;
 
 interface Props {
   doc: BuilderDoc;
@@ -59,6 +66,7 @@ export function PanelSection({ title, description, children }: { title?: string;
 }
 
 export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError }: Props) {
+  const t = useT(rulesMessages);
   const ids = useId();
   const patch: PatchFn = (p, key) => dispatch(patchAction(p, key));
   const has = (key: string) => problems.find((p) => p.key === key)?.message;
@@ -77,12 +85,12 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
         </div>
       )}
 
-      <PanelSection title="ทำงานเมื่อ">
-        <div role="radiogroup" aria-label="ทำงานเมื่อ" className="grid grid-cols-2 gap-2">
+      <PanelSection title={t("runsWhen")}>
+        <div role="radiogroup" aria-label={t("runsWhen")} className="grid grid-cols-2 gap-2">
           {(
             [
-              ["comment", "มีคนคอมเมนต์", "ใต้โพสต์หรือรีล", MessageCircle],
-              ["dm", "มีคนทักแชท", "ส่งข้อความ (DM) มา", Send],
+              ["comment", t("triggerComment"), t("triggerCommentHint"), MessageCircle],
+              ["dm", t("triggerDm"), t("triggerDmHint"), Send],
             ] as const
           ).map(([value, label, hint, Icon]) => {
             const active = doc.trigger === value;
@@ -112,7 +120,7 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
         </div>
       </PanelSection>
 
-      <PanelSection title="แพลตฟอร์ม" description="ใช้กับเพจ Facebook และบัญชี Instagram ที่เชื่อมต่อไว้">
+      <PanelSection title={t("platforms")} description={t("platformsHint")}>
         <div className="grid grid-cols-2 gap-2">
           {(["facebook", "instagram"] as const).map((p) => {
             const on = doc.platforms.includes(p);
@@ -145,37 +153,43 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
         {has("platforms") && <p className="text-xs text-critical-text">{has("platforms")}</p>}
       </PanelSection>
 
-      <PanelSection title="คำที่ให้ระบบจับ">
+      <PanelSection title={t("keywordsTitle")}>
         <SegmentedControl
           block
-          label="วิธีจับคำ"
+          label={t("matchLabel")}
           value={doc.matchType}
           onChange={(v) => patch({ matchType: v })}
           options={[
-            { value: "contains", label: "มีคำนี้" },
-            { value: "exact", label: "ตรงทั้งหมด" },
-            { value: "any", label: "ทุกข้อความ" },
+            { value: "contains", label: t("matchContains") },
+            { value: "exact", label: t("matchExact") },
+            { value: "any", label: t("matchAny") },
           ]}
         />
         <p className="text-xs leading-5 text-fg-3">
-          {doc.matchType === "contains"
-            ? `ทำงานเมื่อ${isComment ? "คอมเมนต์" : "ข้อความ"}มีคำใดคำหนึ่งอยู่ เช่น "สนใจค่ะ" ก็นับคำว่า "สนใจ"`
-            : doc.matchType === "exact"
-              ? `ทำงานเมื่อพิมพ์มาตรงกับคำใดคำหนึ่งทั้งข้อความเท่านั้น`
-              : `ทำงานกับทุก${isComment ? "คอมเมนต์" : "ข้อความ"} ไม่ต้องมีคำเฉพาะ`}
+          {t(
+            doc.matchType === "contains"
+              ? isComment
+                ? "matchContainsCommentHint"
+                : "matchContainsDmHint"
+              : doc.matchType === "exact"
+                ? "matchExactHint"
+                : isComment
+                  ? "matchAnyCommentHint"
+                  : "matchAnyDmHint",
+          )}
         </p>
         {doc.matchType !== "any" && (
           <Field
-            label="คำ"
+            label={t("keywordsLabel")}
             htmlFor={`${ids}-kw`}
             error={has("keywords") || has("keyword-long")}
-            hint="กด Enter หรือพิมพ์ , เพื่อเพิ่มคำ — วางหลายคำพร้อมกันได้"
+            hint={t("keywordsHint")}
           >
             <ChipInput
               id={`${ids}-kw`}
               values={doc.keywords}
               onChange={(keywords) => patch({ keywords })}
-              placeholder="เช่น สนใจ, ราคา, link"
+              placeholder={t("keywordsPlaceholder")}
               invalid={!!(has("keywords") || has("keyword-long"))}
             />
           </Field>
@@ -187,10 +201,7 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
       )}
 
       {isComment && (
-        <PanelSection
-          title="ตอบใต้คอมเมนต์"
-          description="ทุกคนเห็นคำตอบนี้ — ระบบสุ่มใช้ทีละแบบ ดูเป็นธรรมชาติและไม่โดนมองว่าเป็นสแปม (ลบหมด = ไม่ตอบใต้คอมเมนต์)"
-        >
+        <PanelSection title={t("publicReplyTitle")} description={t("publicReplyHint")}>
           <div className="space-y-2">
             {doc.publicReplies.map((reply, i) => (
               <div key={i} className="flex items-center gap-1.5">
@@ -199,9 +210,9 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
                 </span>
                 <input
                   value={reply}
-                  aria-label={`คำตอบแบบที่ ${i + 1}`}
+                  aria-label={t("replyLabel", { n: i + 1 })}
                   maxLength={500}
-                  placeholder="เช่น ส่งรายละเอียดให้ทาง DM แล้วนะคะ"
+                  placeholder={t("replyPlaceholder")}
                   onChange={(e) =>
                     patch({ publicReplies: doc.publicReplies.map((r, j) => (j === i ? e.target.value.replace(/\n/g, " ") : r)) }, `reply:${i}`)
                   }
@@ -209,7 +220,7 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
                 />
                 <IconButton
                   icon={<Trash2 />}
-                  label={`ลบคำตอบแบบที่ ${i + 1}`}
+                  label={t("replyDelete", { n: i + 1 })}
                   size="md"
                   onClick={() => patch({ publicReplies: doc.publicReplies.filter((_, j) => j !== i) })}
                 />
@@ -223,11 +234,11 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
               onClick={() => patch({ publicReplies: [...doc.publicReplies, ""] })}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-accent hover:bg-accent-soft disabled:opacity-50"
             >
-              <Plus size={16} aria-hidden="true" /> เพิ่มแบบ
+              <Plus size={16} aria-hidden="true" /> {t("replyAdd")}
             </button>
             {doc.publicReplies.filter((r) => r.trim()).length > 1 && (
               <span className="inline-flex items-center gap-1 text-xs text-fg-3">
-                <Shuffle size={13} aria-hidden="true" /> สุ่ม {doc.publicReplies.filter((r) => r.trim()).length} แบบ
+                <Shuffle size={13} aria-hidden="true" /> {t("replyRandom", { count: doc.publicReplies.filter((r) => r.trim()).length })}
               </span>
             )}
           </div>
@@ -236,23 +247,18 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
       )}
 
       {isComment && (
-        <PanelSection title="กันส่งซ้ำ">
-          <Switch
-            checked={doc.oncePerUser}
-            onChange={(v) => patch({ oncePerUser: v })}
-            label="ตอบคนเดิมครั้งเดียวต่อโพสต์"
-            description="ถ้าคนเดิมคอมเมนต์หลายครั้งในโพสต์เดียวกัน จะส่ง DM ให้แค่ครั้งแรก"
-          />
+        <PanelSection title={t("onceTitle")}>
+          <Switch checked={doc.oncePerUser} onChange={(v) => patch({ oncePerUser: v })} label={t("onceLabel")} description={t("onceHint")} />
         </PanelSection>
       )}
 
       <details className="group border-b border-line last:border-b-0">
         <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-semibold hover:bg-surface-2/60 [&::-webkit-details-marker]:hidden">
-          ขั้นสูง
+          {t("advanced")}
           <ChevronDown size={16} className="text-fg-3 transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <div className="px-5 pb-5">
-          <Field label="ลำดับความสำคัญ" htmlFor={`${ids}-prio`} hint="ถ้าข้อความตรงหลายกฎ ระบบใช้กฎที่เลขน้อยกว่า (1–1000) · ง่ายกว่านั้น: กดย้ายขึ้น/ลงได้จากปุ่ม ⋮ ในหน้ากฎทั้งหมด">
+          <Field label={t("priority")} htmlFor={`${ids}-prio`} hint={t("priorityHint")}>
             <input
               id={`${ids}-prio`}
               type="number"
@@ -279,10 +285,10 @@ function patchAction(patch: Extract<BuilderAction, { type: "patch" }>["patch"], 
 
 /* ---------------------------------------------------------------- ใช้กับโพสต์หรือรีลไหน */
 
-const SCOPE_OPTIONS: { value: PostScope; title: string; description: string; Icon: LucideIcon }[] = [
-  { value: "specific", title: "โพสต์หรือรีลที่เลือก", description: "เลือกจากโพสต์ล่าสุด หรือใส่ ID เอง", Icon: ListChecks },
-  { value: "next", title: "โพสต์หรือรีลถัดไป", description: "โพสต์หรือรีลแรกที่ลงหลังกดบันทึก", Icon: CalendarClock },
-  { value: "any", title: "ทุกโพสต์และรีล", description: "ใช้กับทุกโพสต์และรีล รวมถึงที่ลงในอนาคต", Icon: Layers },
+const SCOPE_OPTIONS: { value: PostScope; title: RulesKey; description: RulesKey; Icon: LucideIcon }[] = [
+  { value: "specific", title: "postScopeSpecific", description: "postScopeSpecificHint", Icon: ListChecks },
+  { value: "next", title: "postScopeNext", description: "postScopeNextHint", Icon: CalendarClock },
+  { value: "any", title: "postScopeAny", description: "postScopeAnyHint", Icon: Layers },
 ];
 
 const PLATFORM_LABEL: Record<Platform, string> = { facebook: "Facebook", instagram: "Instagram" };
@@ -297,10 +303,11 @@ interface ScopeProps {
 
 /** เลือกแบบเดียวจาก 3 แบบ (radio จริง → ใช้ลูกศรเลื่อนได้) แบบที่เลือกกางรายละเอียดออกมาใต้หัวข้อ */
 function PostScopeSection({ doc, onPatch, problem, recentPosts, postsError }: ScopeProps) {
+  const t = useT(rulesMessages);
   const name = useId();
   return (
-    <PanelSection title="ใช้กับโพสต์หรือรีลไหน">
-      <div role="radiogroup" aria-label="ใช้กับโพสต์หรือรีลไหน" className="space-y-2">
+    <PanelSection title={t("postScopeTitle")}>
+      <div role="radiogroup" aria-label={t("postScopeTitle")} className="space-y-2">
         {SCOPE_OPTIONS.map(({ value, title, description, Icon }) => {
           const on = doc.postScope === value;
           return (
@@ -326,8 +333,8 @@ function PostScopeSection({ doc, onPatch, problem, recentPosts, postsError }: Sc
                   <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-fg">{title}</span>
-                  <span className="block text-xs leading-5 text-fg-3">{description}</span>
+                  <span className="block text-sm font-medium text-fg">{t(title)}</span>
+                  <span className="block text-xs leading-5 text-fg-3">{t(description)}</span>
                 </span>
                 <span
                   aria-hidden="true"
@@ -363,15 +370,16 @@ function PostScopeSection({ doc, onPatch, problem, recentPosts, postsError }: Sc
 const PREVIEW_COUNT = 6;
 
 /** ป้าย "รีล"/"วิดีโอ" — Instagram ส่งรีลมาเป็น VIDEO (ดูจากลิงก์ว่าเป็น /reel/ หรือเปล่า) */
-function mediaLabel(post: RecentPost): string | null {
+function mediaLabel(post: RecentPost): "mediaReel" | "mediaVideo" | null {
   const link = post.permalink ?? "";
-  if (link.includes("/reel/")) return "รีล";
-  if (post.mediaType === "VIDEO") return post.platform === "instagram" && !/\/(p|tv)\//.test(link) ? "รีล" : "วิดีโอ";
-  if (post.platform === "facebook" && link.includes("/videos/")) return "วิดีโอ";
+  if (link.includes("/reel/")) return "mediaReel";
+  if (post.mediaType === "VIDEO") return post.platform === "instagram" && !/\/(p|tv)\//.test(link) ? "mediaReel" : "mediaVideo";
+  if (post.platform === "facebook" && link.includes("/videos/")) return "mediaVideo";
   return null;
 }
 
 function SpecificPosts({ doc, onPatch, problem, recentPosts, postsError }: ScopeProps) {
+  const t = useT(rulesMessages);
   const ids = useId();
   // โพสต์ของแพลตฟอร์มที่เลือกไว้ (+ โพสต์ที่เคยติ๊กไว้ เผื่อเปลี่ยนแพลตฟอร์มทีหลัง จะได้เห็นและเอาออกได้)
   const posts = recentPosts.filter((p) => !doc.platforms.length || doc.platforms.includes(p.platform) || doc.postIds.includes(p.id));
@@ -389,8 +397,8 @@ function SpecificPosts({ doc, onPatch, problem, recentPosts, postsError }: Scope
   return (
     <div className="space-y-3">
       {postsError && (
-        <Notice tone="warning" title="ตอนนี้ดึงโพสต์ล่าสุดไม่ได้">
-          ใส่ ID ของโพสต์เองด้านล่างได้ หรือลองรีเฟรชหน้านี้อีกครั้ง
+        <Notice tone="warning" title={t("postsErrorTitle")}>
+          {t("postsErrorBody")}
           <span className="mt-1 block text-xs break-words opacity-75">{postsError}</span>
         </Notice>
       )}
@@ -398,8 +406,8 @@ function SpecificPosts({ doc, onPatch, problem, recentPosts, postsError }: Scope
       {posts.length > 0 ? (
         <>
           <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-fg-3">แตะเพื่อเลือก (เลือกได้หลายรายการ)</span>
-            {count > 0 && <span className="shrink-0 font-medium text-accent tabular">เลือกแล้ว {count}</span>}
+            <span className="text-fg-3">{t("postsPickHint")}</span>
+            {count > 0 && <span className="shrink-0 font-medium text-accent tabular">{t("postsSelected", { count })}</span>}
           </div>
           <ul className="grid grid-cols-2 gap-2">
             {shown.map((post) => (
@@ -410,29 +418,29 @@ function SpecificPosts({ doc, onPatch, problem, recentPosts, postsError }: Scope
           </ul>
           {posts.length > PREVIEW_COUNT && (
             <Button variant="ghost" size="sm" block iconRight={<ChevronDown className={cx("transition-transform", showAll && "rotate-180")} />} onClick={() => setShowAll((v) => !v)}>
-              {showAll ? "แสดงน้อยลง" : `ดูทั้งหมด ${posts.length} รายการ`}
+              {showAll ? t("showLess") : t("showAll", { count: posts.length })}
             </Button>
           )}
         </>
       ) : (
-        !postsError && <p className="rounded-lg bg-surface-2 px-3 py-2.5 text-xs leading-5 text-fg-2">ยังไม่พบโพสต์ล่าสุด — ใส่ ID ของโพสต์เองด้านล่างได้</p>
+        !postsError && <p className="rounded-lg bg-surface-2 px-3 py-2.5 text-xs leading-5 text-fg-2">{t("noRecentPosts")}</p>
       )}
 
       <details open={manualOpen} onToggle={(e) => setManualOpen(e.currentTarget.open)} className="group/manual rounded-lg border border-line">
         <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg px-3 text-sm font-medium text-fg-2 hover:bg-surface-2/60 hover:text-fg [&::-webkit-details-marker]:hidden">
           <Hash size={15} className="text-fg-3" aria-hidden="true" />
-          ใส่ ID เอง
+          {t("manualIds")}
           {manualCount > 0 && <span className="rounded-full bg-surface-2 px-1.5 text-xs text-fg-2 tabular">{manualCount}</span>}
           <ChevronDown size={16} className="ml-auto text-fg-3 transition-transform group-open/manual:rotate-180" aria-hidden="true" />
         </summary>
         <div className="px-3 pb-3">
-          <Field label="ID ของโพสต์หรือรีล" htmlFor={`${ids}-pid`} hint="คั่นด้วยบรรทัดใหม่หรือจุลภาค — ใช้กับโพสต์เก่าที่ไม่อยู่ในรายการ">
+          <Field label={t("manualIdsLabel")} htmlFor={`${ids}-pid`} hint={t("manualIdsHint")}>
             <textarea
               id={`${ids}-pid`}
               rows={2}
               value={doc.postIdsManual}
               onChange={(e) => onPatch({ postIdsManual: e.target.value }, "postIdsManual")}
-              placeholder="เช่น 1234567890_987654321"
+              placeholder={t("manualIdsPlaceholder")}
               className={cx(textareaClass, "min-h-0")}
             />
           </Field>
@@ -450,6 +458,8 @@ function SpecificPosts({ doc, onPatch, problem, recentPosts, postsError }: Scope
 }
 
 function PostTile({ post, selected, onToggle }: { post: RecentPost; selected: boolean; onToggle: () => void }) {
+  const t = useT(rulesMessages);
+  const f = useFormat();
   const caption = post.caption.trim();
   const media = mediaLabel(post);
   return (
@@ -469,7 +479,7 @@ function PostTile({ post, selected, onToggle }: { post: RecentPost; selected: bo
           <img src={post.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
         ) : (
           <span className="flex h-full w-full items-center justify-center p-3 text-center text-[11px] leading-4 text-fg-2">
-            <span className="line-clamp-5 break-words">{caption || "(ไม่มีข้อความ)"}</span>
+            <span className="line-clamp-5 break-words">{caption || t("noCaption")}</span>
           </span>
         )}
         <span className="absolute bottom-1.5 left-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-surface/90 shadow-xs">
@@ -478,7 +488,7 @@ function PostTile({ post, selected, onToggle }: { post: RecentPost; selected: bo
         {media && (
           <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-surface/90 px-1.5 py-0.5 text-[11px] font-medium text-fg shadow-xs">
             <Clapperboard size={11} aria-hidden="true" />
-            {media}
+            {t(media)}
           </span>
         )}
         <span
@@ -493,8 +503,8 @@ function PostTile({ post, selected, onToggle }: { post: RecentPost; selected: bo
         </span>
       </span>
       <span className="block space-y-0.5 px-2 py-1.5">
-        {post.imageUrl && <span className="line-clamp-2 text-xs leading-4 break-words text-fg">{caption || "(ไม่มีข้อความ)"}</span>}
-        <span className="block text-[11px] text-fg-3 tabular">{post.createdAt ? formatDateTime(post.createdAt) : PLATFORM_LABEL[post.platform]}</span>
+        {post.imageUrl && <span className="line-clamp-2 text-xs leading-4 break-words text-fg">{caption || t("noCaption")}</span>}
+        <span className="block text-[11px] text-fg-3 tabular">{post.createdAt ? f.dateTime(post.createdAt) : PLATFORM_LABEL[post.platform]}</span>
       </span>
     </button>
   );
@@ -517,10 +527,18 @@ function useNow(): number | null {
   return useSyncExternalStore(subscribeNow, readNow, () => null);
 }
 
-/** "ผูกเมื่อสักครู่", "ผูกเมื่อ 5 นาทีที่ผ่านมา", "ผูกเมื่อวาน" */
-function boundAgo(boundAt: string, now: number | null): string {
-  const when = now === null ? formatDateTime(boundAt) : formatRelativeTime(boundAt, new Date(now));
-  return when.startsWith("เมื่อ") ? `ผูก${when}` : `ผูกเมื่อ ${when}`;
+/** เกินนี้ relativeTime แสดงเป็นวันที่ (ตรงกับ format.ts) */
+const RELATIVE_LIMIT_SEC = 7 * 86400;
+
+/** "ผูกเมื่อสักครู่", "ผูกเมื่อ 5 นาทีที่ผ่านมา", "ผูกเมื่อวาน" / "Linked 5 minutes ago", "Linked on Oct 13, 2:05 PM" */
+function boundAgo(boundAt: string, now: number | null, t: RulesT, f: Formatters): string {
+  if (now !== null && Math.abs(Math.round((new Date(boundAt).getTime() - now) / 1000)) < RELATIVE_LIMIT_SEC) {
+    const when = f.relativeTime(boundAt, new Date(now));
+    // ไทย: "เมื่อสักครู่" / "เมื่อวาน" มีคำว่า "เมื่อ" อยู่แล้ว ไม่ต้องเติมซ้ำ
+    return t(when.startsWith("เมื่อ") ? "boundRelativeJoined" : "boundRelative", { when });
+  }
+  // ตอนเรนเดอร์ฝั่งเซิร์ฟเวอร์ (now = null) หรือนานเกิน 7 วัน → วันที่และเวลา
+  return t("boundAbsolute", { when: f.dateTime(boundAt) });
 }
 
 /** Facebook ส่ง id มาเป็น "<pageId>_<postId>" — เทียบได้ทั้งแบบเต็มและแบบสั้น */
@@ -557,17 +575,19 @@ function StatusBox({ icon, title, children, action, tone = "neutral" }: { icon: 
 }
 
 function NextPostInfo({ doc, onPatch, recentPosts }: Pick<ScopeProps, "doc" | "onPatch" | "recentPosts">) {
+  const t = useT(rulesMessages);
+  const f = useFormat();
   const status = nextPostStatus(doc);
   const now = useNow();
   const hasBound = doc.platforms.some((p) => doc.boundPosts[p]);
 
   return (
     <div className="space-y-3">
-      <p className="text-sm leading-6 text-fg-2">ระบบจะใช้กฎนี้กับโพสต์หรือรีลแรกที่คุณลงหลังจากกดบันทึก (Facebook และ Instagram แยกกัน)</p>
+      <p className="text-sm leading-6 text-fg-2">{t("nextIntro")}</p>
 
       {status.kind === "start" && (
-        <StatusBox icon={<Timer />} title="เริ่มนับหลังกดบันทึก">
-          โพสต์หรือรีลที่ลงก่อนหน้านั้นจะไม่ใช้กฎนี้
+        <StatusBox icon={<Timer />} title={t("nextStartTitle")}>
+          {t("nextStartBody")}
         </StatusBox>
       )}
 
@@ -575,14 +595,14 @@ function NextPostInfo({ doc, onPatch, recentPosts }: Pick<ScopeProps, "doc" | "o
         <StatusBox
           tone="accent"
           icon={<RotateCcw />}
-          title="จะเริ่มนับใหม่เมื่อกดบันทึก"
+          title={t("nextRearmTitle")}
           action={
             <Button variant="ghost" size="sm" icon={<Undo2 />} onClick={() => onPatch({ rearmNext: false })}>
-              ยกเลิก
+              {t("nextRearmUndo")}
             </Button>
           }
         >
-          {hasBound ? "ล้างโพสต์ที่ผูกไว้ แล้วรอโพสต์หรือรีลที่ลงหลังจากนั้นแทน" : "รอโพสต์หรือรีลที่ลงหลังจากนั้น"}
+          {hasBound ? t("nextRearmBodyBound") : t("nextRearmBody")}
         </StatusBox>
       )}
 
@@ -591,9 +611,9 @@ function NextPostInfo({ doc, onPatch, recentPosts }: Pick<ScopeProps, "doc" | "o
           <PulseDot className="mt-[7px]" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-fg">
-              กำลังรอโพสต์ใหม่ <span className="font-normal text-fg-2">ตั้งแต่ {formatDateTime(status.since)}</span>
+              {t("nextWaiting")} <span className="font-normal text-fg-2">{t("nextWaitingSince", { when: f.dateTime(status.since) })}</span>
             </p>
-            <p className="mt-0.5 text-xs leading-5 text-fg-2">ลงโพสต์หรือรีลได้เลย ระบบจะผูกให้เองเมื่อมีคนคอมเมนต์ครั้งแรก</p>
+            <p className="mt-0.5 text-xs leading-5 text-fg-2">{t("nextWaitingHint")}</p>
           </div>
         </div>
       )}
@@ -612,9 +632,9 @@ function NextPostInfo({ doc, onPatch, recentPosts }: Pick<ScopeProps, "doc" | "o
                     <p className="text-xs font-medium text-fg-2">{PLATFORM_LABEL[platform]}</p>
                     <p className="flex items-center gap-2 text-sm text-fg">
                       <PulseDot />
-                      กำลังรอโพสต์ใหม่
+                      {t("nextWaiting")}
                     </p>
-                    <p className="text-xs text-fg-3">ตั้งแต่ {formatDateTime(status.since)}</p>
+                    <p className="text-xs text-fg-3">{t("nextSinceLine", { when: f.dateTime(status.since) })}</p>
                   </div>
                 </li>
               );
@@ -640,21 +660,21 @@ function NextPostInfo({ doc, onPatch, recentPosts }: Pick<ScopeProps, "doc" | "o
                   <p className="flex items-center gap-1.5 text-xs font-medium text-fg-2">
                     {PLATFORM_LABEL[platform]}
                     <Badge tone="good" size="sm" icon={<Link2 />}>
-                      ผูกแล้ว
+                      {t("nextBound")}
                     </Badge>
                   </p>
                   <p className={cx("truncate text-sm", post ? "text-fg" : "font-mono text-[13px] text-fg-2")} title={caption || bound.id}>
-                    {post ? caption || "(ไม่มีข้อความ)" : `ID ${bound.id}`}
+                    {post ? caption || t("noCaption") : `ID ${bound.id}`}
                   </p>
-                  <p className="text-xs text-fg-3">{boundAgo(bound.boundAt, now)}</p>
+                  <p className="text-xs text-fg-3">{boundAgo(bound.boundAt, now, t, f)}</p>
                 </div>
                 {post?.permalink && (
                   <a
                     href={post.permalink}
                     target="_blank"
                     rel="noreferrer"
-                    aria-label={`เปิดโพสต์ใน ${PLATFORM_LABEL[platform]}`}
-                    title="เปิดดูโพสต์"
+                    aria-label={t("openPostAria", { platform: PLATFORM_LABEL[platform] })}
+                    title={t("openPostTitle")}
                     className={buttonStyle("ghost", "md", { iconOnly: true })}
                   >
                     <ExternalLink size={16} aria-hidden="true" />
@@ -669,13 +689,9 @@ function NextPostInfo({ doc, onPatch, recentPosts }: Pick<ScopeProps, "doc" | "o
       {(status.kind === "waiting" || status.kind === "bound") && (
         <div className="space-y-1.5">
           <Button variant="secondary" icon={<RotateCcw />} onClick={() => onPatch({ rearmNext: true })}>
-            เริ่มรอโพสต์ถัดไปใหม่
+            {t("rearmButton")}
           </Button>
-          <p className="text-xs leading-5 text-fg-3">
-            {status.kind === "bound"
-              ? "ล้างโพสต์ที่ผูกไว้ แล้วให้กฎนี้ไปใช้กับโพสต์หรือรีลที่ลงหลังกดบันทึกแทน"
-              : "เริ่มนับเวลาใหม่จากตอนกดบันทึก (โพสต์ที่ลงก่อนหน้านั้นจะไม่ใช้กฎนี้)"}
-          </p>
+          <p className="text-xs leading-5 text-fg-3">{status.kind === "bound" ? t("rearmHintBound") : t("rearmHintWaiting")}</p>
         </div>
       )}
     </div>

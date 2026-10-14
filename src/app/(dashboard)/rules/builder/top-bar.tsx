@@ -5,7 +5,10 @@ import type { Ref } from "react";
 import { ArrowLeft, Check, Copy, Save, Trash2 } from "lucide-react";
 import { Menu, MenuItem, MenuSeparator } from "@/components/menu";
 import { Switch } from "@/components/switch";
-import { Button, cx, formatNumber, formatPercent } from "@/components/ui";
+import { Button, cx } from "@/components/ui";
+import { useFormat, useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
+import { rulesMessages } from "@/lib/i18n/messages/rules";
 import { deleteRule, duplicateRule } from "../actions";
 import type { RuleSummaryStats } from "./overview-panel";
 
@@ -24,12 +27,15 @@ interface Props {
 }
 
 export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pending, stats, onName, onActive, onSave }: Props) {
+  const t = useT(rulesMessages);
+  const tCommon = useT(commonMessages);
+  const f = useFormat();
   return (
     <header className="relative z-20 flex h-16 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 sm:gap-3 sm:px-4">
       <Link
         href="/rules"
-        aria-label="กลับไปหน้ากฎทั้งหมด"
-        title="กฎทั้งหมด"
+        aria-label={t("backAria")}
+        title={t("backTitle")}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-fg-2 transition-colors hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
       >
         <ArrowLeft size={20} aria-hidden="true" />
@@ -42,9 +48,9 @@ export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pend
           value={name}
           onChange={(e) => onName(e.target.value)}
           maxLength={100}
-          aria-label="ชื่อกฎ"
+          aria-label={t("nameLabel")}
           aria-invalid={nameInvalid || undefined}
-          placeholder="ตั้งชื่อกฎ เช่น คอมเมนต์ สนใจ → ส่งลิงก์"
+          placeholder={t("namePlaceholder")}
           className={cx(
             "block h-9 w-full min-w-0 truncate rounded-lg border border-transparent bg-transparent px-2 text-base font-semibold text-fg transition-colors placeholder:font-normal placeholder:text-fg-3 hover:border-line focus:border-accent focus:bg-surface focus:ring-4 focus:ring-accent/15 focus:outline-none sm:text-[17px]",
             nameInvalid && "placeholder:text-critical-text/70",
@@ -52,20 +58,20 @@ export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pend
         />
         {stats && (
           <p className="hidden truncate px-2 text-xs text-fg-3 tabular sm:block">
-            ทำงาน {formatNumber(stats.triggers)} ครั้ง · อัตราการกด {formatPercent(stats.ctr)}
+            {t("topStats", { runs: stats.triggers, ctr: f.percent(stats.ctr) })}
           </p>
         )}
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
         <span className="hidden md:block">
-          <Switch checked={active} onChange={onActive} label="เปิดใช้งาน" size="sm" />
+          <Switch checked={active} onChange={onActive} label={t("activeSwitch")} size="sm" />
         </span>
         {/* จอเล็ก: บอกสถานะสั้นๆ ข้างสวิตช์ (ไม่งั้นดูไม่ออกว่าสวิตช์นี้คืออะไร) */}
         <span className="flex items-center gap-1 md:hidden">
-          <Switch checked={active} onChange={onActive} label="เปิดใช้งาน" hideLabel size="sm" />
+          <Switch checked={active} onChange={onActive} label={t("activeSwitch")} hideLabel size="sm" />
           <span aria-hidden="true" className={cx("text-xs font-medium", active ? "text-good-text" : "text-fg-3")}>
-            {active ? "เปิด" : "ปิด"}
+            {active ? t("activeShortOn") : t("activeShortOff")}
           </span>
         </span>
 
@@ -76,37 +82,37 @@ export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pend
           {dirty ? (
             <>
               <span className="h-2 w-2 rounded-full bg-warning" aria-hidden="true" />
-              ยังไม่ได้บันทึก
+              {t("unsaved")}
             </>
           ) : ruleId ? (
             <>
               <Check size={14} aria-hidden="true" />
-              บันทึกแล้ว
+              {t("saved")}
             </>
           ) : null}
         </span>
 
         {ruleId && (
-          <Menu label="ตัวเลือกของกฎนี้">
+          <Menu label={t("ruleMenuLabel")}>
             <MenuItem
               action={duplicateRule}
               fields={{ id: ruleId }}
               icon={<Copy />}
-              hint={dirty ? "ฉบับที่บันทึกล่าสุด" : undefined}
+              hint={dirty ? t("lastSavedVersion") : undefined}
               // ทำสำเนาแล้วจะไปหน้าของสำเนาทันที → ถามก่อนถ้ายังมีการแก้ที่ไม่ได้บันทึก
               confirm={
                 dirty
                   ? {
-                      title: "ทำสำเนาจากฉบับที่บันทึกล่าสุด?",
-                      description: "การแก้ที่ยังไม่ได้บันทึกในกฎนี้จะหายไป ถ้าต้องการเก็บไว้ ให้กดบันทึกก่อน",
-                      confirmLabel: "ทำสำเนา",
+                      title: t("duplicateDirtyTitle"),
+                      description: t("duplicateDirtyBody"),
+                      confirmLabel: t("duplicate"),
                       tone: "primary",
                     }
                   : undefined
               }
-              successMessage="ทำสำเนาแล้ว (ปิดไว้ก่อน)"
+              successMessage={t("duplicated")}
             >
-              ทำสำเนา
+              {t("duplicate")}
             </MenuItem>
             <MenuSeparator />
             <MenuItem
@@ -114,22 +120,22 @@ export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pend
               fields={{ id: ruleId }}
               icon={<Trash2 />}
               tone="danger"
-              confirm={{ title: "ลบกฎนี้?", description: "การ์ดและสถิติของกฎนี้จะหายไป ลบแล้วกู้คืนไม่ได้", confirmLabel: "ลบกฎ" }}
-              successMessage="ลบกฎแล้ว"
+              confirm={{ title: t("deleteThisTitle"), description: t("deleteThisBody"), confirmLabel: t("deleteConfirm") }}
+              successMessage={t("deleted")}
             >
-              ลบกฎ
+              {t("deleteRule")}
             </MenuItem>
           </Menu>
         )}
 
-        <Button onClick={onSave} loading={pending} icon={<Save />} title="บันทึก (Ctrl+S)" className="relative max-sm:px-3">
+        <Button onClick={onSave} loading={pending} icon={<Save />} title={t("saveShortcut")} className="relative max-sm:px-3">
           {pending ? (
             <>
-              <span className="sm:hidden">บันทึก</span>
-              <span className="max-sm:hidden">กำลังบันทึก…</span>
+              <span className="sm:hidden">{tCommon("save")}</span>
+              <span className="max-sm:hidden">{tCommon("saving")}</span>
             </>
           ) : (
-            "บันทึก"
+            tCommon("save")
           )}
           {dirty && !pending && (
             <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border-2 border-surface bg-warning lg:hidden" aria-hidden="true" />

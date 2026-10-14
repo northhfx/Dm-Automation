@@ -6,6 +6,9 @@ import { Button } from "@/components/ui";
 import { ConfirmDialog } from "@/components/dialog";
 import { toFormData } from "@/components/action";
 import { toast } from "@/components/toast";
+import { useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
+import { settingsMessages } from "@/lib/i18n/messages/settings";
 import { disconnectInstagramAction, refreshInstagramTokenAction, resubscribeInstagramAction, type FormResult } from "./actions";
 
 /*
@@ -29,6 +32,7 @@ function ResultButton({
   failure: string;
   children: string;
 }) {
+  const tCommon = useT(commonMessages);
   const [pending, startTransition] = useTransition();
   return (
     <Button
@@ -43,7 +47,7 @@ function ResultButton({
             if (result.ok) toast(success, { tone: "good" });
             else toast(failure, { tone: "critical", description: result.error });
           } catch {
-            toast("ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง", { tone: "critical" });
+            toast(tCommon("actionFailed"), { tone: "critical" });
           }
         })
       }
@@ -55,51 +59,55 @@ function ResultButton({
 
 /** ต่ออายุ token ทันที (ปกติระบบต่ออายุให้เองก่อนหมดอายุ) */
 export function RefreshInstagramTokenButton({ accountId }: { accountId: string }) {
+  const t = useT(settingsMessages);
   return (
     <ResultButton
       run={() => refreshInstagramTokenAction(toFormData({ accountId }))}
       icon={<KeyRound />}
-      pendingText="กำลังต่ออายุ…"
-      success="ต่ออายุ token แล้ว"
-      failure="ยังต่ออายุไม่ได้"
+      pendingText={t("renewing")}
+      success={t("renewed")}
+      failure={t("renewFailed")}
     >
-      ต่ออายุ token
+      {t("renewToken")}
     </ResultButton>
   );
 }
 
 /** ลองให้ Meta ส่งคอมเมนต์/ข้อความของบัญชีนี้มาที่ระบบอีกครั้ง */
 export function ResubscribeInstagramButton({ accountId, username }: { accountId: string; username: string }) {
+  const t = useT(settingsMessages);
+  const tCommon = useT(commonMessages);
   return (
     <ResultButton
       run={() => resubscribeInstagramAction(toFormData({ accountId }))}
       icon={<RefreshCw />}
-      pendingText="กำลังลอง…"
-      success={`@${username} พร้อมใช้งานแล้ว`}
-      failure="ยังเชื่อมต่อไม่สำเร็จ"
+      pendingText={t("trying")}
+      success={t("accountReady", { username })}
+      failure={t("stillNotConnected")}
     >
-      ลองใหม่
+      {tCommon("retry")}
     </ResultButton>
   );
 }
 
 /** ยกเลิกการเชื่อมต่อบัญชี (ถามยืนยันก่อน) */
 export function DisconnectInstagramButton({ accountId, username }: { accountId: string; username: string }) {
+  const t = useT(settingsMessages);
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button variant="danger" icon={<Unplug />} className="max-sm:flex-1" onClick={() => setOpen(true)}>
-        ยกเลิกการเชื่อมต่อ
+        {t("disconnect")}
       </Button>
       <ConfirmDialog
         open={open}
         onClose={() => setOpen(false)}
         onConfirm={() => disconnectInstagramAction(toFormData({ accountId }))}
-        title={`ยกเลิกการเชื่อมต่อ @${username}?`}
-        description="ระบบจะหยุดใช้ Instagram Login กับบัญชีนี้ ถ้าเพจ Facebook ผูกบัญชีนี้ไว้ ระบบจะกลับไปใช้การเชื่อมผ่านเพจแทน กฎ รายชื่อลูกค้า และสถิติเดิมยังอยู่ครบ"
-        confirmLabel="ยกเลิกการเชื่อมต่อ"
-        cancelLabel="ไม่ใช่ตอนนี้"
-        successMessage="ยกเลิกการเชื่อมต่อแล้ว"
+        title={t("igDisconnectTitle", { username })}
+        description={t("igDisconnectBody")}
+        confirmLabel={t("disconnect")}
+        cancelLabel={t("notNow")}
+        successMessage={t("disconnected")}
       />
     </>
   );

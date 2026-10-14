@@ -5,6 +5,8 @@ import { X } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
 import { cx } from "@/components/ui";
 import type { Platform } from "@/db/schema";
+import { useT } from "@/lib/i18n/client";
+import { builderMessages } from "@/lib/i18n/messages/builder";
 
 /** ไอคอนแพลตฟอร์มขนาดเล็ก (ใช้ในการ์ดบนแผนผัง) */
 export function PlatformMark({ platform, withLabel }: { platform: Platform; withLabel?: boolean }) {
@@ -33,6 +35,7 @@ export function ChipInput({
   maxLength?: number;
   invalid?: boolean;
 }) {
+  const t = useT(builderMessages);
   const [draft, setDraft] = useState("");
 
   function add(raw: string[]) {
@@ -78,7 +81,7 @@ export function ChipInput({
           <button
             type="button"
             onClick={() => onChange(values.filter((_, j) => j !== i))}
-            aria-label={`ลบคำ ${v}`}
+            aria-label={t("removeKeyword", { keyword: v })}
             // พื้นที่แตะกว้างกว่าที่เห็น (before) ให้กดโดนง่ายบนมือถือ
             className="relative flex h-6 w-6 items-center justify-center rounded before:absolute before:-inset-2 hover:bg-accent/15 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
           >

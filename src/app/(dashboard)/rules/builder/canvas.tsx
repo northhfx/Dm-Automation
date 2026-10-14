@@ -17,7 +17,9 @@ import {
 } from "react";
 import { LayoutGrid, Maximize, Minus, Plus, Redo2, Undo2, X } from "lucide-react";
 import { cx } from "@/components/ui";
-import type { CanvasPoint } from "@/lib/flows/types";
+import { FLOW_LIMITS, type CanvasPoint } from "@/lib/flows/types";
+import { useT } from "@/lib/i18n/client";
+import { builderMessages } from "@/lib/i18n/messages/builder";
 import type { StepStats } from "@/lib/stats";
 import { boundsOf, clampZoom, edgePath, fitView, toWorld, zoomAt, type View } from "./geometry";
 import {
@@ -97,6 +99,7 @@ const DRAG_THRESHOLD = 4;
 
 export function FlowCanvas(props: Props) {
   const { doc, selection, sizes, numbers, stepErrors, unreachable, stats, dispatch, bottomInset } = props;
+  const t = useT(builderMessages);
   const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ x: 40, y: 40, zoom: 1 });
   const [animate, setAnimate] = useState(false);
@@ -455,7 +458,7 @@ export function FlowCanvas(props: Props) {
     <div
       ref={containerRef}
       role="region"
-      aria-label="แผนผังข้อความ — ลากพื้นที่ว่างเพื่อเลื่อน, ลากจุดที่ปุ่มเพื่อเชื่อมข้อความ"
+      aria-label={t("canvasLabel")}
       className={cx(
         "relative h-full w-full touch-none overflow-clip bg-bg outline-none select-none",
         panning ? "cursor-grabbing" : link ? "cursor-crosshair" : "cursor-default",
@@ -559,8 +562,8 @@ export function FlowCanvas(props: Props) {
               pressedDelete.current = false;
               dispatch({ type: "disconnect", from: selectedEdge.from });
             }}
-            aria-label="ลบเส้นนี้"
-            title="ลบเส้นนี้ (Delete)"
+            aria-label={t("removeLine")}
+            title={t("removeLineTitle")}
             className="absolute flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface text-critical-text shadow-md hover:bg-critical-soft focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
             style={{ left: selectedEdge.mid.x, top: selectedEdge.mid.y, transform: `translate(-50%, -50%) scale(${1 / view.zoom})` }}
           >
@@ -574,7 +577,7 @@ export function FlowCanvas(props: Props) {
           role="status"
           className="pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-fg px-4 py-2 text-xs font-medium whitespace-nowrap text-bg shadow-lg max-sm:top-16"
         >
-          {link.over ? "ปล่อยเพื่อเชื่อมกับการ์ดนี้" : "ปล่อยบนการ์ดเพื่อเชื่อม · ปล่อยที่ว่างเพื่อสร้างข้อความใหม่"}
+          {t(link.over ? "dropToConnect" : "dropHint")}
         </div>
       )}
 
@@ -584,11 +587,11 @@ export function FlowCanvas(props: Props) {
           type="button"
           onClick={addAtCenter}
           disabled={!props.canAdd}
-          title={props.canAdd ? "เพิ่มการ์ดข้อความใหม่" : "ใส่ข้อความได้สูงสุด 20 ข้อความต่อกฎ"}
+          title={props.canAdd ? t("addMessageTitle") : t("maxSteps", { max: String(FLOW_LIMITS.maxSteps) })}
           className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-accent pr-4 pl-3 text-sm font-medium text-accent-fg shadow-md hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg focus-visible:outline-none disabled:opacity-60"
         >
           <Plus size={18} strokeWidth={2.25} aria-hidden="true" />
-          เพิ่มข้อความ
+          {t("addMessage")}
         </button>
       </div>
 
@@ -601,32 +604,32 @@ export function FlowCanvas(props: Props) {
           bottomInset > 0 && "hidden",
         )}
       >
-        <ControlButton label="ย้อนกลับ (Ctrl+Z)" onClick={() => dispatch({ type: "undo" })} disabled={!props.canUndo}>
+        <ControlButton label={t("undo")} onClick={() => dispatch({ type: "undo" })} disabled={!props.canUndo}>
           <Undo2 size={17} aria-hidden="true" />
         </ControlButton>
-        <ControlButton label="ทำซ้ำ (Ctrl+Shift+Z)" onClick={() => dispatch({ type: "redo" })} disabled={!props.canRedo}>
+        <ControlButton label={t("redo")} onClick={() => dispatch({ type: "redo" })} disabled={!props.canRedo}>
           <Redo2 size={17} aria-hidden="true" />
         </ControlButton>
         <span className="mx-1 h-5 w-px bg-line" aria-hidden="true" />
-        <ControlButton label="ซูมออก" onClick={() => zoomBy(1 / 1.2)} disabled={view.zoom <= 0.4 + 1e-6}>
+        <ControlButton label={t("zoomOut")} onClick={() => zoomBy(1 / 1.2)} disabled={view.zoom <= 0.4 + 1e-6}>
           <Minus size={17} aria-hidden="true" />
         </ControlButton>
         <button
           type="button"
           onClick={resetZoom}
-          title="กลับไปขนาด 100%"
+          title={t("zoomReset")}
           className="h-9 min-w-[3.25rem] rounded-lg px-1 text-xs font-medium text-fg-2 tabular hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
         >
           {Math.round(view.zoom * 100)}%
         </button>
-        <ControlButton label="ซูมเข้า" onClick={() => zoomBy(1.2)} disabled={view.zoom >= 1.6 - 1e-6}>
+        <ControlButton label={t("zoomIn")} onClick={() => zoomBy(1.2)} disabled={view.zoom >= 1.6 - 1e-6}>
           <Plus size={17} aria-hidden="true" />
         </ControlButton>
         <span className="mx-1 h-5 w-px bg-line" aria-hidden="true" />
-        <ControlButton label="พอดีจอ" onClick={fit}>
+        <ControlButton label={t("fit")} onClick={fit}>
           <Maximize size={16} aria-hidden="true" />
         </ControlButton>
-        <ControlButton label="จัดเรียงการ์ดอัตโนมัติ" onClick={arrange}>
+        <ControlButton label={t("arrange")} onClick={arrange}>
           <LayoutGrid size={16} aria-hidden="true" />
         </ControlButton>
       </div>

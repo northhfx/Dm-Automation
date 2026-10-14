@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { BoundPosts, MatchType, Platform, PostScope, Rule, TriggerType } from "@/db/schema";
 import type { FlowCanvas, FlowStep } from "@/lib/flows/types";
 import { sanitizeCanvas, validateSteps } from "@/lib/flows/validate";
-import { INVALID_POST_ID_MESSAGE, isPostId, isPostScope } from "@/lib/rules/post-scope";
+import { createT, type MessageKey, type TFunction } from "@/lib/i18n/core";
+import { DEFAULT_LOCALE, type Locale } from "@/lib/i18n/locale";
+import { builderMessages } from "@/lib/i18n/messages/builder";
+import { invalidPostIdMessage, isPostId, isPostScope } from "@/lib/rules/post-scope";
 
 /** ค่าในฟอร์มตั้งกฎ (เก็บเป็นข้อความเพื่อคืนค่ากลับไปให้ฟอร์มเมื่อกรอกผิด) */
 export interface RuleFormValues {
@@ -132,46 +135,63 @@ export function formDataToValues(formData: FormData): RuleFormValues {
   };
 }
 
-const ruleSchema = z.object({
-  name: z.string().min(1, "กรุณาตั้งชื่อกฎ").max(100, "ชื่อกฎยาวเกินไป"),
-  trigger: z.enum(["comment", "dm"]),
-  platforms: z.array(z.enum(["facebook", "instagram"])).min(1, "เลือกอย่างน้อย 1 แพลตฟอร์ม"),
-  matchType: z.enum(["contains", "exact", "any"]),
-  keywords: z.array(z.string().max(100)),
-  postScope: z.enum(["any", "specific", "next"]),
-  postIds: z.array(z.string().max(100, "ID โพสต์ยาวเกินไป")),
-  publicReplies: z.array(z.string().max(500, "ข้อความตอบคอมเมนต์ยาวเกิน 500 ตัวอักษร")),
-  oncePerUser: z.boolean(),
-  priority: z.number().int().min(1).max(1000),
-  active: z.boolean(),
-});
+type BuilderT = TFunction<MessageKey<typeof builderMessages>>;
 
-export type ValidRule = z.infer<typeof ruleSchema> & { steps: FlowStep[]; canvas: FlowCanvas };
+/** โครงสร้างที่ตรวจ (ข้อความ error ตามภาษา) */
+function buildRuleSchema(t: BuilderT) {
+  return z.object({
+    name: z.string().min(1, t("ruleNameMissing")).max(100, t("ruleNameTooLong")),
+    trigger: z.enum(["comment", "dm"]),
+    platforms: z.array(z.enum(["facebook", "instagram"])).min(1, t("rulePlatformsMissing")),
+    matchType: z.enum(["contains", "exact", "any"]),
+    keywords: z.array(z.string().max(100)),
+    postScope: z.enum(["any", "specific", "next"]),
+    postIds: z.array(z.string().max(100, t("postIdTooLong"))),
+    publicReplies: z.array(z.string().max(500, t("replyTooLong"))),
+    oncePerUser: z.boolean(),
+    priority: z.number().int().min(1).max(1000),
+    active: z.boolean(),
+  });
+}
 
+type RuleSchema = ReturnType<typeof buildRuleSchema>;
+
+/** สร้างครั้งเดียวต่อภาษา */
+const ruleSchemas: Partial<Record<Locale, RuleSchema>> = {};
+
+function ruleSchema(locale: Locale): RuleSchema {
+  return (ruleSchemas[locale] ??= buildRuleSchema(createT(builderMessages, locale)));
+}
+
+export type ValidRule = z.infer<RuleSchema> & { steps: FlowStep[]; canvas: FlowCanvas };
+
+/** ตรวจค่าก่อนบันทึก — ข้อความ error ตามภาษาของหน้าจัดการ (ไม่ส่ง = ไทย) */
 export function validateRule(
   values: RuleFormValues,
+  locale: Locale = DEFAULT_LOCALE,
 ): { ok: true; data: ValidRule } | { ok: false; error: string; stepId?: string } {
-  const parsed = ruleSchema.safeParse({
+  const t = createT(builderMessages, locale);
+  const parsed = ruleSchema(locale).safeParse({
     ...values,
     keywords: splitList(values.keywords),
     publicReplies: values.trigger === "comment" ? splitLines(values.publicReplies) : [],
     postScope: values.trigger === "comment" ? values.postScope : "any",
     postIds: values.trigger === "comment" && values.postScope === "specific" ? values.postIds : [],
   });
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? t("invalidData") };
   const data = parsed.data;
   if (data.postScope === "specific" && data.postIds.length === 0) {
-    return { ok: false, error: "เลือกโพสต์หรือรีลอย่างน้อย 1 รายการ (หรือเปลี่ยนเป็น 'ทุกโพสต์และรีล' / 'โพสต์หรือรีลถัดไป')" };
+    return { ok: false, error: t("postsMissingServer") };
   }
   // วางลิงก์ไว้แทน ID → กฎจะไม่ทำงานเลย จึงไม่ให้บันทึก
-  if (data.postIds.some((id) => !isPostId(id))) return { ok: false, error: INVALID_POST_ID_MESSAGE };
+  if (data.postIds.some((id) => !isPostId(id))) return { ok: false, error: invalidPostIdMessage(locale) };
   if (data.matchType !== "any" && data.keywords.length === 0) {
-    return { ok: false, error: "ใส่คำที่ให้ระบบจับอย่างน้อย 1 คำ (หรือเลือก 'ทุกข้อความ')" };
+    return { ok: false, error: t("keywordsMissing") };
   }
   if (values.startStepId === "" || (values.startStepId && values.steps[0]?.id !== values.startStepId)) {
-    return { ok: false, error: 'ยังไม่ได้เชื่อมการ์ด "เมื่อ…" กับข้อความแรกที่จะส่ง — ลากเส้นจากจุด "แล้วส่ง" ไปที่การ์ดข้อความ' };
+    return { ok: false, error: t("startMissingServer") };
   }
-  const steps = validateSteps(values.steps);
+  const steps = validateSteps(values.steps, { locale });
   if (!steps.ok) return { ok: false, error: steps.error, stepId: steps.stepId };
   const canvas = sanitizeCanvas(values.canvas, steps.steps.map((s) => s.id));
   return { ok: true, data: { ...data, steps: steps.steps, canvas } };

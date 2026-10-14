@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { cx } from "@/components/ui";
+import { useT } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/messages/settings";
 
 export interface SettingsNavItem {
   id: string;
@@ -32,6 +34,7 @@ function currentSection(ids: string[]): string {
  * - มือถือ: แถบปุ่มเลื่อนแนวนอน ติดใต้แถบด้านบน
  */
 export function SettingsNav({ items }: { items: SettingsNavItem[] }) {
+  const t = useT(settingsMessages);
   const [active, setActive] = useState(items[0]?.id);
   const chipsRef = useRef<HTMLDivElement>(null);
   const ids = items.map((i) => i.id).join(",");
@@ -78,7 +81,7 @@ export function SettingsNav({ items }: { items: SettingsNavItem[] }) {
     <>
       {/* มือถือ / แท็บเล็ต */}
       <nav
-        aria-label="หมวดการตั้งค่า"
+        aria-label={t("navAriaLabel")}
         className="sticky top-[var(--app-topbar-h)] z-20 -mx-4 border-b border-line bg-bg/90 backdrop-blur-md sm:-mx-6 lg:hidden"
       >
         <div ref={chipsRef} className="no-scrollbar flex gap-1.5 overflow-x-auto px-4 py-2 sm:px-6">
@@ -100,7 +103,7 @@ export function SettingsNav({ items }: { items: SettingsNavItem[] }) {
                 {item.status === "attention" && (
                   <>
                     <span className="size-1.5 rounded-full bg-warning" aria-hidden />
-                    <span className="sr-only">(ต้องตรวจสอบ)</span>
+                    <span className="sr-only">{t("navAttention")}</span>
                   </>
                 )}
               </a>
@@ -110,7 +113,7 @@ export function SettingsNav({ items }: { items: SettingsNavItem[] }) {
       </nav>
 
       {/* เดสก์ท็อป */}
-      <nav aria-label="หมวดการตั้งค่า" className="sticky top-10 hidden self-start lg:block">
+      <nav aria-label={t("navAriaLabel")} className="sticky top-10 hidden self-start lg:block">
         <div className="space-y-5">
           {groups.map((group) => (
             <div key={group}>
@@ -136,7 +139,7 @@ export function SettingsNav({ items }: { items: SettingsNavItem[] }) {
                           {item.status === "attention" && (
                             <>
                               <span className="size-2 shrink-0 rounded-full bg-warning" aria-hidden />
-                              <span className="sr-only">(ต้องตรวจสอบ)</span>
+                              <span className="sr-only">{t("navAttention")}</span>
                             </>
                           )}
                         </a>

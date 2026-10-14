@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 import { ArrowUpRight, Check, ChevronDown } from "lucide-react";
 import { Badge, buttonStyle, cx } from "@/components/ui";
+import { createT, type Locale } from "@/lib/i18n";
+import { guideMessages } from "@/lib/i18n/messages/guide";
 
 /*
  * ชิ้นส่วนของหน้าคู่มือตั้งค่า (ไม่มี hook — ใช้ใน Server Component ได้)
  * ขั้นที่เสร็จแล้วจะพับไว้ (ใช้ <details> ของเบราว์เซอร์ กดเปิดดูใหม่ได้) ขั้นที่ยังไม่เสร็จเปิดไว้เสมอ
+ * คอมโพเนนต์ที่มีข้อความรับ locale จาก GuideView (page.tsx อ่านภาษาจากคุกกี้) — ไฟล์นี้ใช้ฝั่งเซิร์ฟเวอร์เท่านั้น
  */
 
 export type StepState = "done" | "current" | "todo" | "optional";
@@ -35,6 +38,7 @@ export function StepCard({
   title,
   summary,
   optionalLabel,
+  locale,
   children,
 }: {
   n: number;
@@ -44,8 +48,10 @@ export function StepCard({
   summary?: ReactNode;
   /** ป้ายของขั้นที่ไม่บังคับ เช่น "ถ้าใช้ Instagram" (ค่าเริ่มต้น "ทำเมื่อพร้อม") */
   optionalLabel?: string;
+  locale: Locale;
   children: ReactNode;
 }) {
+  const t = createT(guideMessages, locale);
   const current = state === "current";
   return (
     <li id={`step-${n}`} className="scroll-mt-[calc(var(--app-topbar-h)+16px)] lg:scroll-mt-10">
@@ -60,14 +66,14 @@ export function StepCard({
           <StepDot n={n} state={state} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-xs font-medium text-fg-3">ขั้นที่ {n}</span>
+              <span className="text-xs font-medium text-fg-3">{t("stepNumber", { n })}</span>
               {state === "done" && (
                 <Badge tone="good" icon={<Check strokeWidth={2.5} />}>
-                  เสร็จแล้ว
+                  {t("stepDone")}
                 </Badge>
               )}
-              {current && <Badge tone="accent">ขั้นต่อไป</Badge>}
-              {state === "optional" && <Badge tone="neutral">{optionalLabel ?? "ทำเมื่อพร้อม"}</Badge>}
+              {current && <Badge tone="accent">{t("stepCurrent")}</Badge>}
+              {state === "optional" && <Badge tone="neutral">{optionalLabel ?? t("stepWhenReady")}</Badge>}
               {current && optionalLabel && <Badge tone="neutral">{optionalLabel}</Badge>}
             </div>
             <h2 className="mt-0.5 text-base leading-6 font-semibold text-fg">{title}</h2>
@@ -106,23 +112,23 @@ export function SubStep({ n, id, children }: { n: number; id?: string; children:
 }
 
 /** ลิงก์ไปเว็บภายนอก (เปิดแท็บใหม่) ในประโยค */
-export function ExtLink({ href, children }: { href: string; children: ReactNode }) {
+export function ExtLink({ href, locale, children }: { href: string; locale: Locale; children: ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noreferrer" className="font-medium break-words text-accent underline-offset-2 hover:underline">
       {children}
       <ArrowUpRight className="ml-0.5 inline size-3.5 align-[-2px]" aria-hidden />
-      <span className="sr-only"> (เปิดแท็บใหม่)</span>
+      <span className="sr-only"> {createT(guideMessages, locale)("newTab")}</span>
     </a>
   );
 }
 
 /** ปุ่มเปิดเว็บภายนอก (เปิดแท็บใหม่) */
-export function ExtButton({ href, children }: { href: string; children: ReactNode }) {
+export function ExtButton({ href, locale, children }: { href: string; locale: Locale; children: ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noreferrer" className={cx(buttonStyle("secondary"), "max-sm:w-full")}>
       {children}
       <ArrowUpRight aria-hidden />
-      <span className="sr-only">(เปิดแท็บใหม่)</span>
+      <span className="sr-only">{createT(guideMessages, locale)("newTab")}</span>
     </a>
   );
 }

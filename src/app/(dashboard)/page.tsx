@@ -2,7 +2,7 @@ import { ArrowRight, ChartLine, Inbox, ListChecks, MousePointerClick, Plus, Send
 import { getDb } from "@/db/client";
 import { LineChart } from "@/components/line-chart";
 import { SegmentedControl } from "@/components/segmented-control";
-import { ButtonLink, Card, EmptyState, formatNumber, formatPercent, PageHeader, StatTile } from "@/components/ui";
+import { ButtonLink, Card, EmptyState, PageHeader, StatTile } from "@/components/ui";
 import { getSetupStatus, setupProgress } from "@/lib/config";
 import { getFormat, getT } from "@/lib/i18n/server";
 import { getOverview, parseRange, RANGE_OPTIONS, rate, sum } from "@/lib/stats";
@@ -22,12 +22,13 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
     getT("nav"),
     getT("dashboard"),
   ]);
+  const locale = tPage.locale;
   const progress = setupProgress(setup);
-  const t = overview.totals;
-  const sent = sum(t.dmsSent);
-  const comments = sum(t.commentsReceived);
-  const chats = sum(t.dmsReceived);
-  const clicks = t.buttonTaps + t.totalClicks;
+  const totals = overview.totals;
+  const sent = sum(totals.dmsSent);
+  const comments = sum(totals.commentsReceived);
+  const chats = sum(totals.dmsReceived);
+  const clicks = totals.buttonTaps + totals.totalClicks;
   const dailySent = overview.daily.reduce((n, d) => n + d.sent, 0);
   const dailyClicks = overview.daily.reduce((n, d) => n + d.clicks, 0);
   const hasActivity = overview.daily.some((d) => d.sent || d.clicks || d.triggers) || comments + chats > 0;
@@ -56,69 +57,69 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
       />
 
       <div className="space-y-6">
-        {progress.done < progress.total && <SetupBanner status={setup} done={progress.done} total={progress.total} />}
+        {progress.done < progress.total && <SetupBanner status={setup} done={progress.done} total={progress.total} locale={locale} />}
 
         {/* มือถือ 1 + 2×2 · แท็บเล็ต 3 + 2 · จอใหญ่ 5 ช่องเรียงกัน */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <StatTile
             className="col-span-2 md:col-span-1"
-            label="ตรงกับกฎ"
+            label={tPage("statTriggers")}
             icon={<Zap />}
             tone="accent"
-            value={formatNumber(sum(t.triggers))}
+            value={f.number(sum(totals.triggers))}
             detail={
               <>
-                <span className="block">คอมเมนต์/แชทที่ระบบตอบให้</span>
-                <PlatformSplitInline counts={t.triggers} />
+                <span className="block">{tPage("statTriggersDetail")}</span>
+                <PlatformSplitInline counts={totals.triggers} locale={locale} />
               </>
             }
           />
           <StatTile
-            label="DM ที่ส่งสำเร็จ"
+            label={tPage("statSent")}
             icon={<Send />}
             tone="good"
             href="/activity?filter=sent"
-            value={formatNumber(sent)}
+            value={f.number(sent)}
             detail={
               <>
-                <PlatformSplitInline counts={t.dmsSent} />
-                {t.dmsFailed > 0 && <span className="block text-critical-text">ไม่สำเร็จ {formatNumber(t.dmsFailed)}</span>}
+                <PlatformSplitInline counts={totals.dmsSent} locale={locale} />
+                {totals.dmsFailed > 0 && (
+                  <span className="block text-critical-text">{tPage("statSentFailed", { count: totals.dmsFailed })}</span>
+                )}
               </>
             }
           />
           <StatTile
-            label="อัตราการกด"
+            label={tPage("statCtr")}
             icon={<ChartLine />}
             tone="accent"
-            value={formatPercent(rate(t.engagedContacts, t.reachedContacts))}
-            detail={`${formatNumber(t.engagedContacts)} จาก ${formatNumber(t.reachedContacts)} คนที่ได้รับ DM กดปุ่มหรือลิงก์`}
+            value={f.percent(rate(totals.engagedContacts, totals.reachedContacts))}
+            detail={tPage("statCtrDetail", { engaged: totals.engagedContacts, reached: totals.reachedContacts })}
           />
           <StatTile
-            label="กดปุ่ม / คลิกลิงก์"
+            label={tPage("statClicks")}
             icon={<MousePointerClick />}
             tone="warning"
             href="/activity?filter=clicks"
-            value={formatNumber(clicks)}
-            detail={`กดปุ่ม ${formatNumber(t.buttonTaps)} · คลิกลิงก์ ${formatNumber(t.totalClicks)}`}
+            value={f.number(clicks)}
+            detail={tPage("statClicksDetail", { taps: totals.buttonTaps, clicks: totals.totalClicks })}
           />
           <StatTile
-            label="ลูกค้าใหม่"
+            label={tPage("statNewContacts")}
             icon={<UserPlus />}
             tone="neutral"
             href="/contacts"
-            value={formatNumber(t.newContacts)}
-            detail="คนใหม่ที่คอมเมนต์หรือทักแชทตรงกับคำในกฎ"
+            value={f.number(totals.newContacts)}
+            detail={tPage("statNewContactsDetail")}
           />
         </div>
 
         <div className="grid gap-6 xl:grid-cols-3">
           <Card
             className="xl:col-span-2"
-            title="DM ที่ส่ง และการกดปุ่ม/คลิกลิงก์ รายวัน"
+            title={tPage("chartTitle")}
             description={
-              hasActivity
-                ? `รวม ${days} วัน: ส่ง ${formatNumber(dailySent)} ข้อความ · กด/คลิก ${formatNumber(dailyClicks)} ครั้ง`
-                : `${days} วันล่าสุด`
+              hasActivity ? tPage("chartSummary", { days, sent: dailySent, clicks: dailyClicks }) : tPage("chartRangeOnly", { days })
             }
           >
             {hasActivity ? (
@@ -126,61 +127,60 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                 height={300}
                 data={overview.daily}
                 series={[
-                  { key: "sent", label: "DM ที่ส่งสำเร็จ", color: "var(--series-1)" },
-                  { key: "clicks", label: "กดปุ่ม/คลิกลิงก์", color: "var(--series-2)" },
+                  { key: "sent", label: tPage("chartSeriesSent"), color: "var(--series-1)" },
+                  { key: "clicks", label: tPage("chartSeriesClicks"), color: "var(--series-2)" },
                 ]}
               />
             ) : (
               <EmptyState
-                title={`ยังไม่มีข้อมูลใน ${days} วันนี้`}
+                title={tPage("chartEmptyTitle", { days })}
                 icon={<ChartLine />}
                 action={
                   noRules ? (
                     <ButtonLink href="/rules/new" icon={<Plus />}>
-                      สร้างกฎแรก
+                      {tPage("createFirstRule")}
                     </ButtonLink>
                   ) : days < 90 ? (
                     <ButtonLink href="/?range=90" variant="secondary">
-                      ดูช่วง 90 วัน
+                      {tPage("chartEmptyTry90")}
                     </ButtonLink>
                   ) : (
                     <ButtonLink href="/rules" variant="secondary">
-                      ดูกฎอัตโนมัติ
+                      {tPage("viewRules")}
                     </ButtonLink>
                   )
                 }
               >
-                {noRules
-                  ? "สร้างกฎอัตโนมัติก่อน แล้วเมื่อมีคนคอมเมนต์คำที่ตั้งไว้ กราฟจะแสดงที่นี่"
-                  : "เมื่อมีคนคอมเมนต์หรือทักแชทตรงกับกฎ กราฟจะแสดงที่นี่"}
+                {noRules ? tPage("chartEmptyNoRules") : tPage("chartEmptyBody")}
               </EmptyState>
             )}
           </Card>
 
-          <Card title="Facebook กับ Instagram" description="เทียบสองแพลตฟอร์มในช่วงเดียวกัน">
+          <Card title={tPage("platformTitle")} description={tPage("platformDescription")}>
             <PlatformBreakdown
               incoming={{
-                facebook: t.commentsReceived.facebook + t.dmsReceived.facebook,
-                instagram: t.commentsReceived.instagram + t.dmsReceived.instagram,
+                facebook: totals.commentsReceived.facebook + totals.dmsReceived.facebook,
+                instagram: totals.commentsReceived.instagram + totals.dmsReceived.instagram,
               }}
-              incomingHint={`คอมเมนต์ ${formatNumber(comments)} · แชท ${formatNumber(chats)}`}
-              triggers={t.triggers}
-              sent={t.dmsSent}
+              incomingHint={tPage("splitIncomingHint", { comments, chats })}
+              triggers={totals.triggers}
+              sent={totals.dmsSent}
+              locale={locale}
             />
             <div className="mt-5 border-t border-line pt-2">
               <FactList
                 items={[
-                  { label: "ตอบใต้คอมเมนต์", value: `${formatNumber(t.publicReplies)} ครั้ง` },
+                  { label: tPage("factPublicReplies"), value: tPage("factPublicRepliesValue", { count: totals.publicReplies }) },
                   {
-                    label: "ลูกค้าเปิดอ่าน DM",
-                    value: `${formatPercent(rate(t.dmsRead, sent))} (${formatNumber(t.dmsRead)})`,
+                    label: tPage("factRead"),
+                    value: `${f.percent(rate(totals.dmsRead, sent))} (${f.number(totals.dmsRead)})`,
                   },
-                  { label: "ลิงก์ที่ถูกเปิด", value: `${formatNumber(t.linksClicked)} จาก ${formatNumber(t.linksSent)}` },
+                  { label: tPage("factLinks"), value: tPage("factLinksValue", { clicked: totals.linksClicked, sent: totals.linksSent }) },
                   {
-                    label: "ส่งไม่สำเร็จ",
-                    value: formatNumber(t.dmsFailed),
-                    tone: t.dmsFailed > 0 ? "critical" : undefined,
-                    href: t.dmsFailed > 0 ? "/activity?filter=failed" : undefined,
+                    label: tPage("factFailed"),
+                    value: f.number(totals.dmsFailed),
+                    tone: totals.dmsFailed > 0 ? "critical" : undefined,
+                    href: totals.dmsFailed > 0 ? "/activity?filter=failed" : undefined,
                   },
                 ]}
               />
@@ -191,13 +191,13 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
         <div className="grid items-start gap-6 xl:grid-cols-3">
           <Card
             className="xl:col-span-2"
-            title="กฎที่ทำงานมากที่สุด"
-            description={`เรียงตามครั้งที่ทำงานใน ${days} วัน`}
+            title={tPage("topRulesTitle")}
+            description={tPage("topRulesDescription", { days })}
             padding="none"
             actions={
               !noRules && (
                 <ButtonLink href="/rules" variant="ghost" size="sm" iconRight={<ArrowRight />}>
-                  กฎทั้งหมด
+                  {tPage("allRules")}
                 </ButtonLink>
               )
             }
@@ -205,44 +205,44 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             {noRules ? (
               <div className="p-5">
                 <EmptyState
-                  title="ยังไม่มีกฎอัตโนมัติ"
+                  title={tPage("rulesEmptyTitle")}
                   icon={<ListChecks />}
                   compact
                   action={
                     <ButtonLink href="/rules/new" icon={<Plus />}>
-                      สร้างกฎแรก
+                      {tPage("createFirstRule")}
                     </ButtonLink>
                   }
                 >
-                  ตั้งคำที่ลูกค้ามักพิมพ์ เช่น “ราคา” แล้วให้ระบบตอบและส่ง DM ให้อัตโนมัติ
+                  {tPage("rulesEmptyBody")}
                 </EmptyState>
               </div>
             ) : (
-              <RuleTable rules={overview.rules} />
+              <RuleTable rules={overview.rules} locale={locale} />
             )}
           </Card>
 
           <Card
-            title="กิจกรรมล่าสุด"
+            title={tPage("recentTitle")}
             padding="none"
             actions={
               recent.items.length > 0 && (
                 <ButtonLink href="/activity" variant="ghost" size="sm" iconRight={<ArrowRight />}>
-                  ดูทั้งหมด
+                  {tPage("recentViewAll")}
                 </ButtonLink>
               )
             }
           >
             {recent.items.length === 0 ? (
               <div className="p-5">
-                <EmptyState title="ยังไม่มีกิจกรรม" icon={<Inbox />} compact>
-                  ลองคอมเมนต์ที่โพสต์ของเพจ รายการจะขึ้นที่นี่ภายในไม่กี่วินาที
+                <EmptyState title={tPage("recentEmptyTitle")} icon={<Inbox />} compact>
+                  {tPage("recentEmptyBody")}
                 </EmptyState>
               </div>
             ) : (
               <ul className="divide-y divide-line">
                 {recent.items.map((e) => (
-                  <TimelineItemCompact key={e.id} event={e} now={now} />
+                  <TimelineItemCompact key={e.id} event={e} now={now} locale={locale} />
                 ))}
               </ul>
             )}

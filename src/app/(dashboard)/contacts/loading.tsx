@@ -1,10 +1,14 @@
 import { Skeleton } from "@/components/ui";
+import { contactsMessages } from "@/lib/i18n/messages/contacts";
+import { LocaleText } from "../activity/locale-text";
 
 /** โครงหน้ารายชื่อลูกค้าระหว่างรอข้อมูล */
 export default function ContactsLoading() {
   return (
     <div role="status">
-      <span className="sr-only">กำลังโหลดรายชื่อลูกค้า…</span>
+      <span className="sr-only">
+        <LocaleText text={{ th: contactsMessages.th.loading, en: contactsMessages.en.loading }} />
+      </span>
       <div className="mb-6 sm:mb-8">
         <Skeleton className="h-8 w-44" />
         <Skeleton className="mt-3 h-4 w-full max-w-md" />

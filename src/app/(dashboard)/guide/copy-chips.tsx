@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button, cx } from "@/components/ui";
 import { toast } from "@/components/toast";
+import { useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
 
 async function writeClipboard(text: string) {
   try {
@@ -22,8 +24,21 @@ async function writeClipboard(text: string) {
 /**
  * รายการคำ (เช่น ชื่อ permission) ที่กดคัดลอกได้ทีละคำ + ปุ่มคัดลอกทั้งหมด
  * ใช้ในขั้นที่ต้องพิมพ์ค้นหาทีละตัวในเว็บ Meta
+ * ข้อความของคู่มือส่งมาจาก GuideView (แปลฝั่งเซิร์ฟเวอร์ — ไม่ต้องส่งข้อความทั้งหน้าคู่มือไปที่เบราว์เซอร์)
+ * listLabel = คำอธิบายรายการสำหรับโปรแกรมอ่านหน้าจอ, copiedAllMessage = ข้อความแจ้งหลังกดคัดลอกทั้งหมด
  */
-export function CopyChips({ items, allLabel = "คัดลอกทั้งหมด" }: { items: string[]; allLabel?: string }) {
+export function CopyChips({
+  items,
+  allLabel,
+  listLabel,
+  copiedAllMessage,
+}: {
+  items: string[];
+  allLabel: string;
+  listLabel: string;
+  copiedAllMessage: string;
+}) {
+  const t = useT(commonMessages);
   const [copied, setCopied] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -38,15 +53,15 @@ export function CopyChips({ items, allLabel = "คัดลอกทั้งห
 
   return (
     <div className="space-y-2.5">
-      <ul className="flex flex-wrap gap-1.5" aria-label="กดเพื่อคัดลอกทีละรายการ">
+      <ul className="flex flex-wrap gap-1.5" aria-label={listLabel}>
         {items.map((item) => {
           const done = copied === item;
           return (
             <li key={item}>
               <button
                 type="button"
-                onClick={() => copy(item, item, `คัดลอก ${item} แล้ว`)}
-                aria-label={`คัดลอก ${item}`}
+                onClick={() => copy(item, item, t("copiedLabel", { label: item }))}
+                aria-label={t("copyLabel", { label: item })}
                 className={cx(
                   "group inline-flex h-10 items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs transition-colors sm:h-8 sm:px-2",
                   done
@@ -69,7 +84,7 @@ export function CopyChips({ items, allLabel = "คัดลอกทั้งห
         variant="secondary"
         size="sm"
         icon={copied === "*" ? <Check /> : <Copy />}
-        onClick={() => copy(items.join(", "), "*", `คัดลอกทั้ง ${items.length} รายการแล้ว`)}
+        onClick={() => copy(items.join(", "), "*", copiedAllMessage)}
         className="max-sm:h-10"
       >
         {allLabel}
