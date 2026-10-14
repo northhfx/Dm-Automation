@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from "lucide-react";
+import { useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
 import { cx } from "./ui";
 
 /*
@@ -18,8 +20,15 @@ export interface ToastOptions {
   tone?: ToastTone;
   /** ข้อความรองบรรทัดที่สอง */
   description?: string;
-  /** มิลลิวินาที (ค่าเริ่มต้น 4000, critical 7000) */
+  /** มิลลิวินาที (ค่าเริ่มต้น 4000, มีปุ่ม action 8000, critical 7000) */
   duration?: number;
+  /** ปุ่มในข้อความแจ้งเตือน เช่น { label: "เลิกทำ", onClick: undo } — กดแล้ว toast ปิดเอง */
+  action?: ToastAction;
+}
+
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
 }
 
 interface ToastItem {
@@ -28,6 +37,7 @@ interface ToastItem {
   description?: string;
   tone: ToastTone;
   duration: number;
+  action?: ToastAction;
 }
 
 let items: ToastItem[] = [];
@@ -48,14 +58,24 @@ function subscribe(listener: () => void) {
 export function toast(message: string, options: ToastOptions = {}): number {
   const tone = options.tone ?? "neutral";
   const id = nextId++;
-  // ข้อความเดิมซ้ำติดกัน (เช่น กดปุ่มรัวๆ) แสดงอันเดียวพอ
-  items = [...items.filter((t) => t.message !== message), { id, message, description: options.description, tone, duration: options.duration ?? (tone === "critical" ? 7000 : 4000) }].slice(-4);
+  const duration = options.duration ?? (tone === "critical" ? 7000 : options.action ? 8000 : 4000);
+  items = [
+    // ข้อความเดิมซ้ำติดกัน (เช่น กดปุ่มรัวๆ) แสดงอันเดียวพอ — ยกเว้น toast ที่มีปุ่ม (เช่น "เลิกทำ"):
+    // แต่ละอันเลิกทำคนละรายการ ถ้ารวมกัน กด "เสร็จแล้ว" สองแถวติดกันจะเลิกทำแถวแรกจาก toast ไม่ได้
+    ...items.filter((t) => t.message !== message || t.action !== undefined || options.action !== undefined),
+    { id, message, description: options.description, tone, duration, action: options.action },
+  ].slice(-4);
   emit();
   return id;
 }
 
 toast.success = (message: string, options: Omit<ToastOptions, "tone"> = {}) => toast(message, { ...options, tone: "good" });
 toast.error = (message: string, options: Omit<ToastOptions, "tone"> = {}) => toast(message, { ...options, tone: "critical" });
+
+/** toast ที่แสดงอยู่ตอนนี้ (ใช้ในเทส) */
+export function activeToasts(): readonly ToastItem[] {
+  return items;
+}
 
 export function dismissToast(id: number) {
   items = items.filter((t) => t.id !== id);
@@ -124,6 +144,7 @@ export function Toaster() {
 }
 
 function ToastView({ item }: { item: ToastItem }) {
+  const t = useT(commonMessages);
   const [paused, setPaused] = useState(false);
   useEffect(() => {
     if (paused) return;
@@ -144,10 +165,22 @@ function ToastView({ item }: { item: ToastItem }) {
         <p className="font-medium">{item.message}</p>
         {item.description && <p className="text-fg-2">{item.description}</p>}
       </div>
+      {item.action && (
+        <button
+          type="button"
+          onClick={() => {
+            dismissToast(item.id);
+            item.action?.onClick();
+          }}
+          className="-my-1 h-8 shrink-0 rounded-lg px-2.5 text-sm font-semibold whitespace-nowrap text-accent transition-colors hover:bg-accent-soft"
+        >
+          {item.action.label}
+        </button>
+      )}
       <button
         type="button"
         onClick={() => dismissToast(item.id)}
-        aria-label="ปิดข้อความแจ้งเตือน"
+        aria-label={t("closeNotification")}
         className={cx("-my-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-fg-3 transition-colors hover:bg-surface-2 hover:text-fg")}
       >
         <X className="size-4" aria-hidden />

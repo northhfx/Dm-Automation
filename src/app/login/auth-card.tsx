@@ -4,6 +4,7 @@ import { ChartNoAxesColumn, Database, MessageCircleReply, Send, Zap } from "luci
 import { CopyField } from "@/components/copy-field";
 import { LogoMark } from "@/components/logo";
 import { Avatar, Badge, PlatformIcon, cx } from "@/components/ui";
+import { getT } from "@/lib/i18n/server";
 import { ReloadButton } from "./login-form";
 
 /*
@@ -14,7 +15,8 @@ import { ReloadButton } from "./login-form";
 
 const PRODUCT_NAME = "DM Automation";
 
-export function AuthShell({ children, wide }: { children: ReactNode; wide?: boolean }) {
+export async function AuthShell({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  const t = await getT("auth");
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-2">
       <BrandPanel />
@@ -25,9 +27,9 @@ export function AuthShell({ children, wide }: { children: ReactNode; wide?: bool
               <LogoMark size={44} />
               <p className="mt-3 text-lg leading-7 font-semibold tracking-tight text-fg">{PRODUCT_NAME}</p>
               <p className="mt-0.5 text-sm leading-6 text-fg-2">
-                ตอบคอมเมนต์และส่ง DM อัตโนมัติ
+                {t("taglineLine1")}
                 <br />
-                สำหรับ Facebook และ Instagram
+                {t("taglineLine2")}
               </p>
             </div>
             {children}
@@ -68,16 +70,17 @@ export function AuthCard({
   );
 }
 
-function AuthFooter() {
+async function AuthFooter() {
+  const t = await getT("auth");
   const link = "inline-flex h-10 items-center rounded-md px-2 transition-colors hover:text-fg";
   return (
     <footer className="flex flex-wrap items-center justify-center gap-x-1 px-4 pb-4 text-xs text-fg-3">
       <Link href="/privacy" className={link}>
-        นโยบายความเป็นส่วนตัว
+        {t("privacy")}
       </Link>
       <span aria-hidden>·</span>
       <Link href="/data-deletion" className={link}>
-        การลบข้อมูล
+        {t("dataDeletion")}
       </Link>
     </footer>
   );
@@ -86,12 +89,13 @@ function AuthFooter() {
 // ---------------- แผงแนะนำระบบ (เดสก์ท็อปเท่านั้น) ----------------
 
 const FEATURES = [
-  { icon: <MessageCircleReply aria-hidden />, label: "ตอบคอมเมนต์ให้เอง" },
-  { icon: <Send aria-hidden />, label: "ส่ง DM พร้อมปุ่มกด" },
-  { icon: <ChartNoAxesColumn aria-hidden />, label: "ดูสถิติได้ทุกวัน" },
-];
+  { icon: <MessageCircleReply aria-hidden />, label: "featureReplies" },
+  { icon: <Send aria-hidden />, label: "featureDm" },
+  { icon: <ChartNoAxesColumn aria-hidden />, label: "featureStats" },
+] as const;
 
-function BrandPanel() {
+async function BrandPanel() {
+  const [t, tCommon] = await Promise.all([getT("auth"), getT("common")]);
   return (
     <aside className="relative hidden min-w-0 overflow-hidden border-r border-line bg-surface lg:flex lg:flex-col">
       {/* พื้นหลังลายจุดแบบเดียวกับหน้าสร้างกฎ + แสงสีหลักจางๆ */}
@@ -111,19 +115,17 @@ function BrandPanel() {
           <LogoMark size={32} />
           <span className="leading-tight">
             <span className="block text-[15px] font-semibold tracking-tight text-fg">{PRODUCT_NAME}</span>
-            <span className="block text-[11px] text-fg-3">ตอบแชทอัตโนมัติ</span>
+            <span className="block text-[11px] text-fg-3">{tCommon("tagline")}</span>
           </span>
         </div>
 
         <div className="my-auto w-full max-w-[480px] py-12">
           <p className="text-[28px] leading-[1.4] font-semibold tracking-tight text-fg">
-            ลูกค้าคอมเมนต์ปุ๊บ
+            {t("headlineLine1")}
             <br />
-            ตอบกลับและส่ง DM ให้ทันที
+            {t("headlineLine2")}
           </p>
-          <p className="mt-3 text-[15px] leading-7 text-fg-2">
-            ตั้งกฎครั้งเดียว ระบบจะตอบคอมเมนต์และส่งข้อความบน Facebook และ Instagram ให้ร้านคุณตลอด 24 ชั่วโมง
-          </p>
+          <p className="mt-3 text-[15px] leading-7 text-fg-2">{t("brandBody")}</p>
           <ChatPreview />
         </div>
 
@@ -133,7 +135,7 @@ function BrandPanel() {
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent [&_svg]:size-4">
                 {f.icon}
               </span>
-              {f.label}
+              {t(f.label)}
             </li>
           ))}
         </ul>
@@ -143,43 +145,44 @@ function BrandPanel() {
 }
 
 /** ภาพตัวอย่าง: คอมเมนต์ → ตอบใต้คอมเมนต์ → ส่ง DM พร้อมปุ่ม (เป็นภาพประกอบเท่านั้น กดไม่ได้) */
-function ChatPreview() {
+async function ChatPreview() {
+  const t = await getT("auth");
   const bubble = "rounded-2xl rounded-tl-md px-3 py-2 text-sm leading-6";
   return (
     <div aria-hidden className="mt-10 select-none">
       <div className="w-[88%] rounded-xl border border-line bg-surface p-4 shadow-sm">
         <div className="flex items-center gap-1.5 text-xs text-fg-3">
           <PlatformIcon platform="instagram" size={14} />
-          คอมเมนต์ใต้โพสต์
+          {t("previewCommentLabel")}
         </div>
         <div className="mt-3 flex items-start gap-2.5">
-          <Avatar name="มะลิ" size="md" />
+          <Avatar name={t("previewCustomer")} size="md" />
           <div className={cx(bubble, "bg-surface-2")}>
-            <span className="block text-xs font-semibold text-fg">มะลิ</span>
-            <span className="text-fg-2">สนใจค่ะ ราคาเท่าไหร่คะ</span>
+            <span className="block text-xs font-semibold text-fg">{t("previewCustomer")}</span>
+            <span className="text-fg-2">{t("previewComment")}</span>
           </div>
         </div>
         <div className="mt-2 ml-[42px] flex items-start gap-2">
-          <Avatar name="ร้านของคุณ" size="sm" />
-          <div className={cx(bubble, "bg-accent-soft text-fg")}>ส่งรายละเอียดทาง DM แล้วนะคะ</div>
+          <Avatar name={t("previewShop")} size="sm" />
+          <div className={cx(bubble, "bg-accent-soft text-fg")}>{t("previewReply")}</div>
         </div>
       </div>
 
       <div className="flex items-center gap-3 py-2 pl-9">
         <span className="h-8 border-l-2 border-dashed border-accent/40" />
         <Badge tone="accent" icon={<Zap aria-hidden />}>
-          ส่ง DM อัตโนมัติ
+          {t("previewAutoDm")}
         </Badge>
       </div>
 
       <div className="ml-auto w-[88%] rounded-xl border border-line bg-surface p-4 shadow-md">
         <div className="flex items-center gap-1.5 text-xs text-fg-3">
           <PlatformIcon platform="instagram" size={14} />
-          ข้อความส่วนตัว
+          {t("previewDmLabel")}
         </div>
-        <div className={cx(bubble, "mt-3 bg-surface-2 text-fg")}>สวัสดีค่ะคุณมะลิ ราคาและโปรวันนี้อยู่ด้านล่างเลยค่ะ</div>
+        <div className={cx(bubble, "mt-3 bg-surface-2 text-fg")}>{t("previewDm")}</div>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          {["ดูราคา", "สั่งซื้อเลย"].map((label) => (
+          {[t("previewButtonPrice"), t("previewButtonOrder")].map((label) => (
             <span
               key={label}
               className="rounded-lg border border-line-strong bg-surface py-1.5 text-center text-sm font-medium text-accent"
@@ -207,33 +210,28 @@ function Step({ n, children }: { n: number; children: ReactNode }) {
 }
 
 /** แสดงเมื่อยังไม่ได้เชื่อมฐานข้อมูลบน Railway (ผู้ใช้จะเห็นหน้านี้แทนหน้า error) */
-export function MissingDatabase() {
+export async function MissingDatabase() {
+  const t = await getT("auth");
   return (
     <AuthShell wide>
       <div className="rounded-2xl border border-line bg-surface p-6 shadow-sm sm:p-8">
         <span className="flex size-11 items-center justify-center rounded-xl bg-warning-soft text-warning-text [&_svg]:size-[22px]">
           <Database aria-hidden />
         </span>
-        <h1 className="mt-4 text-2xl leading-9 font-semibold tracking-tight text-fg">อีกนิดเดียว: ยังไม่ได้เชื่อมฐานข้อมูล</h1>
-        <p className="mt-1.5 text-sm leading-6 text-fg-2">ระบบเปิดขึ้นแล้ว แต่ยังหาฐานข้อมูลไม่เจอ ทำตาม 4 ขั้นนี้ใน Railway</p>
+        <h1 className="mt-4 text-2xl leading-9 font-semibold tracking-tight text-fg">{t("noDbTitle")}</h1>
+        <p className="mt-1.5 text-sm leading-6 text-fg-2">{t("noDbDescription")}</p>
 
         <ol className="mt-6 space-y-5">
-          <Step n={1}>
-            ในโปรเจกต์ กด <b>+ Create</b> (หรือ + New) → <b>Database</b> → <b>PostgreSQL</b> (ถ้ายังไม่มี)
-          </Step>
-          <Step n={2}>
-            คลิกกล่องของแอป (ไม่ใช่กล่อง Postgres) → แท็บ <b>Variables</b>
-          </Step>
+          <Step n={1}>{t.rich("noDbStep1", { create: <b>+ Create</b>, database: <b>Database</b>, postgres: <b>PostgreSQL</b> })}</Step>
+          <Step n={2}>{t.rich("noDbStep2", { variables: <b>Variables</b> })}</Step>
           <Step n={3}>
-            กด <b>+ New Variable</b> แล้วคัดลอก 2 ค่านี้ไปวาง
+            {t.rich("noDbStep3", { newVariable: <b>+ New Variable</b> })}
             <div className="mt-3 space-y-3">
-              <CopyField label="ชื่อ" value="DATABASE_URL" />
-              <CopyField label="ค่า" value={"${{Postgres.DATABASE_URL}}"} />
+              <CopyField label={t("variableName")} value="DATABASE_URL" />
+              <CopyField label={t("variableValue")} value={"${{Postgres.DATABASE_URL}}"} />
             </div>
           </Step>
-          <Step n={4}>
-            กด <b>Deploy</b> แล้วรอสักครู่ จากนั้นกดปุ่มด้านล่าง
-          </Step>
+          <Step n={4}>{t.rich("noDbStep4", { deploy: <b>Deploy</b> })}</Step>
         </ol>
 
         <div className="mt-6 border-t border-line pt-5">

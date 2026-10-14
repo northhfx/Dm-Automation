@@ -5,6 +5,8 @@ import { TriangleAlert, X } from "lucide-react";
 import { Button, cx, IconButton, type ButtonSize, type ButtonVariant } from "./ui";
 import { SubmitButton } from "./submit-button";
 import { HiddenFields, runAction, type ActionFields, type FormAction } from "./action";
+import { useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
 
 /*
  * หน้าต่างซ้อน (ใช้ <dialog> ของเบราว์เซอร์: กด Esc ปิดได้ โฟกัสวนอยู่ในหน้าต่าง หน้าหลังเลื่อนไม่ได้)
@@ -55,6 +57,7 @@ export function Dialog({
   className?: string;
   bodyClassName?: string;
 }) {
+  const t = useT(commonMessages);
   const ref = useRef<HTMLDialogElement>(null);
   const onCloseRef = useRef(onClose);
   const restoreRef = useRef<HTMLElement | null>(null);
@@ -120,7 +123,7 @@ export function Dialog({
               )}
             </div>
           )}
-          {!hideClose && <IconButton icon={<X />} label="ปิดหน้าต่าง" size="sm" className="-mt-1 -mr-2" onClick={() => ref.current?.close()} />}
+          {!hideClose && <IconButton icon={<X />} label={t("closeDialog")} size="sm" className="-mt-1 -mr-2" onClick={() => ref.current?.close()} />}
         </header>
       )}
       {hasBody && (
@@ -194,8 +197,8 @@ export function ConfirmDialog({
   onConfirm,
   title,
   description,
-  confirmLabel = "ยืนยัน",
-  cancelLabel = "ยกเลิก",
+  confirmLabel,
+  cancelLabel,
   tone = "danger",
   successMessage,
   errorMessage,
@@ -208,6 +211,7 @@ export function ConfirmDialog({
   onConfirm?: () => unknown;
   children?: ReactNode;
 }) {
+  const t = useT(commonMessages);
   async function submit(formData: FormData) {
     const ok = await runAction(
       async () => {
@@ -234,10 +238,10 @@ export function ConfirmDialog({
         <>
           <HiddenFields fields={fields} />
           <Button variant="secondary" onClick={onClose} data-autofocus className="max-sm:w-full">
-            {cancelLabel}
+            {cancelLabel ?? t("cancel")}
           </Button>
           <SubmitButton variant={tone === "danger" ? "destructive" : "primary"} className="max-sm:w-full">
-            {confirmLabel}
+            {confirmLabel ?? t("confirm")}
           </SubmitButton>
         </>
       }
@@ -282,13 +286,14 @@ export function ConfirmSubmit({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT(commonMessages);
   const v = variant ?? (confirm.tone === "primary" ? "secondary" : "danger");
   return (
     <>
       {iconOnly ? (
         <IconButton
           icon={icon}
-          label={label ?? (typeof children === "string" ? children : "ยืนยัน")}
+          label={label ?? (typeof children === "string" ? children : t("confirm"))}
           variant={variant ?? "ghost"}
           size={size}
           disabled={disabled}

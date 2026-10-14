@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cx, formatDateTime, formatRelativeTime, PlatformIcon } from "@/components/ui";
+import { inboxCutoff } from "@/lib/inbox/retention";
 import { INSTAGRAM_MESSAGE_ACCESS_MENU } from "@/lib/meta/setup-info";
 import type { TimelineEvent } from "./load-events";
 
@@ -154,6 +155,20 @@ export function unmatchedNote(type: string): string {
   return `ไม่ได้เก็บชื่อและข้อความ เพราะไม่ตรงกับกฎไหนเลย (${where})`;
 }
 
+/**
+ * กิจกรรมไม่เก็บชื่อ/ข้อความของคนที่ไม่ตรงกฎ แต่หน้า "ข้อความรอตอบ" เก็บไว้ให้ตามตอบเอง (ลบเองเมื่อครบอายุ)
+ * → ชี้ทางไปที่นั่น เฉพาะกิจกรรมที่ยังไม่เกินอายุของหน้านั้น (เก่ากว่านั้นไม่มีให้ดูแล้ว)
+ */
+function UnmatchedInboxLink({ event, now }: { event: TimelineEvent; now: Date }) {
+  if (!event.unmatched || event.createdAt < inboxCutoff(now)) return null;
+  return (
+    <Link href="/inbox" className="inline-flex items-center gap-0.5 rounded font-medium text-accent hover:underline">
+      ดูในข้อความรอตอบ
+      <ArrowRight className="size-3" aria-hidden />
+    </Link>
+  );
+}
+
 function UnmatchedTag({ event }: { event: TimelineEvent }) {
   if (!event.unmatched) return null;
   return <span className="font-normal text-fg-3"> (ไม่ตรงกฎ)</span>;
@@ -216,6 +231,7 @@ export function TimelineItem({ event, now, last }: { event: TimelineEvent; now: 
             </Link>
           )}
           {event.unmatched && <span>{unmatchedNote(event.type)}</span>}
+          <UnmatchedInboxLink event={event} now={now} />
         </div>
 
         {!isButton && (event.text || event.buttons.length > 0) && (

@@ -2,11 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
+import { useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
 import { cx } from "./ui";
 import { toast } from "./toast";
 
 /** ช่องแสดงค่าพร้อมปุ่มคัดลอก (ใช้กับ URL / token ที่ต้องเอาไปวางในเว็บ Meta) */
 export function CopyField({ value, label }: { value: string; label?: string }) {
+  const t = useT(commonMessages);
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -25,7 +28,7 @@ export function CopyField({ value, label }: { value: string; label?: string }) {
       el.remove();
     }
     setCopied(true);
-    toast(label ? `คัดลอก ${label} แล้ว` : "คัดลอกแล้ว", { tone: "good", duration: 2500 });
+    toast(label ? t("copiedLabel", { label }) : t("copied"), { tone: "good", duration: 2500 });
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 1800);
   }
@@ -38,14 +41,14 @@ export function CopyField({ value, label }: { value: string; label?: string }) {
         <button
           type="button"
           onClick={copy}
-          aria-label={label ? `คัดลอก ${label}` : "คัดลอก"}
+          aria-label={label ? t("copyLabel", { label }) : t("copy")}
           className={cx(
             "flex shrink-0 items-center gap-1.5 border-l border-line-strong bg-surface px-3 text-sm font-medium transition-colors hover:bg-surface-2",
             copied ? "text-good-text" : "text-fg-2 hover:text-fg",
           )}
         >
           {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
-          <span className="max-sm:sr-only">{copied ? "คัดลอกแล้ว" : "คัดลอก"}</span>
+          <span className="max-sm:sr-only">{copied ? t("copied") : t("copy")}</span>
         </button>
       </div>
     </div>

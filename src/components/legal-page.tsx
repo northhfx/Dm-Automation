@@ -7,6 +7,8 @@ import { cx } from "./ui";
 /*
  * หน้าเอกสารสาธารณะ (นโยบายความเป็นส่วนตัว / การลบข้อมูล) — เปิดได้โดยไม่ต้องล็อกอิน
  * เนื้อหาใส่เป็น <h2> <p> <ul> <ol> <a> ธรรมดา ไฟล์นี้จัดรูปแบบให้อ่านง่าย (ความกว้างบรรทัดไม่เกิน ~70 ตัวอักษร)
+ * เนื้อหาเป็นภาษาไทยเสมอ (ไม่ตามภาษาที่เจ้าของร้านเลือกในหน้าจัดการ) → ใส่ lang="th" ไว้ที่ตัวหน้า
+ * ให้โปรแกรมอ่านหน้าจออ่านถูกภาษา แม้ <html lang> เป็น "en" จากคุกกี้ภาษาของเบราว์เซอร์นี้
  */
 
 const DOCS = [
@@ -35,7 +37,7 @@ export function LegalPage({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div lang="th" className="flex min-h-dvh flex-col">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-2.5 px-4 sm:px-6">
           <LogoMark size={28} />
@@ -53,7 +55,11 @@ export function LegalPage({
         </Link>
 
         <div className="mt-2">
-          {subtitle && <p className="text-xs font-semibold tracking-wide text-accent uppercase">{subtitle}</p>}
+          {subtitle && (
+            <p lang="en" className="text-xs font-semibold tracking-wide text-accent uppercase">
+              {subtitle}
+            </p>
+          )}
           <h1 className="mt-1 text-2xl leading-9 font-semibold tracking-tight text-fg sm:text-[28px] sm:leading-10">{title}</h1>
           {description && <div className="mt-2 max-w-[68ch] text-[15px] leading-7 text-fg-2">{description}</div>}
         </div>

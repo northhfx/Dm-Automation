@@ -4,18 +4,24 @@ import { LineChart } from "@/components/line-chart";
 import { SegmentedControl } from "@/components/segmented-control";
 import { ButtonLink, Card, EmptyState, formatNumber, formatPercent, PageHeader, StatTile } from "@/components/ui";
 import { getSetupStatus, setupProgress } from "@/lib/config";
+import { getFormat, getT } from "@/lib/i18n/server";
 import { getOverview, parseRange, RANGE_OPTIONS, rate, sum } from "@/lib/stats";
 import { loadEvents } from "./activity/load-events";
 import { TimelineItemCompact } from "./activity/timeline";
 import { FactList, PlatformBreakdown, PlatformSplitInline, RuleTable, SetupBanner } from "./overview-parts";
 
-const shortDate = new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", timeZone: "UTC" });
-
 export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const days = parseRange((await searchParams).range);
   const now = new Date();
   const db = getDb();
-  const [overview, setup, recent] = await Promise.all([getOverview(db, days), getSetupStatus(db), loadEvents(db, { limit: 6 })]);
+  const [overview, setup, recent, f, tNav, tPage] = await Promise.all([
+    getOverview(db, days),
+    getSetupStatus(db),
+    loadEvents(db, { limit: 6 }),
+    getFormat(),
+    getT("nav"),
+    getT("dashboard"),
+  ]);
   const progress = setupProgress(setup);
   const t = overview.totals;
   const sent = sum(t.dmsSent);
@@ -31,17 +37,20 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   return (
     <>
       <PageHeader
-        title="ภาพรวม"
+        title={tNav("dashboard")}
         description={
           since
-            ? `ผลงานของระบบตอบอัตโนมัติ ${days} วันล่าสุด (${shortDate.format(new Date(`${since}T00:00:00Z`))} – วันนี้)`
-            : "ผลงานของระบบตอบอัตโนมัติ"
+            ? tPage("descriptionRange", {
+                days,
+                since: f.date(`${since}T00:00:00Z`, { day: "numeric", month: "short", timeZone: "UTC" }),
+              })
+            : tPage("description")
         }
         actions={
           <SegmentedControl
-            label="ช่วงเวลา"
+            label={tPage("rangeLabel")}
             value={String(days)}
-            options={RANGE_OPTIONS.map((r) => ({ value: String(r), label: `${r} วัน`, href: `/?range=${r}` }))}
+            options={RANGE_OPTIONS.map((r) => ({ value: String(r), label: tPage("rangeDays", { days: r }), href: `/?range=${r}` }))}
           />
         }
       />

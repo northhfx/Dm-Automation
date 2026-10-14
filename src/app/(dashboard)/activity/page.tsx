@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { getDb } from "@/db/client";
 import { events, jobs, webhookLogs } from "@/db/schema";
+import { NavTitle } from "@/components/localized";
 import { SegmentedControl } from "@/components/segmented-control";
 import {
   ButtonLink,
@@ -27,6 +28,9 @@ import {
   Section,
 } from "@/components/ui";
 import { env } from "@/lib/env";
+import { createT, formatters, type Locale } from "@/lib/i18n";
+import { commonMessages } from "@/lib/i18n/messages/common";
+import { getLocale } from "@/lib/i18n/server";
 import { FAILED_TYPES, failureSummary } from "./failure-summary";
 import { FilterScroller } from "./filter-scroller";
 import { loadEvents, type TimelineEvent } from "./load-events";
@@ -56,10 +60,13 @@ const EMPTY_TEXT: Record<string, string> = {
   failed: "ไม่มีรายการที่ส่งไม่สำเร็จ",
 };
 
-/** แบ่งรายการเป็นกลุ่มตามวัน (ตามเขตเวลาของระบบ) */
-function groupByDay(items: TimelineEvent[], now: Date): { key: string; label: string; date: string; items: TimelineEvent[] }[] {
+/** แบ่งรายการเป็นกลุ่มตามวัน (ตามเขตเวลาของระบบ) — ชื่อวันตามภาษาที่เลือก */
+function groupByDay(items: TimelineEvent[], now: Date, locale: Locale): { key: string; label: string; date: string; items: TimelineEvent[] }[] {
+  // key ของวัน (YYYY-MM-DD) ใช้เทียบเท่านั้น ไม่ได้แสดง → ใช้ en-CA เสมอ
   const keyFormat = new Intl.DateTimeFormat("en-CA", { timeZone: env.timezone, year: "numeric", month: "2-digit", day: "2-digit" });
-  const longFormat = new Intl.DateTimeFormat("th-TH", { timeZone: env.timezone, weekday: "long", day: "numeric", month: "long" });
+  const f = formatters(locale);
+  const t = createT(commonMessages, locale);
+  const longDate: Intl.DateTimeFormatOptions = { timeZone: env.timezone, weekday: "long", day: "numeric", month: "long" };
   const today = keyFormat.format(now);
   const yesterday = keyFormat.format(new Date(now.getTime() - 86_400_000));
   const groups: { key: string; label: string; date: string; items: TimelineEvent[] }[] = [];
@@ -67,8 +74,8 @@ function groupByDay(items: TimelineEvent[], now: Date): { key: string; label: st
     const key = keyFormat.format(item.createdAt);
     let group = groups[groups.length - 1];
     if (!group || group.key !== key) {
-      const date = longFormat.format(item.createdAt);
-      group = { key, label: key === today ? "วันนี้" : key === yesterday ? "เมื่อวาน" : date, date, items: [] };
+      const date = f.date(item.createdAt, longDate);
+      group = { key, label: key === today ? t("today") : key === yesterday ? t("yesterday") : date, date, items: [] };
       groups.push(group);
     }
     group.items.push(item);
@@ -114,6 +121,7 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
   const before = Math.max(0, Math.floor(Number(params.before) || 0)) || null;
   const now = new Date();
   const db = getDb();
+  const locale = await getLocale();
 
   const [{ items, hasMore }, failedJobs, logs, recentFailed] = await Promise.all([
     loadEvents(db, { types: filter.types, before, limit: PAGE_SIZE }),
@@ -132,12 +140,12 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
   const olderHref = items.length
     ? `/activity?${new URLSearchParams({ ...(filter.key !== "all" ? { filter: filter.key } : {}), before: String(items[items.length - 1].id) })}`
     : null;
-  const groups = groupByDay(items, now);
+  const groups = groupByDay(items, now, locale);
 
   return (
     <>
       <PageHeader
-        title="กิจกรรม"
+        title={<NavTitle name="activity" />}
         description="ทุกอย่างที่ระบบได้รับและทำไป เรียงจากล่าสุด ใช้ดูว่าระบบตอบลูกค้าแล้วหรือยัง และหาสาเหตุเวลาระบบไม่ตอบ"
         actions={
           <ButtonLink href={currentHref} variant="secondary" icon={<RefreshCw />}>

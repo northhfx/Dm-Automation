@@ -14,6 +14,7 @@ import {
   Webhook,
 } from "lucide-react";
 import { getDb } from "@/db/client";
+import { NavTitle } from "@/components/localized";
 import { ActionButton } from "@/components/submit-button";
 import { CopyField } from "@/components/copy-field";
 import { Badge, ButtonLink, Card, cx, formatDateTime, formatNumber, Notice, PageHeader, PlatformIcon } from "@/components/ui";
@@ -149,7 +150,7 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader
-        title="ตั้งค่า"
+        title={<NavTitle name="settings" />}
         description={
           setupDone ? (
             "การเชื่อมต่อกับ Facebook / Instagram และค่าของระบบ"

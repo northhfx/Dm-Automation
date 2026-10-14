@@ -4,6 +4,8 @@ import { useActionState, useEffect, useRef, useState, type FormEvent, type Keybo
 import { ArrowRight, ChevronDown, Circle, CircleCheck, Eye, EyeOff, KeyRound, LockKeyhole, RefreshCw, TriangleAlert } from "lucide-react";
 import { SubmitButton } from "@/components/submit-button";
 import { Button, Field, Notice, cx, inputClass } from "@/components/ui";
+import { useT } from "@/lib/i18n/client";
+import { authMessages } from "@/lib/i18n/messages/auth";
 import { createPassword, login } from "./actions";
 
 const MIN_LENGTH = 8;
@@ -28,6 +30,7 @@ function PasswordInput({
   autoFocus?: boolean;
   onValueChange?: (value: string) => void;
 }) {
+  const t = useT(authMessages);
   const [visible, setVisible] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const capsId = `${id}-caps`;
@@ -62,10 +65,10 @@ function PasswordInput({
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          aria-label="แสดงรหัสผ่าน"
+          aria-label={t("showPassword")}
           aria-pressed={visible}
           aria-controls={id}
-          title={visible ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+          title={visible ? t("hidePassword") : t("showPassword")}
           className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-lg text-fg-3 transition-colors hover:text-fg focus-visible:-outline-offset-2"
         >
           {visible ? <EyeOff className="size-[18px]" aria-hidden /> : <Eye className="size-[18px]" aria-hidden />}
@@ -74,7 +77,7 @@ function PasswordInput({
       {capsLock && (
         <p id={capsId} className="flex items-center gap-1.5 text-xs leading-5 text-warning-text">
           <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
-          Caps Lock เปิดอยู่
+          {t("capsLockOn")}
         </p>
       )}
     </>
@@ -105,6 +108,7 @@ function CheckHint({ id, ok, warn, children }: { id: string; ok: boolean; warn?:
 // ---------------- เข้าสู่ระบบ ----------------
 
 export function LoginForm() {
+  const t = useT(authMessages);
   const [state, formAction, pending] = useActionState(login, undefined);
   const [clientError, setClientError] = useState<string | null>(null);
   // พิมพ์ใหม่แล้ว → ซ่อนข้อความผิดพลาดเดิม จนกว่าจะกดเข้าสู่ระบบอีกครั้ง
@@ -120,7 +124,7 @@ export function LoginForm() {
     setEdited(false);
     if (!inputRef.current?.value) {
       e.preventDefault();
-      setClientError("ใส่รหัสผ่านก่อนนะ");
+      setClientError(t("enterPasswordFirst"));
       inputRef.current?.focus();
       return;
     }
@@ -133,7 +137,7 @@ export function LoginForm() {
     <form action={formAction} onSubmit={onSubmit} noValidate className="space-y-5">
       {/* ช่องชื่อผู้ใช้ที่ซ่อนไว้ ให้ตัวจำรหัสผ่านของเบราว์เซอร์/มือถือบันทึกได้ถูกต้อง */}
       <input type="text" name="username" autoComplete="username" value="admin" readOnly hidden />
-      <Field label="รหัสผ่าน" htmlFor="password">
+      <Field label={t("passwordLabel")} htmlFor="password">
         <PasswordInput
           id="password"
           autoComplete="current-password"
@@ -146,11 +150,11 @@ export function LoginForm() {
       </Field>
       {error && (
         <FormError id="login-error" title={error}>
-          {clientError ? undefined : "ลองพิมพ์ใหม่อีกครั้ง ถ้าจำไม่ได้ดูวิธีตั้งรหัสใหม่ด้านล่าง"}
+          {clientError ? undefined : t("wrongPasswordHint")}
         </FormError>
       )}
-      <SubmitButton block size="lg" pendingText="กำลังเข้าสู่ระบบ…" iconRight={pending ? undefined : <ArrowRight aria-hidden />}>
-        เข้าสู่ระบบ
+      <SubmitButton block size="lg" pendingText={t("loggingIn")} iconRight={pending ? undefined : <ArrowRight aria-hidden />}>
+        {t("loginButton")}
       </SubmitButton>
     </form>
   );
@@ -158,30 +162,29 @@ export function LoginForm() {
 
 /** "ลืมรหัสผ่าน?" — ตั้งรหัสใหม่ได้ทาง Variable ADMIN_PASSWORD ใน Railway */
 export function ForgotPassword() {
+  const t = useT(authMessages);
   return (
     <details className="group">
       <summary className="-mx-2 flex h-12 list-none items-center justify-between gap-2 rounded-lg px-2 text-sm font-medium text-fg-2 transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
         <span className="inline-flex items-center gap-2">
           <KeyRound className="size-4 text-fg-3" aria-hidden />
-          ลืมรหัสผ่าน?
+          {t("forgotPassword")}
         </span>
         <ChevronDown className="size-4 text-fg-3 transition-transform group-open:rotate-180" aria-hidden />
       </summary>
       <div className="pb-5 text-sm leading-6 text-fg-2">
-        <p>ตั้งรหัสผ่านใหม่ได้เองใน Railway:</p>
+        <p>{t("forgotIntro")}</p>
         <ol className="mt-2 list-decimal space-y-1 pl-5 marker:text-fg-3 [&_b]:font-semibold [&_b]:text-fg">
+          <li>{t.rich("forgotStep1", { variables: <b>Variables</b> })}</li>
           <li>
-            คลิกกล่องของแอป → แท็บ <b>Variables</b>
+            {t.rich("forgotStep2", {
+              newVariable: <b>+ New Variable</b>,
+              name: <code className="rounded bg-surface-2 px-1 font-mono text-[13px] text-fg">ADMIN_PASSWORD</code>,
+            })}
           </li>
-          <li>
-            กด <b>+ New Variable</b> ตั้งชื่อ <code className="rounded bg-surface-2 px-1 font-mono text-[13px] text-fg">ADMIN_PASSWORD</code>{" "}
-            แล้วใส่รหัสผ่านใหม่
-          </li>
-          <li>
-            กด <b>Deploy</b> รอสักครู่ แล้วเข้าสู่ระบบด้วยรหัสใหม่
-          </li>
+          <li>{t.rich("forgotStep3", { deploy: <b>Deploy</b> })}</li>
         </ol>
-        <p className="mt-2 text-xs leading-5 text-fg-3">หลังจากนี้ถ้าจะเปลี่ยนรหัสผ่าน ให้แก้ที่ Variable นี้แทน</p>
+        <p className="mt-2 text-xs leading-5 text-fg-3">{t("forgotNote")}</p>
       </div>
     </details>
   );
@@ -192,6 +195,7 @@ export function ForgotPassword() {
 type FieldError = { field: "password" | "confirm"; message: string };
 
 export function CreatePasswordForm() {
+  const t = useT(authMessages);
   const [state, formAction, pending] = useActionState(createPassword, undefined);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -207,17 +211,17 @@ export function CreatePasswordForm() {
   const longEnough = password.length >= MIN_LENGTH;
   const matches = confirm.length > 0 && confirm === password;
 
-  // ตรวจในเครื่องก่อนส่ง (ข้อความภาษาไทย + ค่าที่พิมพ์ไม่หาย) — เซิร์ฟเวอร์ตรวจซ้ำอีกชั้น
+  // ตรวจในเครื่องก่อนส่ง (ข้อความตามภาษาที่เลือก + ค่าที่พิมพ์ไม่หาย) — เซิร์ฟเวอร์ตรวจซ้ำอีกชั้น
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     setEdited(false);
     const problem: FieldError | null = !password
-      ? { field: "password", message: "ตั้งรหัสผ่านก่อนนะ" }
+      ? { field: "password", message: t("choosePasswordFirst") }
       : !longEnough
-        ? { field: "password", message: `รหัสผ่านต้องยาวอย่างน้อย ${MIN_LENGTH} ตัวอักษร` }
+        ? { field: "password", message: t("passwordTooShort", { min: MIN_LENGTH }) }
         : !confirm
-          ? { field: "confirm", message: "พิมพ์รหัสผ่านซ้ำอีกครั้งในช่องที่สอง" }
+          ? { field: "confirm", message: t("typeConfirm") }
           : confirm !== password
-            ? { field: "confirm", message: "รหัสผ่านทั้งสองช่องไม่ตรงกัน" }
+            ? { field: "confirm", message: t("passwordsDontMatch") }
             : null;
     setClientError(problem);
     if (problem) {
@@ -243,12 +247,12 @@ export function CreatePasswordForm() {
     >
       <input type="text" name="username" autoComplete="username" value="admin" readOnly hidden />
       <Field
-        label="รหัสผ่านใหม่"
+        label={t("newPasswordLabel")}
         htmlFor="password"
         hint={
           <CheckHint id="password-hint" ok={longEnough}>
-            อย่างน้อย {MIN_LENGTH} ตัวอักษร
-            {password.length > 0 && !longEnough && <span className="tabular">(อีก {MIN_LENGTH - password.length} ตัว)</span>}
+            {t("minLengthHint", { min: MIN_LENGTH })}
+            {password.length > 0 && !longEnough && <span className="tabular">{t("charsToGo", { count: MIN_LENGTH - password.length })}</span>}
           </CheckHint>
         }
       >
@@ -266,11 +270,11 @@ export function CreatePasswordForm() {
         />
       </Field>
       <Field
-        label="พิมพ์รหัสผ่านอีกครั้ง"
+        label={t("confirmLabel")}
         htmlFor="confirm"
         hint={
           <CheckHint id="confirm-hint" ok={matches} warn={!matches && confirm.length >= Math.max(password.length, 1)}>
-            {matches ? "ตรงกันแล้ว" : confirm.length > 0 && confirm.length >= password.length ? "ยังไม่ตรงกับช่องแรก" : "พิมพ์ให้เหมือนช่องแรก"}
+            {matches ? t("confirmMatches") : confirm.length > 0 && confirm.length >= password.length ? t("confirmNoMatch") : t("confirmTypeSame")}
           </CheckHint>
         }
       >
@@ -287,12 +291,12 @@ export function CreatePasswordForm() {
         />
       </Field>
       {error && <FormError id="create-error" title={error.message} />}
-      <SubmitButton block size="lg" pendingText="กำลังบันทึก…" iconRight={pending ? undefined : <ArrowRight aria-hidden />}>
-        บันทึกและเริ่มตั้งค่า
+      <SubmitButton block size="lg" pendingText={t("saving")} iconRight={pending ? undefined : <ArrowRight aria-hidden />}>
+        {t("saveAndStart")}
       </SubmitButton>
       <p className="flex items-start justify-center gap-1.5 text-center text-xs leading-5 text-fg-3">
         <LockKeyhole className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        ระบบเก็บรหัสผ่านแบบเข้ารหัส ไม่มีใครเห็นรหัสจริงของคุณ
+        {t("storedSafely")}
       </p>
     </form>
   );
@@ -302,6 +306,7 @@ export function CreatePasswordForm() {
 
 /** โหลดหน้าใหม่ เพื่อตรวจว่าเชื่อมฐานข้อมูลได้แล้วหรือยัง */
 export function ReloadButton() {
+  const t = useT(authMessages);
   const [loading, setLoading] = useState(false);
   return (
     <Button
@@ -314,7 +319,7 @@ export function ReloadButton() {
         window.location.reload();
       }}
     >
-      ตรวจสอบอีกครั้ง
+      {t("checkAgain")}
     </Button>
   );
 }

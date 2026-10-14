@@ -1,6 +1,9 @@
 import Link from "next/link";
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode, Ref } from "react";
 import { ChevronLeft, CircleAlert, CircleCheck, Inbox, Info, TriangleAlert, type LucideIcon } from "lucide-react";
+import { formatters } from "@/lib/i18n/format";
+import type { Locale } from "@/lib/i18n/locale";
+import { OptionalMark } from "./localized";
 import { PlatformIcon } from "./platform-icon";
 
 /*
@@ -455,7 +458,7 @@ export function Field({
   htmlFor?: string;
   /** ข้อความผิดพลาด (สีแดง แทนที่ hint) — อย่าลืมใส่ aria-invalid ที่ช่องด้วย */
   error?: ReactNode;
-  /** แสดง "(ไม่บังคับ)" */
+  /** แสดง "(ไม่บังคับ)" / "(optional)" ตามภาษา */
   optional?: boolean;
   /** แสดงดอกจันสีแดง */
   required?: boolean;
@@ -474,7 +477,11 @@ export function Field({
               *
             </span>
           )}
-          {optional && <span className="ml-1.5 text-xs font-normal text-fg-3">(ไม่บังคับ)</span>}
+          {optional && (
+            <span className="ml-1.5 text-xs font-normal text-fg-3">
+              <OptionalMark />
+            </span>
+          )}
         </label>
         {aside && <div className="shrink-0 text-xs text-fg-3 tabular">{aside}</div>}
       </div>
@@ -660,43 +667,28 @@ export const tableClass = {
 };
 
 // ---------------- การจัดรูปแบบตัวเลข/วันที่ ----------------
+/*
+ * ฟังก์ชันชุดนี้รับภาษาเป็นพารามิเตอร์ตัวสุดท้าย (ไม่ใส่ = ไทย) — โค้ดเดิมที่ไม่ส่งภาษายังได้ผลเหมือนเดิม
+ * ฟังก์ชันธรรมดาไม่รู้ว่าผู้ใช้เลือกภาษาอะไร (Server ต้องอ่านคุกกี้, Client ต้องอ่าน context) จึงให้ผู้เรียกส่งมา:
+ * - Server Component: const f = await getFormat()  → f.number(n), f.dateTime(d), f.relativeTime(d, now)
+ * - Client Component: const f = useFormat()        → เหมือนกัน
+ * - หรือส่งภาษาเอง:   formatDateTime(d, locale)
+ * ตัวจริงอยู่ใน src/lib/i18n/format.ts
+ */
 
-const numberFormat = new Intl.NumberFormat("th-TH");
-
-export function formatNumber(n: number): string {
-  return numberFormat.format(n);
+export function formatNumber(n: number, locale?: Locale): string {
+  return formatters(locale).number(n);
 }
 
-export function formatPercent(n: number | null): string {
-  return n === null ? "–" : `${n.toFixed(n >= 10 || n === 0 ? 0 : 1)}%`;
+export function formatPercent(n: number | null, locale?: Locale): string {
+  return formatters(locale).percent(n);
 }
 
-const timeZone = process.env.APP_TIMEZONE || "Asia/Bangkok";
-
-const dateTimeFormat = new Intl.DateTimeFormat("th-TH", {
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone,
-});
-
-export function formatDateTime(d: Date | string | null): string {
-  if (!d) return "–";
-  return dateTimeFormat.format(typeof d === "string" ? new Date(d) : d);
+export function formatDateTime(d: Date | string | null, locale?: Locale): string {
+  return formatters(locale).dateTime(d);
 }
 
-const relativeFormat = new Intl.RelativeTimeFormat("th-TH", { numeric: "auto" });
-
-/** "เมื่อสักครู่", "5 นาทีที่ผ่านมา", "เมื่อวาน" — เกิน 7 วันแสดงเป็นวันที่ */
-export function formatRelativeTime(d: Date | string | null, now: Date = new Date()): string {
-  if (!d) return "–";
-  const date = typeof d === "string" ? new Date(d) : d;
-  const sec = Math.round((date.getTime() - now.getTime()) / 1000);
-  const abs = Math.abs(sec);
-  if (abs < 45) return "เมื่อสักครู่";
-  if (abs < 3600) return relativeFormat.format(Math.round(sec / 60), "minute");
-  if (abs < 86400) return relativeFormat.format(Math.round(sec / 3600), "hour");
-  if (abs < 7 * 86400) return relativeFormat.format(Math.round(sec / 86400), "day");
-  return formatDateTime(date);
+/** "เมื่อสักครู่", "5 นาทีที่ผ่านมา", "เมื่อวาน" (อังกฤษ: "just now", "5 minutes ago", "yesterday") — เกิน 7 วันแสดงเป็นวันที่ */
+export function formatRelativeTime(d: Date | string | null, now: Date = new Date(), locale?: Locale): string {
+  return formatters(locale).relativeTime(d, now);
 }

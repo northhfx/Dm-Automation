@@ -64,6 +64,13 @@
       "when": 1791920986479,
       "tag": "0008_events_contact_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791959704459,
+      "tag": "0009_inbox_items",
+      "breakpoints": true
     }
   ]
 }

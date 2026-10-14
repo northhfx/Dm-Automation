@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { ArrowRight, CircleCheck, LayoutDashboard, List, Plus, Settings } from "lucide-react";
+import { NavTitle } from "@/components/localized";
 import { CopyField } from "@/components/copy-field";
 import { ActionButton } from "@/components/submit-button";
 import { buttonStyle, ButtonLink, cx, formatDateTime, formatNumber, Notice, PageHeader, ProgressBar } from "@/components/ui";
@@ -92,7 +93,7 @@ export function GuideView({
     <>
       <OpenStepFromHash />
       <PageHeader
-        title="คู่มือตั้งค่า"
+        title={<NavTitle name="guide" />}
         description="ทำตามทีละขั้นจากบนลงล่าง ระบบจะติ๊กถูกให้เองเมื่อแต่ละขั้นเสร็จ ขั้นที่เสร็จแล้วกดเปิดดูใหม่ได้"
         actions={
           <ButtonLink href="/settings" variant="secondary" icon={<Settings />} className="max-sm:hidden">

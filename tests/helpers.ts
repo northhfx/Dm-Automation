@@ -268,7 +268,7 @@ export async function resetDatabase() {
   const db = getDb();
   await runMigrations();
   await db.execute(sql`
-    TRUNCATE pages, instagram_accounts, rules, contacts, messages, links, events, jobs, dedup_keys, webhook_logs, settings
+    TRUNCATE pages, instagram_accounts, rules, contacts, messages, links, events, inbox_items, jobs, dedup_keys, webhook_logs, settings
     RESTART IDENTITY
   `);
   await savePage(db, { id: "PAGE1", name: "ร้านทดสอบ", token: "PAGE_TOKEN", igUserId: "IG1", igUsername: "test.shop" });

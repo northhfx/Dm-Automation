@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db/client";
 import { endSession, startSession } from "@/lib/auth";
 import { isPasswordSet, rememberBaseUrlFromHeaders, setPassword, verifyPassword } from "@/lib/config";
+import { getT } from "@/lib/i18n/server";
+
+/** ความยาวรหัสผ่านขั้นต่ำ (ตรงกับ MIN_LENGTH ใน login-form.tsx) */
+const MIN_PASSWORD_LENGTH = 8;
 
 export async function login(_prev: { error?: string } | undefined, formData: FormData) {
   const db = getDb();
@@ -12,7 +16,7 @@ export async function login(_prev: { error?: string } | undefined, formData: For
   if (!(await verifyPassword(db, password))) {
     // หน่วงเวลาเล็กน้อย กันการเดารหัสผ่านรัวๆ
     await new Promise((r) => setTimeout(r, 800));
-    return { error: "รหัสผ่านไม่ถูกต้อง" };
+    return { error: (await getT("auth"))("wrongPassword") };
   }
   await rememberBaseUrlFromHeaders(db, await headers());
   await startSession();
@@ -25,8 +29,9 @@ export async function createPassword(_prev: { error?: string } | undefined, form
   if (await isPasswordSet(db)) redirect("/login");
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
-  if (password.length < 8) return { error: "รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร" };
-  if (password !== confirm) return { error: "รหัสผ่านทั้งสองช่องไม่ตรงกัน" };
+  const t = await getT("auth");
+  if (password.length < MIN_PASSWORD_LENGTH) return { error: t("passwordTooShort", { min: MIN_PASSWORD_LENGTH }) };
+  if (password !== confirm) return { error: t("passwordsDontMatch") };
   await setPassword(db, password);
   await rememberBaseUrlFromHeaders(db, await headers());
   await startSession();

@@ -3,6 +3,7 @@ import { asc } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { pages } from "@/db/schema";
 import { getSetupStatus, setupProgress } from "@/lib/config";
+import { countOpenInboxItems } from "@/lib/inbox/count";
 import { instagramAccountHealth, instagramHealthLevel, listInstagramAccounts } from "@/lib/instagram/accounts";
 import { getThemePref } from "@/lib/theme-server";
 import { AppShell, type ShellData } from "./app-shell";
@@ -10,17 +11,25 @@ import { AppShell, type ShellData } from "./app-shell";
 // ทุกหน้าของแดชบอร์ดอ่านข้อมูลล่าสุดจากฐานข้อมูลทุกครั้ง (ไม่ cache ตอน build)
 export const dynamic = "force-dynamic";
 
-/** ข้อมูลเล็กๆ ที่แถบเมนูใช้: ความคืบหน้าการตั้งค่า + เพจ/บัญชี Instagram ที่เชื่อมต่อ (ถ้าอ่านไม่ได้ก็ยังแสดงหน้าได้) */
+/**
+ * ข้อมูลเล็กๆ ที่แถบเมนูใช้: ความคืบหน้าการตั้งค่า + เพจ/บัญชี Instagram ที่เชื่อมต่อ + จำนวนข้อความรอตอบ
+ * (ถ้าอ่านไม่ได้ก็ยังแสดงหน้าได้)
+ */
 async function loadShellData(): Promise<Omit<ShellData, "theme">> {
   try {
     const db = getDb();
-    const [status, pageRows, igAccounts] = await Promise.all([
+    const [status, pageRows, igAccounts, inboxCount] = await Promise.all([
       getSetupStatus(db),
       db
         .select({ id: pages.id, name: pages.name, igUsername: pages.igUsername, subscribed: pages.subscribed })
         .from(pages)
         .orderBy(asc(pages.name)),
       listInstagramAccounts(db),
+      // นับไม่ได้ (เช่น ตารางยังไม่พร้อม) → ไม่แสดงตัวเลข แต่เมนูส่วนอื่นยังทำงานปกติ
+      countOpenInboxItems(db).catch((err: unknown) => {
+        console.error("นับข้อความรอตอบไม่สำเร็จ", err);
+        return 0;
+      }),
     ]);
     const now = new Date();
     return {
@@ -32,6 +41,7 @@ async function loadShellData(): Promise<Omit<ShellData, "theme">> {
         username: a.username,
         status: instagramHealthLevel(instagramAccountHealth(a, now)),
       })),
+      inboxCount,
     };
   } catch (err) {
     console.error("โหลดข้อมูลแถบเมนูไม่สำเร็จ", err);

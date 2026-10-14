@@ -378,6 +378,21 @@ describe("หน้ากิจกรรม: ข้อความเข้า�
     expect(html).not.toContain("ไม่ตรงกฎ");
     expect(html).not.toContain("ไม่ได้เก็บชื่อ");
   });
+
+  it("ชี้ไปหน้าข้อความรอตอบ (ที่เก็บชื่อ/ข้อความไว้ให้ตามตอบ) — เฉพาะกิจกรรมที่ยังไม่เกินอายุของหน้านั้น", () => {
+    const raw = (e: TimelineEvent) => render(createElement(TimelineItem, { event: e, now }));
+    for (const type of ["comment_received", "dm_received"] as const) {
+      const html = raw(unmatched(type));
+      expect(html).toContain('href="/inbox"');
+      expect(textOf(html)).toContain("ดูในข้อความรอตอบ");
+    }
+    // เกิน 30 วัน → รายการในหน้าข้อความรอตอบถูกลบไปแล้ว ไม่ต้องชี้ไป
+    const old = raw({ ...unmatched("dm_received"), createdAt: new Date(now.getTime() - 31 * DAY) });
+    expect(old).not.toContain('href="/inbox"');
+    // ข้อความที่ตรงกฎ (ระบบตอบแล้ว) ไม่อยู่ในหน้าข้อความรอตอบ
+    const matched = raw({ ...unmatched("comment_received"), unmatched: false, person: "Somchai", text: "สนใจ" });
+    expect(matched).not.toContain('href="/inbox"');
+  });
 });
 
 describe("ตัวสร้างกฎ: การ์ดบนผืนผ้าใบโหมดสว่างหน้าตาเหมือนเดิม", () => {

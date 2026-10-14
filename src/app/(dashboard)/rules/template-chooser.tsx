@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { Dialog } from "@/components/dialog";
 import { Badge, Button, cx, Spinner, type ButtonSize } from "@/components/ui";
+import { useT } from "@/lib/i18n/client";
+import { rulesMessages } from "@/lib/i18n/messages/rules";
 
 /*
  * เลือกแบบเริ่มต้นตอนสร้างกฎใหม่ (ลิงก์ไป /rules/new?template=...)
@@ -230,7 +232,7 @@ export function TemplateOptions({ layout = "list", className }: { layout?: "list
 
 /** ปุ่ม "สร้างกฎใหม่" → เปิดหน้าต่างเลือกแบบเริ่มต้น */
 export function NewRuleButton({
-  children = "สร้างกฎใหม่",
+  children,
   size = "md",
   block,
   className,
@@ -241,15 +243,16 @@ export function NewRuleButton({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT(rulesMessages);
   return (
     <>
       <Button icon={<Plus />} size={size} block={block} className={className} onClick={() => setOpen(true)} aria-haspopup="dialog">
-        {children}
+        {children ?? t("newAutomation")}
       </Button>
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title="สร้างกฎใหม่"
+        title={t("newAutomation")}
         description="เลือกแบบที่ใกล้เคียงที่สุด แล้วแก้ข้อความ ปุ่ม และการ์ดได้เองทุกอย่าง"
         icon={<Zap aria-hidden />}
         iconTone="accent"

@@ -4,25 +4,29 @@ import { Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { getDb } from "@/db/client";
 import { isPasswordSet } from "@/lib/config";
+import { getT } from "@/lib/i18n/server";
 import { AuthCard, MissingDatabase } from "../login/auth-card";
 import { CreatePasswordForm } from "../login/login-form";
 
-export const metadata: Metadata = { title: "ตั้งรหัสผ่าน · DM Automation" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getT("auth"))("welcomePageTitle") };
+}
 export const dynamic = "force-dynamic";
 
 /** หน้าแรกสุดหลัง deploy: ให้ตั้งรหัสผ่านของแดชบอร์ด */
 export default async function WelcomePage() {
   if (!process.env.DATABASE_URL) return <MissingDatabase />;
   if (await isPasswordSet(getDb())) redirect("/login");
+  const t = await getT("auth");
   return (
     <AuthCard
       eyebrow={
         <Badge tone="accent" size="md" icon={<Sparkles aria-hidden />}>
-          ติดตั้งเสร็จแล้ว
+          {t("welcomeBadge")}
         </Badge>
       }
-      title="ตั้งรหัสผ่านของคุณ"
-      description="ใช้รหัสนี้ทุกครั้งที่เข้าหน้าจัดการ ตั้งครั้งเดียวเท่านั้น จากนั้นระบบจะพาตั้งค่าทีละขั้น"
+      title={t("welcomeTitle")}
+      description={t("welcomeDescription")}
     >
       <CreatePasswordForm />
     </AuthCard>

@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { ChevronRight } from "lucide-react";
+import { useFormat, useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
 
 export interface ChartSeries<T> {
   key: keyof T & string;
@@ -18,9 +20,9 @@ interface Props<T extends { date: string }> {
 
 const MARGIN = { top: 16, right: 56, bottom: 28, left: 40 };
 
-const shortDate = new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", timeZone: "UTC" });
-const longDate = new Intl.DateTimeFormat("th-TH", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
-const nf = new Intl.NumberFormat("th-TH");
+// วันที่ในข้อมูลเป็น "YYYY-MM-DD" (วันตามเขตเวลาของระบบแล้ว) → แสดงแบบ UTC ไม่ให้วันเลื่อน
+const SHORT_DATE: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", timeZone: "UTC" };
+const LONG_DATE: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" };
 
 /** แกน Y ที่เป็นเลขกลมๆ เช่น 0, 5, 10, 15, 20 */
 function niceTicks(max: number, count = 4): number[] {
@@ -44,6 +46,9 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
   const [width, setWidth] = useState(640);
   const [active, setActive] = useState<number | null>(null);
   const gradientId = useId();
+  const t = useT(commonMessages);
+  const f = useFormat();
+  const shortDate = (d: string) => f.date(parseDate(d), SHORT_DATE);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -121,7 +126,7 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
           width={width}
           height={height}
           role="img"
-          aria-label={`กราฟรายวัน: ${series.map((s) => s.label).join(" และ ")} (กดลูกศรซ้าย/ขวาเพื่อดูค่าแต่ละวัน)`}
+          aria-label={t("chartLabel", { series: f.list(series.map((s) => s.label)) })}
           tabIndex={0}
           onKeyDown={onKeyDown}
           onBlur={() => setActive(null)}
@@ -133,26 +138,26 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
               <stop offset="100%" stopColor={series[0]?.color} stopOpacity={0} />
             </linearGradient>
           </defs>
-          {ticks.map((t) => (
-            <g key={t}>
+          {ticks.map((tick) => (
+            <g key={tick}>
               <line
                 x1={MARGIN.left}
                 x2={width - MARGIN.right}
-                y1={y(t)}
-                y2={y(t)}
+                y1={y(tick)}
+                y2={y(tick)}
                 stroke="var(--line)"
                 strokeWidth={1}
-                strokeDasharray={t === 0 ? undefined : "3 4"}
+                strokeDasharray={tick === 0 ? undefined : "3 4"}
               />
-              <text x={MARGIN.left - 8} y={y(t)} dy="0.32em" textAnchor="end" fontSize={11} fill="var(--fg-3)" className="tabular">
-                {nf.format(t)}
+              <text x={MARGIN.left - 8} y={y(tick)} dy="0.32em" textAnchor="end" fontSize={11} fill="var(--fg-3)" className="tabular">
+                {f.number(tick)}
               </text>
             </g>
           ))}
 
           {xLabels.map(({ i, d }) => (
             <text key={d.date} x={x(i)} y={height - 8} textAnchor="middle" fontSize={11} fill="var(--fg-3)">
-              {shortDate.format(parseDate(d.date))}
+              {shortDate(d.date)}
             </text>
           ))}
 
@@ -175,7 +180,7 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
                   <circle cx={x(last)} cy={y(v)} r={4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />
                   {!endLabelsCollide && (
                     <text x={x(last) + 10} y={y(v)} dy="0.32em" fontSize={12} fontWeight={600} fill="var(--fg)" className="tabular">
-                      {nf.format(v)}
+                      {f.number(v)}
                     </text>
                   )}
                 </g>
@@ -211,11 +216,11 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
             className="pointer-events-none absolute top-2 w-40 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm shadow-lg"
             style={{ left: tooltipLeft }}
           >
-            <div className="mb-1 text-xs text-fg-3">{longDate.format(parseDate(activePoint.date))}</div>
+            <div className="mb-1 text-xs text-fg-3">{f.date(parseDate(activePoint.date), LONG_DATE)}</div>
             {series.map((s) => (
               <div key={s.key} className="flex items-center gap-2">
                 <span className="inline-block size-2 shrink-0 rounded-full" style={{ background: s.color }} aria-hidden />
-                <span className="font-semibold tabular">{nf.format(Number(activePoint[s.key]) || 0)}</span>
+                <span className="font-semibold tabular">{f.number(Number(activePoint[s.key]) || 0)}</span>
                 <span className="text-fg-2">{s.label}</span>
               </div>
             ))}
@@ -226,13 +231,13 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
       <details className="group mt-3 text-sm">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md py-1 text-[13px] text-fg-2 hover:text-fg [&::-webkit-details-marker]:hidden">
           <ChevronRight className="size-4 transition-transform group-open:rotate-90" aria-hidden />
-          ดูเป็นตาราง
+          {t("chartShowTable")}
         </summary>
         <div className="scroll-thin mt-2 max-h-64 overflow-auto rounded-lg border border-line">
           <table className="w-full text-left">
             <thead className="sticky top-0 bg-surface-2 text-xs text-fg-3">
               <tr>
-                <th className="px-3 py-2 font-medium">วันที่</th>
+                <th className="px-3 py-2 font-medium">{t("chartDate")}</th>
                 {series.map((s) => (
                   <th key={s.key} className="px-3 py-2 text-right font-medium">
                     {s.label}
@@ -243,10 +248,10 @@ export function LineChart<T extends { date: string }>({ data, series, height = 2
             <tbody>
               {data.map((d) => (
                 <tr key={d.date} className="border-t border-line">
-                  <td className="px-3 py-1.5">{shortDate.format(parseDate(d.date))}</td>
+                  <td className="px-3 py-1.5">{shortDate(d.date)}</td>
                   {series.map((s) => (
                     <td key={s.key} className="px-3 py-1.5 text-right tabular">
-                      {nf.format(Number(d[s.key]) || 0)}
+                      {f.number(Number(d[s.key]) || 0)}
                     </td>
                   ))}
                 </tr>

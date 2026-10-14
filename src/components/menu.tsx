@@ -17,6 +17,8 @@ import { EllipsisVertical } from "lucide-react";
 import { buttonStyle, cx, Spinner, type ButtonSize, type ButtonVariant } from "./ui";
 import { ConfirmDialog, type ConfirmOptions } from "./dialog";
 import { runAction, toFormData, type ActionFields, type FormAction } from "./action";
+import { useT } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
 
 /*
  * เมนูตัวเลือกเพิ่มเติม (ปุ่มจุดสามจุด) — ลอยอยู่ชั้นบนสุด ไม่โดนตัดในตาราง/การ์ด
@@ -55,7 +57,7 @@ const ITEM_SELECTOR = '[role="menuitem"]:not([aria-disabled="true"])';
 
 export function Menu({
   children,
-  label = "ตัวเลือกเพิ่มเติม",
+  label: labelProp,
   icon,
   triggerLabel,
   triggerVariant = "ghost",
@@ -79,6 +81,8 @@ export function Menu({
   menuClassName?: string;
 }) {
   const id = useId();
+  const t = useT(commonMessages);
+  const label = labelProp ?? t("moreOptions");
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const focusOnOpen = useRef<"first" | "last">("first");

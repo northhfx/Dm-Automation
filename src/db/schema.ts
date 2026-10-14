@@ -191,6 +191,54 @@ export const events = pgTable(
   ],
 );
 
+/** รายการในหน้า "ข้อความรอตอบ": แชท 1 ข้อความ หรือคอมเมนต์ 1 อัน */
+export type InboxKind = "dm" | "comment";
+
+/**
+ * ข้อความรอตอบ (/inbox): คนที่ทัก DM หรือคอมเมนต์โดยไม่ตรง keyword ของกฎไหน (ระบบไม่ได้ตอบให้)
+ * แยกจาก contacts โดยตั้งใจ — เก็บแค่พอให้เจ้าของร้านกดไปตอบเอง และลบอัตโนมัติเมื่อครบ 30 วัน
+ * (INBOX_RETENTION_DAYS ใน lib/inbox/retention.ts) ส่วน events ของข้อความเหล่านี้ยังไม่ระบุตัวตนเหมือนเดิม
+ */
+export const inboxItems = pgTable(
+  "inbox_items",
+  {
+    id: serial("id").primaryKey(),
+    platform: text("platform").$type<Platform>().notNull(),
+    /** Connection.id แบบเดียวกับ events.page_id: Page ID (Facebook / Instagram ผ่านเพจ) หรือ IG account ID (Instagram Login) */
+    pageId: text("page_id").notNull(),
+    kind: text("kind").$type<InboxKind>().notNull(),
+    /** PSID / IGSID (แชท) หรือ from.id (คอมเมนต์) */
+    senderId: text("sender_id").notNull(),
+    senderName: text("sender_name"),
+    senderUsername: text("sender_username"),
+    /** ข้อความที่ลูกค้าพิมพ์ (ตัดไว้ไม่เกิน 1000 ตัวอักษร) — ว่าง = ส่งรูป/สติกเกอร์/ไฟล์ */
+    text: text("text").notNull().default(""),
+    /** message id ของแชท (กันบันทึกซ้ำ) */
+    mid: text("mid"),
+    postId: text("post_id"),
+    commentId: text("comment_id"),
+    /** ลิงก์โพสต์จาก Meta (Instagram) — null = ยังไม่รู้ */
+    permalink: text("permalink"),
+    /** ถาม Meta หาชื่อ/username/ลิงก์โพสต์ที่ขาดแล้ว (สำเร็จหรือไม่ก็ตาม) — null = ยังไม่ได้ถาม */
+    detailsCheckedAt: timestamp("details_checked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** เจ้าของร้านกด "เสร็จแล้ว" — null = ยังรอตอบ */
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+  },
+  (t) => [
+    // รายการที่ยังรอตอบ ใหม่สุดก่อน (หน้า /inbox และตัวเลขบนเมนู)
+    index("inbox_items_open_idx").on(t.handledAt, t.createdAt.desc()),
+    // แสดงรายการที่เสร็จแล้วด้วย + ลบรายการที่เกิน 30 วัน
+    index("inbox_items_created_idx").on(t.createdAt),
+    // แชทของคนเดียวกัน (รวมเป็นแถวเดียว / เติมชื่อให้ทุกแถวของคนนั้น)
+    index("inbox_items_sender_idx").on(t.platform, t.senderId),
+    // กันบันทึกซ้ำ: คอมเมนต์เดิม / ข้อความเดิม (NULL ไม่ชนกัน)
+    uniqueIndex("inbox_items_comment_idx").on(t.kind, t.commentId),
+    uniqueIndex("inbox_items_mid_idx").on(t.kind, t.mid),
+  ],
+);
+export type InboxItem = typeof inboxItems.$inferSelect;
+
 /** คิวงานแบบง่ายบน Postgres (ไม่ต้องใช้ Redis) */
 export const jobs = pgTable(
   "jobs",

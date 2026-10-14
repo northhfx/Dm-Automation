@@ -1,6 +1,7 @@
 import { asc } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { rules } from "@/db/schema";
+import { NavTitle } from "@/components/localized";
 import { Badge, PageHeader } from "@/components/ui";
 import { getAllTimeRuleStats, rate } from "@/lib/stats";
 import { RuleList, RulesEmptyState, type RuleListItem } from "./rule-list";
@@ -60,7 +61,7 @@ export default async function RulesPage() {
   return (
     <>
       <PageHeader
-        title="กฎอัตโนมัติ"
+        title={<NavTitle name="automation" />}
         description="ตอบคอมเมนต์และแชทให้อัตโนมัติ เมื่อลูกค้าพิมพ์คำที่คุณตั้งไว้"
         badge={
           items.length > 0 && (

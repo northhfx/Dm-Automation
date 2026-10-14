@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { ArrowUpRight, ChevronLeft, ChevronRight, MessageCircle, MessagesSquare, Search, SearchX, Users, X } from "lucide-react";
 import { getDb } from "@/db/client";
 import type { Platform } from "@/db/schema";
+import { NavTitle } from "@/components/localized";
 import { SegmentedControl } from "@/components/segmented-control";
 import {
   Avatar,
@@ -223,7 +224,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
   return (
     <>
       <PageHeader
-        title="รายชื่อลูกค้า"
+        title={<NavTitle name="contacts" />}
         badge={all > 0 && !q ? <Badge size="md">{formatNumber(all)} คน</Badge> : undefined}
         description="เฉพาะคนที่คอมเมนต์หรือทักแชทตรงกับคำที่ตั้งไว้ในกฎ เรียงตามคนที่ทักมาล่าสุด"
       />

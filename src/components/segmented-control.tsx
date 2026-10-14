@@ -28,6 +28,7 @@ export function SegmentedControl<V extends string>({
   label,
   size = "md",
   block,
+  equalWidth = true,
   className,
 }: {
   options: SegmentOption<V>[];
@@ -38,6 +39,11 @@ export function SegmentedControl<V extends string>({
   size?: "sm" | "md";
   /** ยืดเต็มความกว้าง (แบ่งเท่าๆ กัน) */
   block?: boolean;
+  /**
+   * ใช้กับ block: false = แต่ละปุ่มกว้างตามข้อความก่อน แล้วค่อยแบ่งที่เหลือ
+   * (ช่องแคบๆ ที่ข้อความยาวไม่เท่ากัน เช่น "ไทย | English" ในแถบด้านซ้าย — แบ่งเท่ากันแล้ว "English" ถูกตัด)
+   */
+  equalWidth?: boolean;
   className?: string;
 }) {
   const refs = useRef<(HTMLElement | null)[]>([]);
@@ -66,7 +72,7 @@ export function SegmentedControl<V extends string>({
       "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-[color,background-color,box-shadow] [&_svg]:size-4 [&_svg]:shrink-0",
       // มือถือ: ปุ่มสูงอย่างน้อย 36–40px ให้แตะง่าย, จอใหญ่กลับไปขนาดกะทัดรัด
       size === "sm" ? "h-9 px-2.5 text-[13px] sm:h-7" : "h-10 px-3 text-sm sm:h-8",
-      block && "flex-1",
+      block && (equalWidth ? "flex-1" : "flex-auto"),
       active ? "bg-surface-raised text-fg shadow-sm ring-1 ring-line" : "text-fg-2 hover:text-fg",
       disabled && "pointer-events-none opacity-50",
     );

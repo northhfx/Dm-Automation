@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 import { Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { useT } from "@/lib/i18n/client";
+import { appearanceMessages } from "@/lib/i18n/messages/appearance";
 import { THEME_COOKIE, THEME_COOKIE_MAX_AGE, themeColorTags, type ThemePref } from "@/lib/theme";
 import { SegmentedControl, type SegmentOption } from "./segmented-control";
 
@@ -12,10 +14,10 @@ import { SegmentedControl, type SegmentOption } from "./segmented-control";
  * - initial = ค่าจากเซิร์ฟเวอร์ (getThemePref() ใน src/lib/theme-server.ts)
  */
 
-const CHOICES: { value: ThemePref; label: string; icon: LucideIcon }[] = [
-  { value: "light", label: "สว่าง", icon: Sun },
-  { value: "dark", label: "มืด", icon: Moon },
-  { value: "system", label: "ตามเครื่อง", icon: Monitor },
+const CHOICES: { value: ThemePref; label: "themeLight" | "themeDark" | "themeSystem"; icon: LucideIcon }[] = [
+  { value: "light", label: "themeLight", icon: Sun },
+  { value: "dark", label: "themeDark", icon: Moon },
+  { value: "system", label: "themeSystem", icon: Monitor },
 ];
 
 // ---------- ค่าที่ใช้ร่วมกันทุกปุ่มในหน้า ----------
@@ -104,9 +106,11 @@ export function ThemeToggle({
     () => initial,
   );
   const compact = variant === "compact";
+  const t = useT(appearanceMessages);
 
-  const options: SegmentOption<ThemePref>[] = CHOICES.map(({ value: v, label, icon: Icon }) =>
-    compact
+  const options: SegmentOption<ThemePref>[] = CHOICES.map(({ value: v, label: key, icon: Icon }) => {
+    const label = t(key);
+    return compact
       ? {
           value: v,
           // ไอคอนอย่างเดียว: ชื่อเต็มอยู่ใน sr-only (โปรแกรมอ่านหน้าจอ) และ title (ชี้เมาส์ค้างไว้)
@@ -118,12 +122,12 @@ export function ThemeToggle({
           ),
         }
       : // มือถือ: ซ่อนไอคอน ไม่งั้นคำว่า "ตามเครื่อง" ถูกตัดเป็น "ตามเค..." ในการ์ดที่กว้างแค่ ~300px
-        { value: v, label, icon: <Icon aria-hidden className="max-sm:hidden" /> },
-  );
+        { value: v, label, icon: <Icon aria-hidden className="max-sm:hidden" /> };
+  });
 
   return (
     <SegmentedControl
-      label="ธีมสี"
+      label={t("themeLabel")}
       options={options}
       value={value}
       onChange={(v) => {

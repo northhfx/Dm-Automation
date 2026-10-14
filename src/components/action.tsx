@@ -1,6 +1,9 @@
 "use client";
 
 import { unstable_rethrow } from "next/navigation";
+import { createT } from "@/lib/i18n/core";
+import { currentLocale } from "@/lib/i18n/client";
+import { commonMessages } from "@/lib/i18n/messages/common";
 import { toast } from "./toast";
 
 /*
@@ -45,7 +48,8 @@ export async function runAction(run: () => unknown, messages: { success?: string
       throw navigation;
     }
     console.error(err);
-    toast(messages.error ?? "ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง", { tone: "critical" });
+    // ฟังก์ชันนี้ไม่ใช่คอมโพเนนต์ (ใช้ hook ไม่ได้) → อ่านภาษาจาก <html lang>
+    toast(messages.error ?? createT(commonMessages, currentLocale())("actionFailed"), { tone: "critical" });
     return false;
   }
   if (messages.success) toast(messages.success, { tone: "good" });

@@ -19,6 +19,7 @@ import { findConnection, getConnection, type Connection, type LoginKind } from "
 import { randomCode } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { fitText, FLOW_LIMITS, flowPayload, parseFlowPayload } from "@/lib/flows/types";
+import { captureInboxItem } from "@/lib/inbox/capture";
 import { INSTAGRAM_ERRORS, markInstagramLoginDelivery, updateInstagramAccountStatus } from "@/lib/instagram/accounts";
 import {
   buildMessage,
@@ -85,6 +86,7 @@ async function logEvent(db: Db, e: EventInsert): Promise<void> {
  * ข้อความเข้า (คอมเมนต์ / DM) ที่ไม่ตรงกฎไหนเลย → บันทึกแค่ว่ามีข้อความเข้ามา ไว้นับสถิติ "ข้อความเข้า"
  * ไม่เก็บว่าใครส่ง (actorId / contactId) ข้อความ ชื่อ หรือ comment id — เก็บข้อมูลเฉพาะคนที่พิมพ์ตรง keyword
  * (migration 0007_keyword_only_contacts ล้างข้อมูลเก่าให้อยู่ในรูปเดียวกันนี้)
+ * ข้อมูลที่ให้เจ้าของร้านตามตอบเองเก็บแยกในตาราง inbox_items (ลบเองเมื่อครบ 30 วัน — lib/inbox/capture.ts)
  */
 function anonymousReceived(
   type: "comment_received" | "dm_received",
@@ -228,7 +230,22 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
       .set({ actorId: job.fromId, text: job.text, meta: { commentId: job.commentId, fromName: job.fromName, via } })
       .where(eq(events.id, received.id));
   }
-  if (!rule) return;
+  if (!rule) {
+    // ไม่มีกฎไหนตอบคอมเมนต์นี้ (ไม่ตรง keyword หรือเช็คโพสต์ถัดไปกับ Meta ไม่สำเร็จ) → ให้เจ้าของร้านตามตอบเองในหน้า "ข้อความรอตอบ"
+    // ชื่อมากับ webhook: Facebook = from.name, Instagram = from.username (เก็บใน job.fromName)
+    await captureInboxItem(db, {
+      platform: job.platform,
+      pageId: conn.id,
+      kind: "comment",
+      senderId: job.fromId,
+      senderName: job.platform === "facebook" ? job.fromName : null,
+      senderUsername: job.platform === "instagram" ? job.fromName : null,
+      text: job.text,
+      postId: job.postId,
+      commentId: job.commentId,
+    });
+    return;
+  }
   const firstStep = rule.steps[0];
   if (!firstStep) return;
   if (!token) {
@@ -442,6 +459,16 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
       .set({ lastInboundAt: new Date() })
       .where(and(eq(contacts.platform, job.platform), eq(contacts.platformUserId, job.senderId)));
     await logEvent(db, anonymousReceived("dm_received", job.platform, conn.id, via));
+    // ไม่มีกฎไหนตอบ → ขึ้นในหน้า "ข้อความรอตอบ" แยกจาก contacts (ลบเองเมื่อครบ 30 วัน)
+    // ไม่ถามชื่อจาก Meta ตรงนี้ — ถามตอนเจ้าของร้านเปิดหน้านั้น (lib/inbox/details.ts)
+    await captureInboxItem(db, {
+      platform: job.platform,
+      pageId: conn.id,
+      kind: "dm",
+      senderId: job.senderId,
+      text: job.text,
+      mid: job.mid,
+    });
     return;
   }
 

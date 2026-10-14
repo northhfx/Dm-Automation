@@ -1,10 +1,13 @@
+import { LoadingLabel } from "@/components/localized";
 import { Skeleton } from "@/components/ui";
 
 /** โครงหน้าทั่วไปของแดชบอร์ดระหว่างรอข้อมูล (หน้าแรก, กฎทั้งหมด, ตั้งค่า, คู่มือ) */
 export default function DashboardLoading() {
   return (
     <div role="status">
-      <span className="sr-only">กำลังโหลด…</span>
+      <span className="sr-only">
+        <LoadingLabel />
+      </span>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-8">
         <div className="min-w-0 flex-1">
           <Skeleton className="h-8 w-40" />
