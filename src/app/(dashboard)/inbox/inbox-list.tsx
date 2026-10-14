@@ -4,6 +4,7 @@ import { useEffect, useOptimistic, useRef, useTransition, type ReactNode } from 
 import { useRouter } from "next/navigation";
 import { ArrowUpRight, Check, MessageCircle, MessagesSquare, Undo2 } from "lucide-react";
 import { runAction, toFormData } from "@/components/action";
+import { MessengerAppLink } from "@/components/messenger-app-link";
 import { Switch } from "@/components/switch";
 import { toast } from "@/components/toast";
 import { Avatar, buttonStyle, Card, cx, PlatformIcon } from "@/components/ui";
@@ -193,8 +194,26 @@ function InboxRowItem({ row, done, now, onDone }: { row: InboxRowView; done: boo
 
       {/* มือถือ: ปุ่มอยู่ใต้ข้อความ (เยื้องตรงกับข้อความ) · จอใหญ่: ด้านขวา */}
       <div className="flex shrink-0 items-center gap-2 pl-[52px] sm:pl-0">
+        {/* แชท Facebook: จอสัมผัสเปิดแอป Messenger · คอมพิวเตอร์ใช้ห้องแชทใน Business Suite (Messenger บนคอมพิวเตอร์ปิดไปแล้ว) */}
+        {row.reply.messengerApp && (
+          <span className="contents pointer-fine:hidden">
+            <MessengerAppLink
+              chatUrl={row.reply.href}
+              name={row.senderName}
+              ariaLabel={t("replyAppAria", { person })}
+              className={cx(btn, "text-accent!")}
+            >
+              {t("reply")}
+              <ArrowUpRight aria-hidden />
+            </MessengerAppLink>
+          </span>
+        )}
         {/* ig.me เปิดบนเว็บ instagram.com ไม่ได้ → เครื่องที่ใช้เมาส์ใช้ลิงก์สำรอง */}
-        <span className={row.reply.desktopHref ? "contents pointer-fine:hidden" : "contents"}>
+        <span
+          className={
+            row.reply.messengerApp ? "hidden pointer-fine:contents" : row.reply.desktopHref ? "contents pointer-fine:hidden" : "contents"
+          }
+        >
           <a href={row.reply.href} {...EXTERNAL} aria-label={replyLabel} title={t(row.reply.hint)} className={cx(btn, "text-accent!")}>
             {t("reply")}
             <ArrowUpRight aria-hidden />

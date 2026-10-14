@@ -26,6 +26,13 @@ export const commonMessages = defineMessages({
     chartLabel: "กราฟรายวัน: {series} (กดลูกศรซ้าย/ขวาเพื่อดูค่าแต่ละวัน)",
     chartShowTable: "ดูเป็นตาราง",
     chartDate: "วันที่",
+
+    // ---- ปุ่มเปิดแอป Messenger (components/messenger-app-link.tsx) — {person} = ชื่อลูกค้าที่คัดลอกไว้ ----
+    messengerOpening: "วิธีตอบในแอป Messenger",
+    messengerSteps: "ในแอปให้สลับเป็นเพจของคุณก่อน (แตะรูปโปรไฟล์หรือเมนู) แชทที่เพิ่งทักมาจะอยู่บนสุด",
+    messengerStepsCopied: "ในแอปให้สลับเป็นเพจของคุณก่อน (แตะรูปโปรไฟล์หรือเมนู) แล้วค้นหา “{person}” — คัดลอกชื่อไว้ให้แล้ว วางได้เลย",
+    /** ปุ่มใน toast: เปิดตรงห้องแชทนั้นใน Meta Business Suite แทน */
+    messengerOpenBusinessSuite: "เปิดใน Business Suite",
   },
   en: {
     tagline: "Auto-replies for chats",
@@ -51,5 +58,10 @@ export const commonMessages = defineMessages({
     chartLabel: "Daily chart: {series} (use the left and right arrow keys to see each day)",
     chartShowTable: "Show as a table",
     chartDate: "Date",
+
+    messengerOpening: "Replying in the Messenger app",
+    messengerSteps: "In the app, switch to your Page first (tap your profile picture or Menu). The newest chats are at the top.",
+    messengerStepsCopied: "In the app, switch to your Page first (tap your profile picture or Menu), then search for “{person}”. The name is copied, so just paste it.",
+    messengerOpenBusinessSuite: "Open in Business Suite",
   },
 });

@@ -16,7 +16,7 @@ import { inboxMessages } from "@/lib/i18n/messages/inbox";
 import { captureInboxItem } from "@/lib/inbox/capture";
 import { countOpenInboxItems } from "@/lib/inbox/count";
 import { clearInboxDetailsCache, fillInboxDetails } from "@/lib/inbox/details";
-import { facebookCommentUrl, inboxPostUrl, inboxReplyLink, type InboxLinkInput } from "@/lib/inbox/links";
+import { facebookCommentUrl, inboxPostUrl, inboxReplyLink, messengerAppUrl, type InboxLinkInput } from "@/lib/inbox/links";
 import { countInboxRows, INBOX_MAX_PAGE, loadInboxRows, parseInboxPage, sumCounts } from "@/lib/inbox/list";
 import { INBOX_RETENTION_DAYS } from "@/lib/inbox/retention";
 import { parseInboxIds } from "@/lib/inbox/status";
@@ -486,8 +486,9 @@ describe("ลิงก์ปุ่ม “ตอบ”", () => {
     permalink: null,
   };
 
-  it("แชท Facebook → ห้องแชทใน Meta Business Suite", () => {
+  it("แชท Facebook → มือถือเปิดแอป Messenger · คอมพิวเตอร์/สำรอง = ห้องแชทใน Meta Business Suite", () => {
     const link = inboxReplyLink(base);
+    expect(link.messengerApp).toBe(true);
     const url = new URL(link.href);
     expect(url.origin + url.pathname).toBe("https://business.facebook.com/latest/inbox/all");
     expect(Object.fromEntries(url.searchParams)).toEqual({
@@ -497,6 +498,20 @@ describe("ลิงก์ปุ่ม “ตอบ”", () => {
       thread_type: "FB_MESSAGE",
     });
     expect(link.desktopHref).toBeUndefined();
+  });
+
+  it("ลิงก์เปิดแอป Messenger: iPhone = fb-messenger:// · Android = intent ของแอป Messenger ที่สำรองไปห้องแชทใน Business Suite", () => {
+    const chat = inboxReplyLink(base).href;
+    const iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+    const android = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36";
+    expect(messengerAppUrl(iphone, chat)).toBe("fb-messenger://");
+    expect(messengerAppUrl("", chat)).toBe("fb-messenger://");
+    const intent = messengerAppUrl(android, chat);
+    expect(intent).toMatch(/^intent:\/\/#Intent;scheme=fb-messenger;package=com\.facebook\.orca;S\.browser_fallback_url=[^;]+;end$/);
+    // URL สำรองต้อง encode ทั้งหมด (มี & = ; ที่จะทำให้ intent พัง)
+    const fallback = /S\.browser_fallback_url=([^;]+);end$/.exec(intent)?.[1] ?? "";
+    expect(fallback).not.toMatch(/[&=;?]/);
+    expect(decodeURIComponent(fallback)).toBe(chat);
   });
 
   it("คอมเมนต์ Facebook → โพสต์ + comment_id (ส่วนท้ายของ id ใน webhook)", () => {
@@ -627,6 +642,11 @@ describe("รายการในหน้า (ไทย / อังกฤษ)"
     for (const thai of ["ผู้ใช้", "ตอบ", "เสร็จ", "แชท", "บนโพสต์"]) expect(text).not.toContain(thai);
     expect(html).toContain('aria-label="Reply to Facebook user in Meta Business Suite (opens in a new tab)"');
     expect(html).toContain('target="_blank"');
+    // แชท Facebook: จอสัมผัสเปิดแอป Messenger (แท็บเดิม) · เมาส์เปิด Business Suite
+    expect(html).toContain('href="fb-messenger://"');
+    expect(html).toContain('aria-label="Reply to Facebook user in the Messenger app"');
+    expect(html).toMatch(/<span class="contents pointer-fine:hidden"><a href="fb-messenger:\/\/"/);
+    expect(html).toMatch(/<span class="hidden pointer-fine:contents"><a href="https:\/\/business\.facebook\.com\/latest\/inbox\/all\?/);
   });
 
   it("เวลาของรายการใช้เขตเวลาของระบบที่เซิร์ฟเวอร์ส่งมา (ตรงกันทั้งตอนเรนเดอร์ฝั่งเซิร์ฟเวอร์และในเบราว์เซอร์)", () => {

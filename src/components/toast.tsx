@@ -143,14 +143,42 @@ export function Toaster() {
   );
 }
 
+function subscribeVisibility(listener: () => void) {
+  document.addEventListener("visibilitychange", listener);
+  return () => document.removeEventListener("visibilitychange", listener);
+}
+
 function ToastView({ item }: { item: ToastItem }) {
   const t = useT(commonMessages);
   const [paused, setPaused] = useState(false);
+  // หน้าอยู่เบื้องหลัง (เช่น กดแล้วไปเปิดแอป Messenger) → ยังไม่นับเวลา กลับมาที่หน้านี้แล้วค่อยนับใหม่ทั้งหมด
+  const hidden = useSyncExternalStore(
+    subscribeVisibility,
+    () => document.visibilityState === "hidden",
+    () => false,
+  );
   useEffect(() => {
-    if (paused) return;
+    if (paused || hidden) return;
     const timer = setTimeout(() => dismissToast(item.id), item.duration);
     return () => clearTimeout(timer);
-  }, [item.id, item.duration, paused]);
+  }, [item.id, item.duration, paused, hidden]);
+
+  const stacked = Boolean(item.description && item.action);
+  const actionButton = item.action && (
+    <button
+      type="button"
+      onClick={() => {
+        dismissToast(item.id);
+        item.action?.onClick();
+      }}
+      className={cx(
+        "h-8 shrink-0 rounded-lg px-2.5 text-sm font-semibold whitespace-nowrap text-accent transition-colors hover:bg-accent-soft",
+        stacked ? "-ml-2.5 mt-1" : "-my-1",
+      )}
+    >
+      {item.action.label}
+    </button>
+  );
 
   return (
     <div
@@ -164,19 +192,10 @@ function ToastView({ item }: { item: ToastItem }) {
       <div className="min-w-0 flex-1 py-px leading-6">
         <p className="font-medium">{item.message}</p>
         {item.description && <p className="text-fg-2">{item.description}</p>}
+        {/* มีคำอธิบายด้วย → ปุ่มอยู่ใต้ข้อความ (ถ้าอยู่ข้างๆ ข้อความบนมือถือจะเหลือช่องแคบมาก) */}
+        {stacked && actionButton}
       </div>
-      {item.action && (
-        <button
-          type="button"
-          onClick={() => {
-            dismissToast(item.id);
-            item.action?.onClick();
-          }}
-          className="-my-1 h-8 shrink-0 rounded-lg px-2.5 text-sm font-semibold whitespace-nowrap text-accent transition-colors hover:bg-accent-soft"
-        >
-          {item.action.label}
-        </button>
-      )}
+      {!stacked && actionButton}
       <button
         type="button"
         onClick={() => dismissToast(item.id)}

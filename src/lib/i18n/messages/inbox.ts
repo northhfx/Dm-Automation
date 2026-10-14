@@ -36,7 +36,10 @@ export const inboxMessages = defineMessages({
     messageCount: "{count} ข้อความ · แสดงข้อความล่าสุด",
     reply: "ตอบ",
     replyAria: "ตอบ {person} ใน {where} (เปิดแท็บใหม่)",
-    replyHintMessenger: "เปิดแชทนี้ในกล่องข้อความของเพจ (Meta Business Suite)",
+    /** แชท Facebook บนมือถือ: เปิดแอป Messenger */
+    replyAppAria: "ตอบ {person} ในแอป Messenger",
+    /** แชท Facebook บนคอมพิวเตอร์ (มือถือเปิดแอป Messenger — ข้อความอยู่ใน common) */
+    replyHintMessenger: "เปิดแชทนี้ในกล่องข้อความของเพจ (Meta Business Suite) — บนคอมพิวเตอร์ Facebook ปิดแอป Messenger ไปแล้ว",
     replyHintInstagramChat: "เปิดแชทกับลูกค้าคนนี้ในแอป Instagram",
     replyHintInstagramProfile: "เปิดหน้าโปรไฟล์ของลูกค้าใน Instagram แล้วกด “ส่งข้อความ”",
     replyHintInstagramInbox: "เปิดกล่องข้อความ Instagram แล้วหาแชทของลูกค้าคนนี้",
@@ -93,7 +96,8 @@ export const inboxMessages = defineMessages({
     messageCount: "{count} messages · showing the latest",
     reply: "Reply",
     replyAria: "Reply to {person} in {where} (opens in a new tab)",
-    replyHintMessenger: "Open this chat in your Page inbox (Meta Business Suite)",
+    replyAppAria: "Reply to {person} in the Messenger app",
+    replyHintMessenger: "Open this chat in your Page inbox (Meta Business Suite). Facebook no longer has a Messenger app for computers.",
     replyHintInstagramChat: "Open the chat with this customer in the Instagram app",
     replyHintInstagramProfile: "Open this customer's Instagram profile, then tap “Message”",
     replyHintInstagramInbox: "Open your Instagram inbox and find this customer's chat",

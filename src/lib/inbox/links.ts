@@ -4,7 +4,9 @@ import type { InboxKind, Platform } from "@/db/schema";
  * ลิงก์ "ตอบ" ของแต่ละรายการในหน้าข้อความรอตอบ — เปิดที่ที่เจ้าของร้านตอบได้ทันที (แท็บใหม่)
  * ฟังก์ชันล้วน (ไม่ยิง API) ใช้ได้ทั้งฝั่ง Server และในเทส
  *
- * - แชท Facebook   → ห้องแชทนั้นใน Meta Business Suite (แบบเดียวกับปุ่ม "เปิดแชท" ในหน้ารายชื่อลูกค้า)
+ * - แชท Facebook   → มือถือ: เปิดแอป Messenger (messengerApp) · คอมพิวเตอร์: ห้องแชทนั้นใน Meta Business Suite
+ *                    Facebook ไม่มีลิงก์ที่พาเข้าห้องแชทของลูกค้าในแอป Messenger "ในนามเพจ" (m.me = ทักเพจในนามตัวเอง)
+ *                    แอปจึงเปิดได้แค่หน้าแรก ให้เจ้าของสลับเป็นเพจแล้วหาแชทเอง · Messenger บนคอมพิวเตอร์ Meta ปิดไปแล้ว
  * - แชท Instagram  → https://ig.me/m/<username> เปิดห้องแชทในแอป Instagram (Meta: ใช้บนเว็บ instagram.com ไม่ได้)
  *                    คอมพิวเตอร์ (เมาส์) จึงใช้หน้าโปรไฟล์แทน แล้วกด "ส่งข้อความ" · ไม่รู้ username → กล่องข้อความ Instagram
  * - คอมเมนต์ Facebook  → โพสต์ + ?comment_id= (Facebook เลื่อนไปที่คอมเมนต์นั้นให้) สร้างจาก id ใน webhook ไม่ต้องถาม Meta
@@ -38,6 +40,11 @@ export interface ReplyLink {
   /** ลิงก์สำหรับเครื่องที่ใช้เมาส์ (คอมพิวเตอร์) เมื่อ href เปิดบนเว็บไม่ได้ — มาคู่กับ desktopHint */
   desktopHref?: string;
   desktopHint?: ReplyHint;
+  /**
+   * แชท Facebook: เครื่องจอสัมผัสเปิดแอป Messenger แทน (คอมโพเนนต์ MessengerAppLink — ลิงก์ขึ้นกับ iPhone/Android)
+   * href = ห้องแชทใน Meta Business Suite ใช้บนคอมพิวเตอร์ และเป็นทางสำรองเมื่อเปิดแอปไม่ได้
+   */
+  messengerApp?: true;
   /** แอปปลายทาง (ใช้ในคำอธิบายสำหรับโปรแกรมอ่านหน้าจอ — ไม่แปล) */
   where: "Meta Business Suite" | "Instagram" | "Facebook";
   hint: ReplyHint;
@@ -45,7 +52,7 @@ export interface ReplyLink {
 
 const BUSINESS_INBOX = "https://business.facebook.com/latest/inbox/all";
 
-/** ห้องแชท Messenger ของเพจใน Meta Business Suite */
+/** ห้องแชท Messenger ของเพจใน Meta Business Suite (เลือกห้องจาก PSID ได้ — ตอบในนามเพจ) */
 export function businessSuiteThreadUrl(pageId: string, psid: string): string {
   const url = new URL(BUSINESS_INBOX);
   url.searchParams.set("asset_id", pageId);
@@ -53,6 +60,18 @@ export function businessSuiteThreadUrl(pageId: string, psid: string): string {
   url.searchParams.set("selected_item_id", psid);
   url.searchParams.set("thread_type", "FB_MESSAGE");
   return url.toString();
+}
+
+/**
+ * ลิงก์เปิดแอป Messenger บนมือถือ (เปิดหน้าแรกของแอป — เลือกห้องแชทของเพจไม่ได้)
+ * - iPhone และอื่นๆ: fb-messenger:// (ไม่มีแอป → Safari แจ้งว่าเปิดไม่ได้ ผู้ใช้ยังอยู่หน้าเดิม)
+ * - Android: intent ของ Chrome ระบุแอป Messenger (com.facebook.orca) ไม่มีแอป/เปิดไม่ได้ → ไปที่ fallbackHref แทน
+ */
+export function messengerAppUrl(userAgent: string, fallbackHref: string): string {
+  if (/android/i.test(userAgent)) {
+    return `intent://#Intent;scheme=fb-messenger;package=com.facebook.orca;S.browser_fallback_url=${encodeURIComponent(fallbackHref)};end`;
+  }
+  return "fb-messenger://";
 }
 
 /** โพสต์ Facebook จาก post_id ใน webhook ("<page id>_<post id>") */
@@ -82,7 +101,12 @@ export function inboxPostUrl(item: InboxLinkInput): string | null {
 export function inboxReplyLink(item: InboxLinkInput, facebookPageIds: ReadonlySet<string> = new Set()): ReplyLink {
   if (item.kind === "dm") {
     if (item.platform === "facebook") {
-      return { href: businessSuiteThreadUrl(item.pageId, item.senderId), where: "Meta Business Suite", hint: "replyHintMessenger" };
+      return {
+        href: businessSuiteThreadUrl(item.pageId, item.senderId),
+        messengerApp: true,
+        where: "Meta Business Suite",
+        hint: "replyHintMessenger",
+      };
     }
     if (item.senderUsername) {
       const username = encodeURIComponent(item.senderUsername);

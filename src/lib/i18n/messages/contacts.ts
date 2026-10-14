@@ -65,7 +65,10 @@ export const contactsMessages = defineMessages({
     previewChat: "ข้อความแชทล่าสุด:",
     openChat: "เปิดแชท",
     openChatAria: "เปิดแชทกับ {person} ใน {where} (เปิดแท็บใหม่)",
-    openChatHintMessenger: "เปิดแชทนี้ในกล่องข้อความของเพจ (Meta Business Suite)",
+    /** แชท Facebook บนมือถือ: เปิดแอป Messenger */
+    openChatAppAria: "เปิดแชทกับ {person} ในแอป Messenger",
+    /** แชท Facebook บนคอมพิวเตอร์ (มือถือเปิดแอป Messenger — ข้อความอยู่ใน common) */
+    openChatHintMessenger: "เปิดแชทนี้ในกล่องข้อความของเพจ (Meta Business Suite) — บนคอมพิวเตอร์ Facebook ปิดแอป Messenger ไปแล้ว",
     openChatHintInstagram: "เปิดหน้าโปรไฟล์ Instagram ของลูกค้า แล้วกดส่งข้อความเพื่อคุยต่อ",
   },
   en: {
@@ -114,7 +117,8 @@ export const contactsMessages = defineMessages({
     previewChat: "Latest message:",
     openChat: "Open chat",
     openChatAria: "Open chat with {person} in {where} (opens in a new tab)",
-    openChatHintMessenger: "Open this chat in your Page inbox (Meta Business Suite)",
+    openChatAppAria: "Open chat with {person} in the Messenger app",
+    openChatHintMessenger: "Open this chat in your Page inbox (Meta Business Suite). Facebook no longer has a Messenger app for computers.",
     openChatHintInstagram: "Open the customer's Instagram profile, then tap Message to keep chatting",
   },
 });
