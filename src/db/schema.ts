@@ -190,6 +190,10 @@ export const events = pgTable(
     // ข้อความล่าสุดของลูกค้าแต่ละคน (หน้ารายชื่อลูกค้า) — เฉพาะแถวที่ผูกกับ contact
     // ข้อความเข้าที่ไม่ตรงกฎ (ส่วนใหญ่ของตาราง) ไม่มี contact_id จึงไม่เพิ่มขนาด index
     index("events_contact_created_idx").on(t.contactId, t.createdAt).where(sql`${t.contactId} IS NOT NULL`),
+    // หา contact ของคนคอมเมนต์จากกิจกรรมอื่นของคนเดียวกัน (นับคนบนหน้าภาพรวม — lib/funnel.ts)
+    index("events_actor_contact_idx")
+      .on(t.platform, t.actorId, t.contactId)
+      .where(sql`${t.contactId} IS NOT NULL AND ${t.type} IN ('rule_triggered', 'dm_sent')`),
   ],
 );
 

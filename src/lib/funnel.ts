@@ -10,12 +10,14 @@ import type { PlatformCounts } from "@/lib/stats";
 /*
  * ตัวเลขแบบ "นับเป็นคน" ของหน้าภาพรวม (funnel): พิมพ์ keyword → คลิกลิงก์
  * - หน่วยนับคือ "คน × กฎ": คนเดิมพิมพ์ keyword เดิมซ้ำในช่วงเดียวกัน = 1, พิมพ์ keyword ของ 2 กฎ = 2
- *   "พิมพ์ keyword" = ตรงกับกฎ (rule_triggered) หรือถูกข้ามเพราะกฎตอบคนละครั้งเดียว (skipped/once_per_user — พิมพ์มาแต่ไม่ได้ส่งซ้ำ)
+ *   "พิมพ์ keyword" = ตรงกับกฎ (rule_triggered), ถูกข้ามเพราะกฎตอบคนละครั้งเดียว (skipped/once_per_user — พิมพ์มาแต่ไม่ได้ส่งซ้ำ)
+ *   หรือส่งข้อความแรกไม่สำเร็จ (dm_failed จากคอมเมนต์/แชท — รวมตอน token ใช้ไม่ได้ ที่ไม่มี rule_triggered) — คนเดียวกันรวมเป็น 1
  * - คนคลิกลิงก์ = คนที่พิมพ์ keyword ในช่วงนั้น แล้วคลิกลิงก์ของกฎเดียวกันในช่วงเดียวกันอย่างน้อย 1 ครั้ง
  *   (นับจาก link_clicked — ไม่นับการกดปุ่มไปข้อความถัดไป) → อัตราคลิก = คนคลิกลิงก์ ÷ คนพิมพ์ keyword ไม่เกิน 100%
  * - Contact ใหม่ = ระบบเพิ่งรู้จักในช่วงนี้ (contacts.first_seen_at อยู่ในช่วง หรือยังไม่มี contact) · Contact เดิม = รู้จักก่อนช่วงนี้
  * ระบุตัวคน: contact_id ของกิจกรรม → ถ้าไม่มี (คอมเมนต์ที่ DM ยังไม่ส่ง / ส่งไม่สำเร็จ / ข้อมูลก่อนมีการผูก contact)
  * หาจากกิจกรรมอื่นของคนเดียวกัน (actor_id เดียวกันที่รู้ contact แล้ว) หรือ contact ที่มี id ตรงกัน (Instagram / แชท)
+ * (ไม่เทียบ page_id: id ของคนไม่ซ้ำกันอยู่แล้วในแพลตฟอร์มเดียวกัน และ page_id ของ IG เปลี่ยนได้เมื่อสลับวิธีเชื่อมต่อ)
  * ไม่งั้นใช้ id ของคนคอมเมนต์ (actor_id)
  */
 
@@ -63,30 +65,38 @@ function rangeOf(days: number, previous: boolean): { start: SQL; end: SQL } {
     : { start: dayStart(days - 1), end: sql`now()` };
 }
 
+/** need/known: คนที่ยังไม่รู้ contact หาครั้งเดียวต่อคน ด้วย index events_actor_contact_idx (อ่านจาก index อย่างเดียว ไม่ต้องอ่านทั้งตาราง events) */
 async function funnelRows(db: Db, start: SQL, end: SQL) {
   const tz = env.timezone;
   return db.execute<Row>(sql`
     WITH typing AS (
-      SELECT e.id, e.rule_id, e.platform, e.page_id, e.actor_id, e.contact_id, e.created_at
+      SELECT e.id, e.rule_id, e.platform, e.actor_id, e.contact_id, e.created_at
       FROM events e
       WHERE e.rule_id IS NOT NULL AND e.platform IS NOT NULL
-        AND (e.type = 'rule_triggered' OR (e.type = 'skipped' AND e.meta->>'reason' = 'once_per_user'))
+        AND (
+          e.type = 'rule_triggered'
+          OR (e.type = 'skipped' AND e.meta->>'reason' = 'once_per_user')
+          OR (e.type = 'dm_failed' AND e.meta->>'source' IN ('comment', 'dm'))
+        )
         AND e.created_at >= ${start} AND e.created_at < ${end}
     ),
+    need AS (
+      SELECT DISTINCT platform, actor_id FROM typing WHERE contact_id IS NULL AND actor_id IS NOT NULL
+    ),
     known AS (
-      SELECT k.platform, k.page_id, k.actor_id, max(k.contact_id) AS contact_id
-      FROM events k
-      WHERE k.type IN ('rule_triggered', 'dm_sent') AND k.contact_id IS NOT NULL
-        AND k.actor_id IN (SELECT actor_id FROM typing WHERE contact_id IS NULL)
-      GROUP BY 1, 2, 3
+      SELECT n.platform, n.actor_id, (
+        SELECT max(k.contact_id) FROM events k
+        WHERE k.platform = n.platform AND k.actor_id = n.actor_id AND k.contact_id IS NOT NULL
+          AND k.type IN ('rule_triggered', 'dm_sent')
+      ) AS contact_id
+      FROM need n
     ),
     resolved AS (
       SELECT t.id, t.rule_id, t.platform, t.actor_id, t.created_at, coalesce(t.contact_id, kn.contact_id, cu.id) AS contact_id
       FROM typing t
-      LEFT JOIN known kn ON t.contact_id IS NULL
-        AND kn.platform = t.platform AND kn.page_id IS NOT DISTINCT FROM t.page_id AND kn.actor_id = t.actor_id
+      LEFT JOIN known kn ON t.contact_id IS NULL AND kn.platform = t.platform AND kn.actor_id = t.actor_id
       LEFT JOIN contacts cu ON t.contact_id IS NULL AND kn.contact_id IS NULL
-        AND cu.platform = t.platform AND cu.page_id = t.page_id AND cu.platform_user_id = t.actor_id
+        AND cu.platform = t.platform AND cu.platform_user_id = t.actor_id
     ),
     pairs AS (
       SELECT rule_id,

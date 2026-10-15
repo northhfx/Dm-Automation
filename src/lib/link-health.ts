@@ -8,8 +8,9 @@ import type { FlowStep } from "@/lib/flows/types";
  * - worker เรียก checkRuleLinksIfDue() ในรอบดูแลระบบ ตรวจจริงทุก 6 ชั่วโมง
  * - ถือว่าเสียเฉพาะที่ชัดเจน: เปิดไม่ได้เลย (DNS / หมดเวลา / ต่อไม่ติด), 404, 410, 500–599
  *   ไม่นับว่าเสีย: 401/403/429 และ 503 ที่มาจากระบบกันบอท (เว็บกันโปรแกรมอัตโนมัติ — ลูกค้าเปิดเองได้),
- *   ใบรับรอง HTTPS ที่เซิร์ฟเวอร์ตรวจไม่ผ่าน (เบราว์เซอร์มักเปิดได้), รหัสแปลกๆ เช่น 999
- * - ทุกลิงก์เปิดไม่ได้พร้อมกัน = เน็ตของเซิร์ฟเวอร์เองมีปัญหา ไม่ใช่ลิงก์ → ไม่นับรอบนั้น
+ *   เว็บที่ส่งใบรับรอง HTTPS มาไม่ครบ (เบราว์เซอร์หาส่วนที่ขาดเองได้), รหัสแปลกๆ เช่น 999
+ *   (ใบรับรองหมดอายุ / ชื่อไม่ตรง / เซ็นเอง ยังนับว่าเสีย — เบราว์เซอร์ของลูกค้าก็ขึ้นเตือน)
+ * - ลิงก์ของหลายเว็บเปิดไม่ได้พร้อมกันทั้งหมด = เน็ตของเซิร์ฟเวอร์เองมีปัญหา ไม่ใช่ลิงก์ → ไม่นับรอบนั้น
  * - แจ้งเตือนเมื่อเสียติดกันตั้งแต่ 2 รอบ (เว็บล่มแป๊บเดียวไม่ต้องเตือน)
  */
 
@@ -38,8 +39,16 @@ function isBotBlock(res: Response): boolean {
   return res.status === 503 && (res.headers.has("cf-mitigated") || res.headers.has("retry-after"));
 }
 
-/** error ใบรับรอง HTTPS (เช่น เซิร์ฟเวอร์ส่ง certificate ไม่ครบ) — เบราว์เซอร์มักเปิดได้ จึงไม่นับว่าเสีย */
-const TLS_ERROR = /^(CERT_|UNABLE_TO_|SELF_SIGNED|DEPTH_ZERO|ERR_TLS|ERR_SSL)/;
+/** เว็บส่งใบรับรอง HTTPS มาไม่ครบ — เบราว์เซอร์หาส่วนที่ขาดเองได้ (Node หาไม่ได้) จึงไม่นับว่าเสีย */
+const INCOMPLETE_CHAIN = new Set(["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "UNABLE_TO_GET_ISSUER_CERT"]);
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
 
 /** เปิดลิงก์ 1 ครั้ง — ok=false เมื่อเสียชัดเจน */
 export async function probeUrl(url: string, fetchImpl: FetchLike = fetch): Promise<{ ok: boolean; status: number | null; error: string | null }> {
@@ -59,7 +68,7 @@ export async function probeUrl(url: string, fetchImpl: FetchLike = fetch): Promi
   } catch (err) {
     const e = err as Error & { cause?: { code?: string } };
     const code = (e.cause?.code ?? e.name ?? "error").slice(0, 100);
-    return { ok: TLS_ERROR.test(code), status: null, error: code };
+    return { ok: INCOMPLETE_CHAIN.has(code), status: null, error: code };
   }
 }
 
@@ -78,8 +87,9 @@ export async function checkRuleLinks(db: Db, fetchImpl: FetchLike = fetch, now: 
     const batch = urls.slice(i, i + CONCURRENCY);
     results.push(...(await Promise.all(batch.map(async (url) => ({ url, ...(await probeUrl(url, fetchImpl)) })))));
   }
-  // ทุกลิงก์ (ตั้งแต่ 2 ลิงก์) เปิดไม่ได้เลยพร้อมกัน → น่าจะเป็นที่เน็ตของเซิร์ฟเวอร์ ไม่นับรอบนี้ (รอบหน้าค่อยตรวจใหม่)
-  const networkDown = results.length >= 2 && results.every((r) => !r.ok && r.status === null);
+  // ลิงก์ของตั้งแต่ 2 เว็บเปิดไม่ได้เลยพร้อมกันทั้งหมด → น่าจะเป็นที่เน็ตของเซิร์ฟเวอร์ ไม่นับรอบนี้ (รอบหน้าค่อยตรวจใหม่)
+  // (ทุกลิงก์อยู่เว็บเดียวกันแล้วเว็บนั้นล่ม = ลิงก์เสียจริง ต้องเตือน)
+  const networkDown = new Set(results.map((r) => hostOf(r.url))).size >= 2 && results.every((r) => !r.ok && r.status === null);
   const previous = new Map(
     (await db.select().from(linkChecks).where(inArray(linkChecks.url, urls))).map((r) => [r.url, r.failures]),
   );

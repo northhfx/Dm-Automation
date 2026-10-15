@@ -49,6 +49,7 @@ export const dashboardMessages = defineMessages({
     /** ช่วงก่อนหน้าเป็น 0 — คำนวณ % ไม่ได้ */
     noPrevious: "ช่วงก่อนหน้ายังไม่มีข้อมูล",
     previousZero: "{days} วันก่อนหน้าเป็น 0",
+    noTypedYet: "ช่วงนี้ยังไม่มีคนพิมพ์ keyword",
 
     // ---- กราฟรายวัน ----
     chartTitle: "รายวัน",
@@ -153,6 +154,7 @@ export const dashboardMessages = defineMessages({
     points: "{value} pts",
     noPrevious: "No data for the previous period",
     previousZero: "Was 0 in the previous {days} days",
+    noTypedYet: "No one has typed a keyword in this period yet",
 
     chartTitle: "Daily",
     chartEmptyTitle: "No data in the last {days} days",

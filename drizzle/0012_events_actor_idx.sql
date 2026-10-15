@@ -1,0 +1,1 @@
+CREATE INDEX "events_actor_contact_idx" ON "events" USING btree ("platform","actor_id","contact_id") WHERE "events"."contact_id" IS NOT NULL AND "events"."type" IN ('rule_triggered', 'dm_sent');

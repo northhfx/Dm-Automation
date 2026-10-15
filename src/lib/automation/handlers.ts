@@ -249,11 +249,6 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
   }
   const firstStep = rule.steps[0];
   if (!firstStep) return;
-  if (!token) {
-    await logTokenProblem(db, job.platform, conn.id, rule.id, job.fromId, conn.api, "comment");
-    return;
-  }
-
   if (rule.oncePerUser) {
     const already = await db.query.events.findFirst({
       where: and(
@@ -277,6 +272,12 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
       });
       return;
     }
+  }
+
+  // เช็กหลัง "ตอบคนละครั้ง" — คนที่ได้ DM ไปแล้วไม่ถือว่าส่งไม่สำเร็จ แม้ตอนนี้ token ใช้ไม่ได้
+  if (!token) {
+    await logTokenProblem(db, job.platform, conn.id, rule.id, job.fromId, conn.api, "comment");
+    return;
   }
 
   await logEvent(db, {

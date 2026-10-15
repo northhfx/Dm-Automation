@@ -153,6 +153,23 @@ describe("getFunnel (นับเป็นคน)", () => {
     expect(f.totals).toMatchObject({ typed: { facebook: 0, instagram: 1 }, newPeople: 0, returningPeople: 1 });
   });
 
+  it("ส่งข้อความแรกไม่สำเร็จ (token ใช้ไม่ได้ — ไม่มี rule_triggered) ก็นับว่าพิมพ์ keyword · IG ที่สลับวิธีเชื่อมต่อยังเป็นคนเดิม", async () => {
+    const a = await createRule({ name: "A", steps: LINK_STEP });
+    const ig = await contact("IGSID_Z", "instagram", at(30)); // contact เดิม ผูกกับ PAGE1
+    await db.insert(events).values([
+      { type: "dm_failed", platform: "facebook", pageId: "PAGE1", ruleId: a.id, actorId: "ASID_T", meta: { source: "comment" }, createdAt: at(1) },
+      // ข้อความถัดไปหลังกดปุ่มไม่สำเร็จ ไม่ใช่การพิมพ์ keyword
+      { type: "dm_failed", platform: "facebook", pageId: "PAGE1", ruleId: a.id, actorId: "ASID_B", meta: { source: "button" }, createdAt: at(1) },
+      // หลังสลับไปเชื่อมผ่าน Instagram Login (page_id = IG1): ตรงกับกฎ + ส่งไม่สำเร็จ = คนเดียวกัน
+      { type: "rule_triggered", platform: "instagram", pageId: "IG1", ruleId: a.id, actorId: "IGSID_Z", createdAt: at(2) },
+      { type: "dm_failed", platform: "instagram", pageId: "IG1", ruleId: a.id, actorId: "IGSID_Z", meta: { source: "comment" }, createdAt: at(2) },
+      { type: "rule_triggered", platform: "instagram", pageId: "PAGE1", ruleId: a.id, contactId: ig, actorId: "IGSID_Z", createdAt: at(1) },
+    ]);
+    const f = await getFunnel(db, 7, []);
+    expect(f.totals.typed).toEqual({ facebook: 1, instagram: 1 });
+    expect(f.totals.returningPeople).toBe(1);
+  });
+
   it("กฎที่มีปุ่มลิงก์", async () => {
     const { a } = await seed();
     expect(await rulesWithLinks(db)).toEqual(new Set([a.id]));
@@ -215,6 +232,18 @@ describe("getProblems (ปัญหาที่ต้องดู)", () => {
     ]);
   });
 
+  it("token ใช้ไม่ได้: คนที่ได้ DM ไปแล้ว (กฎตอบคนละครั้ง) คอมเมนต์ซ้ำ ไม่นับเป็นส่งไม่สำเร็จ", async () => {
+    await createRule();
+    await ingestWebhook(db, fbComment({ commentId: "C1", text: "สนใจ" }));
+    await drainQueue(db);
+    await db.update(pages).set({ accessToken: "garbage" }).where(eq(pages.id, "PAGE1"));
+    await ingestWebhook(db, fbComment({ commentId: "C2", text: "สนใจอีก" }));
+    await drainQueue(db);
+    expect((await getProblems(db, 7)).failedSends).toBe(0);
+    const reasons = (await db.select().from(events).where(eq(events.type, "skipped"))).map((e) => e.meta?.reason);
+    expect(reasons).toEqual(["once_per_user"]);
+  });
+
   it("ลูกค้ากดปุ่มจากข้อความเก่าที่ถูกแก้แล้ว → บันทึกเป็นปัญหา", async () => {
     const rule = await createRule();
     await ingestWebhook(db, fbComment({ commentId: "C1", text: "สนใจ" }));
@@ -260,6 +289,11 @@ describe("link-health (ตรวจลิงก์ปลายทาง)", () =>
     };
     expect(await probeUrl("https://bot", f)).toMatchObject({ ok: true, status: 503 });
     expect(await probeUrl("https://tls", f)).toMatchObject({ ok: true, error: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" });
+    // ใบรับรองหมดอายุ: เบราว์เซอร์ของลูกค้าก็ขึ้นเตือน → นับว่าเสีย
+    const expired: FetchLike = async () => {
+      throw Object.assign(new TypeError("fetch failed"), { cause: { code: "CERT_HAS_EXPIRED" } });
+    };
+    expect(await probeUrl("https://x", expired)).toMatchObject({ ok: false, error: "CERT_HAS_EXPIRED" });
     expect(await probeUrl("https://li", f)).toMatchObject({ ok: true, status: 999 });
     expect(await probeUrl("https://a", f)).toEqual({ ok: false, status: 404, error: null });
     expect(await probeUrl("https://b", f)).toEqual({ ok: true, status: 403, error: null });
@@ -309,5 +343,20 @@ describe("link-health (ตรวจลิงก์ปลายทาง)", () =>
     const rows = await db.select().from(linkChecks);
     expect(rows.map((r) => r.failures)).toEqual([0, 0]);
     expect((await getProblems(db, 7)).brokenLinks).toEqual([]);
+  });
+
+  it("ทุกลิงก์อยู่เว็บเดียวกันแล้วเว็บนั้นล่ม = ลิงก์เสียจริง", async () => {
+    await createRule({
+      steps: singleStep("x", [
+        { id: "b1", title: "1", type: "link", url: "https://myshop.example/a" },
+        { id: "b2", title: "2", type: "link", url: "https://myshop.example/b" },
+      ]),
+    });
+    const down: FetchLike = async () => {
+      throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND" } });
+    };
+    await checkRuleLinks(db, down);
+    await checkRuleLinks(db, down);
+    expect((await getProblems(db, 7)).brokenLinks.map((l) => l.url).sort()).toEqual(["https://myshop.example/a", "https://myshop.example/b"]);
   });
 });

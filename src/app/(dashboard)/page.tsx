@@ -99,7 +99,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
               value: f.number(clickedAll),
               split: counts(clicked),
               change: change(clickedAll, sum(previous.clicked)),
-              previousZero: previousTyped > 0,
+              changeNote: previousTyped > 0 ? tPage("previousZero", { days }) : undefined,
               href: "/activity?filter=clicks",
             },
             {
@@ -111,6 +111,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                 instagram: f.percent(rate(clicked.instagram, typed.instagram)),
               },
               change: pointsChange(clickRate, rate(sum(previous.clicked), previousTyped)),
+              changeNote: previousTyped > 0 && typedAll === 0 ? tPage("noTypedYet") : undefined,
               changeKind: "points",
             },
           ]}

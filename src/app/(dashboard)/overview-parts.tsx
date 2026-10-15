@@ -88,14 +88,14 @@ export interface Kpi {
   change: number | null;
   /** percent = "+12%" (ตัวเลข), points = "+4.5 จุด" (อัตรา) */
   changeKind?: "percent" | "points";
-  /** ช่วงก่อนมีข้อมูลแต่ตัวเลขนี้เป็น 0 (เทียบเป็น % ไม่ได้) → แสดง "ช่วงก่อนหน้า: 0" แทน "ยังไม่มีข้อมูล" */
-  previousZero?: boolean;
+  /** ข้อความแทน "ช่วงก่อนหน้ายังไม่มีข้อมูล" เมื่อเทียบไม่ได้ด้วยเหตุผลอื่น (เช่น ช่วงก่อนเป็น 0, ช่วงนี้ยังไม่มีคนพิมพ์) */
+  changeNote?: string;
   href?: string;
 }
 
 function ChangeLine({ kpi, days, t, f }: { kpi: Kpi; days: number; t: T; f: Formatters }) {
   const compare = t("compareTo", { days });
-  if (kpi.change === null) return <span className="text-fg-3">{kpi.previousZero ? t("previousZero", { days }) : t("noPrevious")}</span>;
+  if (kpi.change === null) return <span className="text-fg-3">{kpi.changeNote ?? t("noPrevious")}</span>;
   const points = kpi.changeKind === "points";
   const rounded = points ? Math.round(kpi.change * 10) / 10 : Math.round(kpi.change);
   const Icon = rounded > 0 ? ArrowUpRight : rounded < 0 ? ArrowDownRight : null;
