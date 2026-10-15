@@ -66,12 +66,6 @@ export async function maintenance(db: Db): Promise<void> {
     console.error("[worker] ล้างข้อมูลเก่าไม่สำเร็จ:", err);
   }
   try {
-    // ลิงก์ปลายทางในกฎ (ตรวจจริงทุก 6 ชั่วโมง) — เสียจะขึ้นใน "ปัญหาที่ต้องดู" บนหน้าภาพรวม
-    await checkRuleLinksIfDue(db);
-  } catch (err) {
-    console.error("[worker] ตรวจลิงก์ในกฎไม่สำเร็จ:", err);
-  }
-  try {
     const r = await refreshDueInstagramTokens(db);
     if (r.checked > 0) console.log(`[worker] ต่ออายุ token Instagram: สำเร็จ ${r.refreshed} ไม่สำเร็จ ${r.failed}`);
   } catch (err) {
@@ -101,6 +95,22 @@ class Worker {
     this.wakeUp?.();
   }
 
+  /**
+   * ตรวจลิงก์ปลายทางในกฎ (ตรวจจริงทุก 6 ชั่วโมง — เสียจะขึ้นใน "ปัญหาที่ต้องดู" บนหน้าภาพรวม)
+   * ทำเบื้องหลัง ไม่รอ: เว็บปลายทางที่ช้า/ล่มต้องไม่ทำให้การตอบคอมเมนต์และแชทช้าไปด้วย (ทำทีละรอบ)
+   */
+  private linkCheck: Promise<void> | null = null;
+
+  private startLinkCheck(db: Db): void {
+    if (this.linkCheck) return;
+    this.linkCheck = checkRuleLinksIfDue(db)
+      .then(() => {})
+      .catch((err: unknown) => console.error("[worker] ตรวจลิงก์ในกฎไม่สำเร็จ:", err))
+      .finally(() => {
+        this.linkCheck = null;
+      });
+  }
+
   private async loop(): Promise<void> {
     while (this.running) {
       try {
@@ -109,6 +119,7 @@ class Worker {
         if (Date.now() - this.lastCleanup > 10 * 60_000) {
           this.lastCleanup = Date.now();
           await maintenance(db);
+          this.startLinkCheck(db);
         }
       } catch (err) {
         console.error("[worker] ผิดพลาด:", err);

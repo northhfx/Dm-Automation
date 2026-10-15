@@ -1,17 +1,22 @@
-import { and, desc, gte, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, gte, inArray, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { events, instagramAccounts, linkChecks, pages, rules, type Platform } from "@/db/schema";
+import { events, linkChecks, rules, type Platform } from "@/db/schema";
 import { env } from "@/lib/env";
+import { instagramAccountHealth, instagramHealthLevel, listInstagramAccounts } from "@/lib/instagram/accounts";
 import { LINK_ALERT_AFTER, linkUrlsOf } from "@/lib/link-health";
+import { listConnectedPages } from "@/lib/pages";
 import type { PlatformCounts } from "@/lib/stats";
 
 /*
  * ตัวเลขแบบ "นับเป็นคน" ของหน้าภาพรวม (funnel): พิมพ์ keyword → คลิกลิงก์
  * - หน่วยนับคือ "คน × กฎ": คนเดิมพิมพ์ keyword เดิมซ้ำในช่วงเดียวกัน = 1, พิมพ์ keyword ของ 2 กฎ = 2
- * - คนคลิกลิงก์ = คนที่พิมพ์ keyword ในช่วงนั้น แล้วคลิกลิงก์ในข้อความของกฎเดียวกันอย่างน้อย 1 ครั้ง (ไม่นับการกดปุ่มไปข้อความถัดไป)
- *   → อัตราคลิก = คนคลิกลิงก์ ÷ คนพิมพ์ keyword ไม่เกิน 100%
- * - Contact ใหม่ = คนที่ระบบเพิ่งรู้จักในช่วงนี้ (contacts.first_seen_at อยู่ในช่วง หรือยังไม่มี contact) · Contact เดิม = รู้จักก่อนช่วงนี้
- * ระบุตัวคน: contact_id ถ้ามี (แชท / คอมเมนต์ที่ส่ง DM สำเร็จแล้ว) ไม่งั้นใช้ id ของคนคอมเมนต์ (actor_id)
+ *   "พิมพ์ keyword" = ตรงกับกฎ (rule_triggered) หรือถูกข้ามเพราะกฎตอบคนละครั้งเดียว (skipped/once_per_user — พิมพ์มาแต่ไม่ได้ส่งซ้ำ)
+ * - คนคลิกลิงก์ = คนที่พิมพ์ keyword ในช่วงนั้น แล้วคลิกลิงก์ของกฎเดียวกันในช่วงเดียวกันอย่างน้อย 1 ครั้ง
+ *   (นับจาก link_clicked — ไม่นับการกดปุ่มไปข้อความถัดไป) → อัตราคลิก = คนคลิกลิงก์ ÷ คนพิมพ์ keyword ไม่เกิน 100%
+ * - Contact ใหม่ = ระบบเพิ่งรู้จักในช่วงนี้ (contacts.first_seen_at อยู่ในช่วง หรือยังไม่มี contact) · Contact เดิม = รู้จักก่อนช่วงนี้
+ * ระบุตัวคน: contact_id ของกิจกรรม → ถ้าไม่มี (คอมเมนต์ที่ DM ยังไม่ส่ง / ส่งไม่สำเร็จ / ข้อมูลก่อนมีการผูก contact)
+ * หาจากกิจกรรมอื่นของคนเดียวกัน (actor_id เดียวกันที่รู้ contact แล้ว) หรือ contact ที่มี id ตรงกัน (Instagram / แชท)
+ * ไม่งั้นใช้ id ของคนคอมเมนต์ (actor_id)
  */
 
 export interface FunnelTotals {
@@ -51,25 +56,52 @@ export function dayStart(back: number): SQL {
   return sql`((date_trunc('day', now() AT TIME ZONE ${tz}) - ${back} * interval '1 day') AT TIME ZONE ${tz})`;
 }
 
-async function funnelRows(db: Db, start: SQL, end: SQL | null) {
+/** ช่วงของ N วันล่าสุด (นับรวมวันนี้ถึงตอนนี้) — previous = ช่วงก่อนหน้าที่ยาวเท่ากัน (จบที่เวลาเดียวกันของ N วันก่อน) */
+function rangeOf(days: number, previous: boolean): { start: SQL; end: SQL } {
+  return previous
+    ? { start: dayStart(2 * days - 1), end: sql`(now() - ${days} * interval '1 day')` }
+    : { start: dayStart(days - 1), end: sql`now()` };
+}
+
+async function funnelRows(db: Db, start: SQL, end: SQL) {
   const tz = env.timezone;
-  const endCond = end ? sql`AND e.created_at < ${end}` : sql``;
   return db.execute<Row>(sql`
-    WITH pairs AS (
-      SELECT e.rule_id,
-        coalesce('c' || e.contact_id::text, 'a' || e.platform || ':' || coalesce(e.actor_id, e.id::text)) AS person,
-        min(e.platform) AS platform,
-        max(e.contact_id) AS contact_id,
-        min(e.created_at) AS first_at
+    WITH typing AS (
+      SELECT e.id, e.rule_id, e.platform, e.page_id, e.actor_id, e.contact_id, e.created_at
       FROM events e
-      WHERE e.type = 'rule_triggered' AND e.rule_id IS NOT NULL AND e.platform IS NOT NULL
-        AND e.created_at >= ${start} ${endCond}
+      WHERE e.rule_id IS NOT NULL AND e.platform IS NOT NULL
+        AND (e.type = 'rule_triggered' OR (e.type = 'skipped' AND e.meta->>'reason' = 'once_per_user'))
+        AND e.created_at >= ${start} AND e.created_at < ${end}
+    ),
+    known AS (
+      SELECT k.platform, k.page_id, k.actor_id, max(k.contact_id) AS contact_id
+      FROM events k
+      WHERE k.type IN ('rule_triggered', 'dm_sent') AND k.contact_id IS NOT NULL
+        AND k.actor_id IN (SELECT actor_id FROM typing WHERE contact_id IS NULL)
+      GROUP BY 1, 2, 3
+    ),
+    resolved AS (
+      SELECT t.id, t.rule_id, t.platform, t.actor_id, t.created_at, coalesce(t.contact_id, kn.contact_id, cu.id) AS contact_id
+      FROM typing t
+      LEFT JOIN known kn ON t.contact_id IS NULL
+        AND kn.platform = t.platform AND kn.page_id IS NOT DISTINCT FROM t.page_id AND kn.actor_id = t.actor_id
+      LEFT JOIN contacts cu ON t.contact_id IS NULL AND kn.contact_id IS NULL
+        AND cu.platform = t.platform AND cu.page_id = t.page_id AND cu.platform_user_id = t.actor_id
+    ),
+    pairs AS (
+      SELECT rule_id,
+        coalesce('c' || contact_id::text, 'a' || platform || ':' || coalesce(actor_id, id::text)) AS person,
+        min(platform) AS platform,
+        max(contact_id) AS contact_id,
+        min(created_at) AS first_at
+      FROM resolved
       GROUP BY 1, 2
     ),
     clicks AS (
-      SELECT l.rule_id, l.contact_id, min(coalesce(l.first_clicked_at, l.created_at)) AS clicked_at
-      FROM links l
-      WHERE l.clicks > 0 AND l.rule_id IS NOT NULL AND l.contact_id IS NOT NULL AND l.created_at >= ${start}
+      SELECT rule_id, contact_id, min(created_at) AS clicked_at
+      FROM events
+      WHERE type = 'link_clicked' AND rule_id IS NOT NULL AND contact_id IS NOT NULL
+        AND created_at >= ${start} AND created_at < ${end}
       GROUP BY 1, 2
     )
     SELECT p.rule_id, p.platform,
@@ -85,7 +117,8 @@ async function funnelRows(db: Db, start: SQL, end: SQL | null) {
 
 /** funnel ของ N วันล่าสุด (นับรวมวันนี้) — dates = วันที่ของกราฟ (YYYY-MM-DD เรียงจากเก่า) */
 export async function getFunnel(db: Db, days: number, dates: string[]): Promise<Funnel> {
-  const rows = await funnelRows(db, dayStart(days - 1), null);
+  const { start, end } = rangeOf(days, false);
+  const rows = await funnelRows(db, start, end);
   const totals: FunnelTotals = { typed: empty(), clicked: empty(), newPeople: 0, returningPeople: 0 };
   const daily = new Map(dates.map((date) => [date, { date, typed: empty(), clicked: empty() } as FunnelDay]));
   const byRule = new Map<number, RuleFunnel>();
@@ -112,8 +145,8 @@ export async function getFunnel(db: Db, days: number, dates: string[]): Promise<
 
 /** ตัวเลข funnel ของช่วงก่อนหน้าที่ยาวเท่ากัน (ใช้เทียบ "+12%") */
 export async function getPreviousFunnel(db: Db, days: number): Promise<FunnelTotals> {
-  const start = dayStart(2 * days - 1);
-  const rows = await funnelRows(db, start, dayStart(days - 1));
+  const { start, end } = rangeOf(days, true);
+  const rows = await funnelRows(db, start, end);
   const totals: FunnelTotals = { typed: empty(), clicked: empty(), newPeople: 0, returningPeople: 0 };
   for (const r of rows.rows) {
     if (!isPlatform(r.platform)) continue;
@@ -136,25 +169,31 @@ export interface BrokenLink {
 }
 
 export interface Problems {
-  /** ส่ง DM ไม่สำเร็จ (ทั้งหมด / เฉพาะข้อความถัดไปหลังลูกค้ากดปุ่ม) */
+  /** ส่ง DM ไม่สำเร็จ (ทั้งหมด / เฉพาะข้อความถัดไปหลังลูกค้ากดปุ่ม) — รวม token ใช้ไม่ได้ (ไม่ได้ลองส่งเลย) */
   failedSends: number;
   failedAfterTap: number;
+  /** ส่งไม่สำเร็จแยกตามกฎ (ตารางกฎ) */
+  failedByRule: Map<number, number>;
   /** ลูกค้ากดปุ่มแล้วไม่มีข้อความถัดไป (กฎปิดอยู่ / ปุ่มในข้อความเก่าที่ถูกแก้หรือลบ) */
   deadTaps: number;
+  /** ชื่อกฎของปุ่มเหล่านั้น (กฎที่ถูกลบไปแล้วไม่มีชื่อ) */
+  deadTapRules: string[];
   brokenLinks: BrokenLink[];
-  /** การเชื่อมต่อที่มีปัญหา (เพจ / บัญชี Instagram ที่บันทึก error ไว้) */
+  /** การเชื่อมต่อที่ระบบตอบลูกค้าไม่ได้ (กติกาเดียวกับแถบเมนู / หน้าตั้งค่า — คำเตือนชั่วคราวไม่นับ) */
   connections: { name: string; platform: Platform }[];
 }
 
 export async function getProblems(db: Db, days: number): Promise<Problems> {
   const since = dayStart(days - 1);
-  const [failedRows, deadRows, checkRows, activeRules, pageRows, igRows] = await Promise.all([
+  const [failedRows, deadRows, checkRows, allRules, pageRows, igRows] = await Promise.all([
+    // นับจากกิจกรรม dm_failed: ครอบคลุมทั้งส่งแล้ว Meta ปฏิเสธ และส่งไม่ได้เลย (token ใช้ไม่ได้ / ข้อความถูกลบระหว่างรอส่ง)
     db.execute<Row>(sql`
-      SELECT count(*)::int AS n, count(*) FILTER (WHERE source = 'button')::int AS after_tap
-      FROM messages WHERE status = 'failed' AND sent_at >= ${since}
+      SELECT rule_id, count(*)::int AS n, count(*) FILTER (WHERE meta->>'source' = 'button')::int AS after_tap
+      FROM events WHERE type = 'dm_failed' AND created_at >= ${since}
+      GROUP BY rule_id
     `),
     db
-      .select({ n: sql<number>`count(*)::int` })
+      .select({ ruleId: events.ruleId, n: sql<number>`count(*)::int` })
       .from(events)
       .where(
         and(
@@ -162,34 +201,51 @@ export async function getProblems(db: Db, days: number): Promise<Problems> {
           gte(events.createdAt, sql`${since}`),
           inArray(sql`${events.meta}->>'reason'`, ["rule_inactive", "button_target_missing"]),
         ),
-      ),
+      )
+      .groupBy(events.ruleId),
     db
       .select()
       .from(linkChecks)
       .where(sql`${linkChecks.ok} = false AND ${linkChecks.failures} >= ${LINK_ALERT_AFTER}`)
       .orderBy(desc(linkChecks.checkedAt)),
-    db.select({ name: rules.name, steps: rules.steps, active: rules.active }).from(rules),
-    db.select({ name: pages.name }).from(pages).where(isNotNull(pages.lastError)),
-    db.select({ username: instagramAccounts.username }).from(instagramAccounts).where(isNotNull(instagramAccounts.lastError)),
+    db.select({ id: rules.id, name: rules.name, steps: rules.steps, active: rules.active }).from(rules),
+    listConnectedPages(db),
+    listInstagramAccounts(db),
   ]);
 
+  const failedByRule = new Map<number, number>();
+  let failedSends = 0;
+  let failedAfterTap = 0;
+  for (const r of failedRows.rows) {
+    failedSends += num(r.n);
+    failedAfterTap += num(r.after_tap);
+    if (r.rule_id != null) failedByRule.set(num(r.rule_id), num(r.n));
+  }
+
+  const ruleName = new Map(allRules.map((r) => [r.id, r.name]));
   const brokenLinks: BrokenLink[] = checkRows.map((c) => ({
     url: c.url,
     status: c.status,
     error: c.error,
     checkedAt: c.checkedAt,
-    ruleNames: activeRules.filter((r) => r.active && linkUrlsOf(r.steps).includes(c.url)).map((r) => r.name),
+    ruleNames: allRules.filter((r) => r.active && linkUrlsOf(r.steps).includes(c.url)).map((r) => r.name),
   }));
 
+  const now = new Date();
   return {
-    failedSends: num(failedRows.rows[0]?.n),
-    failedAfterTap: num(failedRows.rows[0]?.after_tap),
-    deadTaps: num(deadRows[0]?.n),
+    failedSends,
+    failedAfterTap,
+    failedByRule,
+    deadTaps: deadRows.reduce((n, r) => n + num(r.n), 0),
+    deadTapRules: [...new Set(deadRows.flatMap((r) => (r.ruleId != null && ruleName.has(r.ruleId) ? [ruleName.get(r.ruleId)!] : [])))],
     // ลิงก์ที่ไม่อยู่ในกฎที่เปิดอยู่แล้ว (เพิ่งแก้กฎ) ไม่ต้องเตือน
     brokenLinks: brokenLinks.filter((l) => l.ruleNames.length > 0),
     connections: [
-      ...pageRows.map((p) => ({ name: p.name, platform: "facebook" as const })),
-      ...igRows.map((a) => ({ name: `@${a.username}`, platform: "instagram" as const })),
+      // เพจ: token ถอดรหัสไม่ได้ / ไม่ได้รับ webhook / มี error ล่าสุด (เหมือนหน้าตั้งค่า)
+      ...pageRows.filter((p) => !p.token || !p.subscribed || p.lastError).map((p) => ({ name: p.name, platform: "facebook" as const })),
+      ...igRows
+        .filter((a) => instagramHealthLevel(instagramAccountHealth(a, now)) === "critical")
+        .map((a) => ({ name: `@${a.username}`, platform: "instagram" as const })),
     ],
   };
 }

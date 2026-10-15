@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 import type { Db } from "@/db/client";
-import { contacts, events, jobs, links, messages, webhookLogs } from "@/db/schema";
+import { contacts, events, jobs, links, messages, pages, webhookLogs } from "@/db/schema";
 import { I18nProvider } from "@/lib/i18n/client";
 import type { Locale } from "@/lib/i18n/locale";
 import { activityMessages } from "@/lib/i18n/messages/activity";
@@ -332,6 +332,8 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
   let db: Db;
   beforeEach(async () => {
     db = await resetDatabase();
+    // เพจที่เชื่อมไว้รับ webhook อยู่ (ไม่งั้นชื่อเพจจะขึ้นใน "การเชื่อมต่อมีปัญหา" บนหน้าภาพรวม)
+    await db.update(pages).set({ subscribed: true });
     lang.value = undefined;
   });
 
@@ -388,7 +390,8 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
       "No data for the previous period",
       "Show as a table",
       "Needs attention",
-      "Failed to send: 1",
+      // ส่งไม่สำเร็จ 5 ครั้งตามกิจกรรม dm_failed (ตาราง messages มีแค่ 1 — แบบเดิมนับขาด)
+      "Failed to send: 5",
       "Taps with no next message: 1",
       "System",
       "Best-performing automations",

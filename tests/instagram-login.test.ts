@@ -544,7 +544,7 @@ describe("กรณีอื่นๆ", () => {
     const rows = await eventRows();
     expect(rows.map((e) => e.type)).toEqual(["comment_received", "dm_failed"]);
     expect(rows[1]).toMatchObject({ pageId: "IG1", platform: "instagram" });
-    expect(rows[1].meta).toEqual({ api: "instagram", error: { message: IG_TOKEN_MESSAGE } });
+    expect(rows[1].meta).toEqual({ api: "instagram", source: "comment", error: { message: IG_TOKEN_MESSAGE } });
   });
 
   it("Instagram ตอบ code 190 (token ใช้ไม่ได้) → บันทึก error ที่บัญชี และ dm_failed บอกว่าส่งผ่าน API ไหน", async () => {

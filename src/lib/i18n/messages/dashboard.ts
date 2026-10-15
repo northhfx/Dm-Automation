@@ -48,6 +48,7 @@ export const dashboardMessages = defineMessages({
     points: "{value} จุด",
     /** ช่วงก่อนหน้าเป็น 0 — คำนวณ % ไม่ได้ */
     noPrevious: "ช่วงก่อนหน้ายังไม่มีข้อมูล",
+    previousZero: "{days} วันก่อนหน้าเป็น 0",
 
     // ---- กราฟรายวัน ----
     chartTitle: "รายวัน",
@@ -68,6 +69,7 @@ export const dashboardMessages = defineMessages({
     problemFailedHint: "ดูสาเหตุและวิธีแก้ในหน้ากิจกรรม",
     problemDeadTaps: "ลูกค้ากดปุ่มแล้วไม่มีข้อความถัดไป {count} ครั้ง",
     problemDeadTapsHint: "กฎถูกปิดอยู่ หรือข้อความถูกแก้/ลบหลังส่งไปแล้ว",
+    problemDeadTapsInRules: "ในกฎ {rules} — กฎถูกปิดอยู่ หรือข้อความถูกแก้/ลบหลังส่งไปแล้ว",
     problemBrokenLink: "ลิงก์เปิดไม่ได้",
     /** {reason} = สาเหตุ, {rules} = ชื่อกฎที่ใช้ลิงก์นี้ */
     problemBrokenLinkDetail: "{reason} · ในกฎ {rules}",
@@ -150,6 +152,7 @@ export const dashboardMessages = defineMessages({
     compareTo: "vs. previous {days} days",
     points: "{value} pts",
     noPrevious: "No data for the previous period",
+    previousZero: "Was 0 in the previous {days} days",
 
     chartTitle: "Daily",
     chartEmptyTitle: "No data in the last {days} days",
@@ -167,6 +170,7 @@ export const dashboardMessages = defineMessages({
     problemFailedHint: "See the reason and the fix on the Activity page",
     problemDeadTaps: "Taps with no next message: {count}",
     problemDeadTapsHint: "The automation was off, or the message was edited or deleted after it was sent",
+    problemDeadTapsInRules: "In {rules}: the automation was off, or the message was edited or deleted after it was sent",
     problemBrokenLink: "Link doesn't open",
     problemBrokenLinkDetail: "{reason} · in {rules}",
     linkReasonStatus: "the site returned {status}",

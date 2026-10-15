@@ -47,8 +47,14 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const noRules = overview.rules.length === 0;
   const since = overview.daily[0]?.date;
   const ruleRows: RuleRowData[] = overview.rules
-    .map((rule) => ({ rule, ...(funnel.byRule.get(rule.id) ?? { typed: 0, clicked: 0 }), hasLinks: linkRules.has(rule.id) }))
-    .sort((a, b) => b.typed - a.typed || b.rule.failed - a.rule.failed);
+    .map((rule) => ({
+      rule,
+      ...(funnel.byRule.get(rule.id) ?? { typed: 0, clicked: 0 }),
+      hasLinks: linkRules.has(rule.id),
+      failed: problems.failedByRule.get(rule.id) ?? 0,
+    }))
+    .sort((a, b) => b.typed - a.typed || b.failed - a.failed);
+  const previousTyped = sum(previous.typed);
 
   return (
     <>
@@ -84,7 +90,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
               value: f.number(typedAll),
               split: counts(typed),
               people: { newCount: f.number(funnel.totals.newPeople), returning: f.number(funnel.totals.returningPeople) },
-              change: change(typedAll, sum(previous.typed)),
+              change: change(typedAll, previousTyped),
               href: "/contacts",
             },
             {
@@ -93,6 +99,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
               value: f.number(clickedAll),
               split: counts(clicked),
               change: change(clickedAll, sum(previous.clicked)),
+              previousZero: previousTyped > 0,
               href: "/activity?filter=clicks",
             },
             {
@@ -103,7 +110,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                 facebook: f.percent(rate(clicked.facebook, typed.facebook)),
                 instagram: f.percent(rate(clicked.instagram, typed.instagram)),
               },
-              change: pointsChange(clickRate, rate(sum(previous.clicked), sum(previous.typed))),
+              change: pointsChange(clickRate, rate(sum(previous.clicked), previousTyped)),
               changeKind: "points",
             },
           ]}

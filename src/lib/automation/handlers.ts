@@ -250,7 +250,7 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
   const firstStep = rule.steps[0];
   if (!firstStep) return;
   if (!token) {
-    await logTokenProblem(db, job.platform, conn.id, rule.id, job.fromId, conn.api);
+    await logTokenProblem(db, job.platform, conn.id, rule.id, job.fromId, conn.api, "comment");
     return;
   }
 
@@ -487,7 +487,7 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
   const firstStep = rule.steps[0];
   if (!firstStep) return;
   if (!conn.token) {
-    await logTokenProblem(db, job.platform, conn.id, rule.id, job.senderId, conn.api);
+    await logTokenProblem(db, job.platform, conn.id, rule.id, job.senderId, conn.api, "dm");
     return;
   }
 
@@ -543,19 +543,18 @@ async function handleButtonTap(
 
   // ปุ่มจากข้อความเก่าที่ถูกแก้/ลบไปแล้ว → ส่งต่อไม่ได้ บันทึกไว้ให้เห็นใน "ปัญหาที่ต้องดู" (ลูกค้ากดแล้วไม่มีอะไรเกิดขึ้น)
   const next = button?.type === "next" ? rule?.steps.find((s) => s.id === button.nextStepId) : undefined;
+  // (ปุ่มที่ส่ง postback มาได้คือปุ่ม "ส่งข้อความถัดไป" ตอนที่ส่งข้อความนั้น — ถ้าตอนนี้กลายเป็นลิงก์ก็ส่งต่อไม่ได้เหมือนกัน)
   if (!rule || !next) {
-    if (!rule || !button || button.type === "next") {
-      await logEvent(db, {
-        type: "skipped",
-        platform: job.platform,
-        pageId: conn.id,
-        ruleId: rule ? rule.id : null,
-        contactId,
-        actorId: job.senderId,
-        text: job.text,
-        meta: { reason: "button_target_missing", stepId: tap.stepId, buttonId: tap.buttonId },
-      });
-    }
+    await logEvent(db, {
+      type: "skipped",
+      platform: job.platform,
+      pageId: conn.id,
+      ruleId: rule ? rule.id : null,
+      contactId,
+      actorId: job.senderId,
+      text: job.text,
+      meta: { reason: "button_target_missing", stepId: tap.stepId, buttonId: tap.buttonId },
+    });
     return;
   }
   if (!rule.active) {
@@ -572,7 +571,7 @@ async function handleButtonTap(
     return;
   }
   if (!conn.token) {
-    await logTokenProblem(db, job.platform, conn.id, rule.id, job.senderId, conn.api);
+    await logTokenProblem(db, job.platform, conn.id, rule.id, job.senderId, conn.api, "button");
     return;
   }
 
@@ -786,6 +785,7 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
       postId: data.postId,
       meta: {
         api: conn.api,
+        source: data.source,
         stepId: data.stepId,
         error: { message: systemMessage("stepMissing") },
       },
@@ -794,7 +794,7 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
   }
   const token = conn.token;
   if (!token) {
-    await logTokenProblem(db, data.platform, conn.id, rule.id, data.actorId, conn.api);
+    await logTokenProblem(db, data.platform, conn.id, rule.id, data.actorId, conn.api, data.source);
     return;
   }
 
@@ -972,6 +972,7 @@ async function logTokenProblem(
   ruleId: number,
   actorId: string,
   api: GraphApi,
+  source: MessageSource,
 ): Promise<void> {
   await logEvent(db, {
     type: "dm_failed",
@@ -979,6 +980,6 @@ async function logTokenProblem(
     pageId,
     ruleId,
     actorId,
-    meta: { api, error: { message: TOKEN_PROBLEM_MESSAGE[api] } },
+    meta: { api, source, error: { message: TOKEN_PROBLEM_MESSAGE[api] } },
   });
 }

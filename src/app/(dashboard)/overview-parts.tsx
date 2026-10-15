@@ -88,11 +88,14 @@ export interface Kpi {
   change: number | null;
   /** percent = "+12%" (ตัวเลข), points = "+4.5 จุด" (อัตรา) */
   changeKind?: "percent" | "points";
+  /** ช่วงก่อนมีข้อมูลแต่ตัวเลขนี้เป็น 0 (เทียบเป็น % ไม่ได้) → แสดง "ช่วงก่อนหน้า: 0" แทน "ยังไม่มีข้อมูล" */
+  previousZero?: boolean;
   href?: string;
 }
 
-function ChangeLine({ kpi, compare, t, f }: { kpi: Kpi; compare: string; t: T; f: Formatters }) {
-  if (kpi.change === null) return <span className="text-fg-3">{t("noPrevious")}</span>;
+function ChangeLine({ kpi, days, t, f }: { kpi: Kpi; days: number; t: T; f: Formatters }) {
+  const compare = t("compareTo", { days });
+  if (kpi.change === null) return <span className="text-fg-3">{kpi.previousZero ? t("previousZero", { days }) : t("noPrevious")}</span>;
   const points = kpi.changeKind === "points";
   const rounded = points ? Math.round(kpi.change * 10) / 10 : Math.round(kpi.change);
   const Icon = rounded > 0 ? ArrowUpRight : rounded < 0 ? ArrowDownRight : null;
@@ -152,7 +155,6 @@ function PeopleLine({ people, t }: { people: { newCount: string; returning: stri
 export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; locale: Locale }) {
   const t = tOf(locale);
   const f = formatters(locale);
-  const compare = t("compareTo", { days });
   return (
     <section aria-label={t("kpiAria")} className="grid grid-cols-2 gap-3 md:grid-cols-3">
       {items.map((k, i) => {
@@ -167,7 +169,7 @@ export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; 
             {/* ล่างสุดของการ์ด: เทียบช่วงก่อน — เส้นคั่นของทุกการ์ดอยู่ระดับเดียวกัน */}
             <div className="min-h-3 flex-1" aria-hidden />
             <p className="flex flex-wrap items-center gap-x-1.5 border-t border-line pt-2.5 text-xs leading-5">
-              <ChangeLine kpi={k} compare={compare} t={t} f={f} />
+              <ChangeLine kpi={k} days={days} t={t} f={f} />
             </p>
           </>
         );
@@ -259,8 +261,12 @@ export function ProblemsList({ problems, locale }: { problems: Problems; locale:
         <ProblemItem
           tone="warning"
           title={t("problemDeadTaps", { count: f.number(problems.deadTaps) })}
-          detail={t("problemDeadTapsHint")}
-          action={{ href: "/activity", label: t("problemView") }}
+          detail={
+            problems.deadTapRules.length > 0
+              ? t("problemDeadTapsInRules", { rules: f.list(problems.deadTapRules) })
+              : t("problemDeadTapsHint")
+          }
+          action={{ href: "/rules", label: t("problemFix") }}
         />
       )}
       {problems.brokenLinks.map((l) => (
@@ -308,6 +314,8 @@ export interface RuleRowData {
   clicked: number;
   /** กฎนี้มีปุ่มลิงก์ไหม (ไม่มี = คลิก / อัตราคลิกเป็น "–") */
   hasLinks: boolean;
+  /** ส่งไม่สำเร็จในช่วงนี้ (ตัวเลขเดียวกับ "ปัญหาที่ต้องดู") */
+  failed: number;
 }
 
 function TriggerBadge({ trigger, t }: { trigger: RuleStats["trigger"]; t: T }) {
@@ -369,8 +377,8 @@ function RuleRow({ row: r, maxTyped, t, f }: { row: RuleRowData; maxTyped: numbe
       </td>
       <td className={cx(tableClass.td, tableClass.num)}>{clickedOf(r, f)}</td>
       <td className={cx(tableClass.td, tableClass.num, "font-medium")}>{rateOf(r, f)}</td>
-      <td className={cx(tableClass.td, tableClass.num, r.rule.failed > 0 ? "font-medium text-critical-text" : "text-fg-3")}>
-        {f.number(r.rule.failed)}
+      <td className={cx(tableClass.td, tableClass.num, r.failed > 0 ? "font-medium text-critical-text" : "text-fg-3")}>
+        {f.number(r.failed)}
       </td>
     </tr>
   );
@@ -394,7 +402,7 @@ function RuleListItem({ row: r, t, f }: { row: RuleRowData; t: T; f: Formatters 
           {[
             { label: t("colClicked"), value: clickedOf(r, f) },
             { label: t("colClickRate"), value: rateOf(r, f) },
-            { label: t("colFailed"), value: f.number(r.rule.failed), critical: r.rule.failed > 0 },
+            { label: t("colFailed"), value: f.number(r.failed), critical: r.failed > 0 },
           ].map((s) => (
             <div key={s.label} className="flex gap-1">
               <dt className="text-fg-3">{s.label}</dt>

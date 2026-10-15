@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { contacts, events, linkChecks, links, messages, pages, rules } from "@/db/schema";
+import { contacts, events, instagramAccounts, linkChecks, pages, rules } from "@/db/schema";
 import { ingestWebhook } from "@/lib/automation/ingest";
 import { flowPayload } from "@/lib/flows/types";
 import { getFunnel, getPreviousFunnel, getProblems, rulesWithLinks } from "@/lib/funnel";
 import { checkRuleLinks, checkRuleLinksIfDue, LINK_CHECK_INTERVAL_MS, probeUrl, type FetchLike } from "@/lib/link-health";
 import { drainQueue } from "@/lib/queue/worker";
 import { getOverview } from "@/lib/stats";
-import { createRule, resetDatabase, singleStep, startMockGraph } from "./helpers";
+import { createRule, resetDatabase, seedInstagramAccount, singleStep, startMockGraph } from "./helpers";
 import { fbComment, postback } from "./fixtures";
 
 let graph: Awaited<ReturnType<typeof startMockGraph>>;
@@ -42,6 +42,7 @@ describe("getFunnel (นับเป็นคน)", () => {
     const c1 = await contact("P1", "facebook", at(30)); // Contact เดิม
     const c2 = await contact("IG_P2", "instagram", at(1)); // Contact ใหม่
     const c3 = await contact("P3", "facebook", at(10)); // พิมพ์ในช่วงก่อนหน้า
+    const click = (ruleId: number, contactId: number, createdAt: Date) => ({ type: "link_clicked" as const, platform: "facebook" as const, ruleId, contactId, createdAt });
     const trig = (ruleId: number, platform: "facebook" | "instagram", createdAt: Date, o: { contactId?: number; actorId?: string } = {}) => ({
       type: "rule_triggered" as const,
       platform,
@@ -63,13 +64,13 @@ describe("getFunnel (นับเป็นคน)", () => {
       trig(a.id, "facebook", at(10), { contactId: c3 }),
       // กดปุ่มไปข้อความถัดไป ไม่นับเป็นคลิกลิงก์
       { type: "button_clicked", platform: "instagram", ruleId: a.id, contactId: c2, createdAt: at(1) },
+      // คลิกลิงก์ (นับจาก link_clicked ในช่วงเดียวกัน)
+      click(a.id, c1, at(1)),
+      click(a.id, c1, at(1)),
+      click(b.id, c2, at(1)), // c2 ไม่ได้พิมพ์ keyword ของกฎ B → ไม่นับ
+      click(a.id, c3, at(10)),
     ]);
-    await db.insert(links).values([
-      { code: "l1", targetUrl: "https://shop.example.com/a", ruleId: a.id, contactId: c1, clicks: 3, firstClickedAt: at(1), createdAt: at(2) },
-      { code: "l2", targetUrl: "https://shop.example.com/a", ruleId: a.id, contactId: c2, clicks: 0, createdAt: at(1) },
-      { code: "l3", targetUrl: "https://shop.example.com/a", ruleId: a.id, contactId: c3, clicks: 1, firstClickedAt: at(10), createdAt: at(10) },
-    ]);
-    return { a, b };
+    return { a, b, c1, c3 };
   }
 
   it("คนเดิม keyword เดิม = 1, ต่างกฎนับแยก, คลิกเฉพาะคนที่พิมพ์ในช่วงนี้", async () => {
@@ -101,6 +102,57 @@ describe("getFunnel (นับเป็นคน)", () => {
     });
   });
 
+  it("คลิกนับเฉพาะในช่วงเดียวกัน: ช่วงก่อนหน้าไม่นับคลิกที่เกิดในช่วงนี้", async () => {
+    const { a, c3 } = await seed();
+    // c3 พิมพ์ในช่วงก่อนหน้า (ไม่ได้คลิกตอนนั้นในเคสนี้) แล้วกลับมาพิมพ์ + คลิกในช่วงนี้
+    await db.delete(events).where(eq(events.type, "link_clicked"));
+    await db.insert(events).values([
+      { type: "rule_triggered", platform: "facebook", ruleId: a.id, contactId: c3, createdAt: at(1) },
+      { type: "link_clicked", platform: "facebook", ruleId: a.id, contactId: c3, createdAt: at(1) },
+    ]);
+    expect((await getPreviousFunnel(db, 7)).clicked).toEqual({ facebook: 0, instagram: 0 });
+    const f = await getFunnel(db, 7, []);
+    expect(f.byRule.get(a.id)).toEqual({ typed: 4, clicked: 1 });
+    // c3 รู้จักก่อนช่วงนี้ → Contact เดิม
+    expect(f.totals.returningPeople).toBe(3);
+  });
+
+  it("คอมเมนต์ที่ยังไม่มี contact: หาคนเดียวกันจากกิจกรรมอื่น (ไม่นับซ้ำ + คลิกนับได้)", async () => {
+    const a = await createRule({ name: "A", steps: LINK_STEP });
+    const c = await contact("PSID_X", "facebook", at(30));
+    const fb = { platform: "facebook" as const, pageId: "PAGE1", ruleId: a.id };
+    await db.insert(events).values([
+      // คอมเมนต์ครั้งแรก (ข้อมูลเก่า ไม่ได้ผูก contact) — DM ส่งสำเร็จ รู้ว่าเป็น contact c
+      { ...fb, type: "rule_triggered", actorId: "ASID_X", postId: "P1", createdAt: at(2) },
+      { ...fb, type: "dm_sent", actorId: "ASID_X", contactId: c, createdAt: at(2) },
+      // คอมเมนต์อีกโพสต์ DM ยังรอส่ง / ส่งไม่สำเร็จ
+      { ...fb, type: "rule_triggered", actorId: "ASID_X", postId: "P2", createdAt: at(1) },
+      // คอมเมนต์ซ้ำโพสต์เดิม (กฎตอบคนละครั้ง) → ถูกข้าม แต่ก็พิมพ์ keyword มา
+      { ...fb, type: "skipped", actorId: "ASID_X", postId: "P1", meta: { reason: "once_per_user" }, createdAt: at(1) },
+      { ...fb, type: "link_clicked", contactId: c, createdAt: at(1) },
+    ]);
+    const f = await getFunnel(db, 7, []);
+    expect(f.totals.typed).toEqual({ facebook: 1, instagram: 0 });
+    expect(f.totals.clicked).toEqual({ facebook: 1, instagram: 0 });
+    expect(f.totals.returningPeople).toBe(1);
+  });
+
+  it("Instagram: id คนคอมเมนต์ตรงกับ contact เลย + กฎตอบคนละครั้งนับเป็นคนกลับมา", async () => {
+    const a = await createRule({ name: "A", steps: LINK_STEP });
+    await contact("IGSID_Y", "instagram", at(30));
+    await db.insert(events).values({
+      type: "skipped",
+      platform: "instagram",
+      pageId: "PAGE1",
+      ruleId: a.id,
+      actorId: "IGSID_Y",
+      meta: { reason: "once_per_user" },
+      createdAt: at(1),
+    });
+    const f = await getFunnel(db, 7, []);
+    expect(f.totals).toMatchObject({ typed: { facebook: 0, instagram: 1 }, newPeople: 0, returningPeople: 1 });
+  });
+
   it("กฎที่มีปุ่มลิงก์", async () => {
     const { a } = await seed();
     expect(await rulesWithLinks(db)).toEqual(new Set([a.id]));
@@ -109,33 +161,58 @@ describe("getFunnel (นับเป็นคน)", () => {
 
 describe("getProblems (ปัญหาที่ต้องดู)", () => {
   it("ไม่มีปัญหา", async () => {
-    expect(await getProblems(db, 7)).toEqual({ failedSends: 0, failedAfterTap: 0, deadTaps: 0, brokenLinks: [], connections: [] });
+    await db.update(pages).set({ subscribed: true }).where(eq(pages.id, "PAGE1"));
+    expect(await getProblems(db, 7)).toEqual({
+      failedSends: 0,
+      failedAfterTap: 0,
+      failedByRule: new Map(),
+      deadTaps: 0,
+      deadTapRules: [],
+      brokenLinks: [],
+      connections: [],
+    });
   });
 
   it("รวมส่งไม่สำเร็จ / กดปุ่มแล้วไม่มีข้อความถัดไป / ลิงก์เสีย / การเชื่อมต่อ", async () => {
-    await createRule({ name: "ขอลิงก์", steps: LINK_STEP });
-    await createRule({ name: "ปิดอยู่", active: false, steps: singleStep("x", [{ id: "b9", title: "y", type: "link", url: "https://old.example.com" }]) });
-    const failed = { platform: "facebook" as const, pageId: "PAGE1", status: "failed" as const };
-    await db.insert(messages).values([
-      { ...failed, source: "button", sentAt: at(1) },
-      { ...failed, source: "comment", sentAt: at(1) },
-      { ...failed, source: "comment", sentAt: at(20) }, // นอกช่วง
+    const linkRule = await createRule({ name: "ขอลิงก์", steps: LINK_STEP });
+    const off = await createRule({ name: "ปิดอยู่", active: false, steps: singleStep("x", [{ id: "b9", title: "y", type: "link", url: "https://old.example.com" }]) });
+    const failed = (source: string | undefined, createdAt: Date) => ({
+      type: "dm_failed" as const,
+      platform: "facebook" as const,
+      ruleId: linkRule.id,
+      meta: source ? { source } : {},
+      createdAt,
+    });
+    await db.insert(events).values([
+      failed("button", at(1)),
+      failed("comment", at(1)),
+      failed(undefined, at(1)), // token ใช้ไม่ได้ (งานเก่าไม่มี source)
+      failed("comment", at(20)), // นอกช่วง
     ]);
-    const skipped = (reason: string) => ({ type: "skipped" as const, platform: "facebook" as const, meta: { reason }, createdAt: at(1) });
+    const skipped = (reason: string) => ({ type: "skipped" as const, platform: "facebook" as const, ruleId: off.id, meta: { reason }, createdAt: at(1) });
     await db.insert(events).values([skipped("button_target_missing"), skipped("rule_inactive"), skipped("cooldown")]);
     await db.insert(linkChecks).values([
       { url: "https://shop.example.com/a", ok: false, status: 404, failures: 2 },
       { url: "https://flaky.example.com", ok: false, status: 503, failures: 1 }, // เสียรอบเดียว ยังไม่เตือน
       { url: "https://old.example.com", ok: false, error: "ENOTFOUND", failures: 3 }, // อยู่ในกฎที่ปิดแล้ว
     ]);
-    await db.update(pages).set({ lastError: "token expired" }).where(eq(pages.id, "PAGE1"));
+    await db.update(pages).set({ subscribed: true, lastError: "token expired" }).where(eq(pages.id, "PAGE1"));
+    // บัญชี IG: ต่ออายุไม่สำเร็จชั่วคราว (ยังใช้งานได้) ไม่นับ · ยังไม่รับ webhook นับ
+    await seedInstagramAccount(db, { id: "IG_WARN", username: "warn.shop" });
+    await db.update(instagramAccounts).set({ lastError: "ต่ออายุ token ไม่สำเร็จ: timeout" }).where(eq(instagramAccounts.id, "IG_WARN"));
+    await seedInstagramAccount(db, { id: "IG_OFF", username: "off.shop", appScopedId: "APPSCOPED2", subscribed: false });
 
     const p = await getProblems(db, 7);
-    expect(p.failedSends).toBe(2);
+    expect(p.failedSends).toBe(3);
     expect(p.failedAfterTap).toBe(1);
+    expect(p.failedByRule).toEqual(new Map([[linkRule.id, 3]]));
     expect(p.deadTaps).toBe(2);
+    expect(p.deadTapRules).toEqual(["ปิดอยู่"]);
     expect(p.brokenLinks).toMatchObject([{ url: "https://shop.example.com/a", status: 404, ruleNames: ["ขอลิงก์"] }]);
-    expect(p.connections).toEqual([{ name: "ร้านทดสอบ", platform: "facebook" }]);
+    expect(p.connections).toEqual([
+      { name: "ร้านทดสอบ", platform: "facebook" },
+      { name: "@off.shop", platform: "instagram" },
+    ]);
   });
 
   it("ลูกค้ากดปุ่มจากข้อความเก่าที่ถูกแก้แล้ว → บันทึกเป็นปัญหา", async () => {
@@ -150,6 +227,15 @@ describe("getProblems (ปัญหาที่ต้องดู)", () => {
     const [skip] = await db.select().from(events).where(eq(events.type, "skipped"));
     expect(skip.meta).toMatchObject({ reason: "button_target_missing", stepId: "s1", buttonId: "b1" });
     expect((await getProblems(db, 7)).deadTaps).toBe(1);
+
+    // ปุ่มเดิมถูกเปลี่ยนเป็นปุ่มลิงก์ (id เดิม) → กดจากข้อความเก่าก็ไม่มีข้อความถัดไปเหมือนกัน
+    await db
+      .update(rules)
+      .set({ steps: singleStep("ข้อความใหม่", [{ id: "b1", title: "ดู", type: "link", url: "https://shop.example.com" }]) })
+      .where(eq(rules.id, rule.id));
+    await ingestWebhook(db, postback("facebook", flowPayload(rule.id, "s1", "b1"), { senderId: "PSID_FROM_C1", mid: "pb.2" }));
+    await drainQueue(db);
+    expect((await getProblems(db, 7)).deadTaps).toBe(2);
   });
 });
 
@@ -164,7 +250,17 @@ describe("link-health (ตรวจลิงก์ปลายทาง)", () =>
 
   it("ถือว่าเสียเฉพาะ 404 / 410 / 5xx / เปิดไม่ได้", async () => {
     const netErr = Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND" } });
-    const f = statusFetch({ "https://a": 404, "https://b": 403, "https://c": 502, "https://d": netErr });
+    const tlsErr = Object.assign(new TypeError("fetch failed"), { cause: { code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" } });
+    const f: FetchLike = async (url, init) => {
+      if (url === "https://bot") return new Response("", { status: 503, headers: { "cf-mitigated": "challenge" } });
+      if (url === "https://tls") throw tlsErr;
+      // Response จริงสร้างสถานะนอก 200–599 ไม่ได้ แต่เว็บอย่าง LinkedIn ตอบ 999 มาได้
+      if (url === "https://li") return { status: 999, headers: new Headers(), body: null } as unknown as Response;
+      return statusFetch({ "https://a": 404, "https://b": 403, "https://c": 502, "https://d": netErr })(url, init);
+    };
+    expect(await probeUrl("https://bot", f)).toMatchObject({ ok: true, status: 503 });
+    expect(await probeUrl("https://tls", f)).toMatchObject({ ok: true, error: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" });
+    expect(await probeUrl("https://li", f)).toMatchObject({ ok: true, status: 999 });
     expect(await probeUrl("https://a", f)).toEqual({ ok: false, status: 404, error: null });
     expect(await probeUrl("https://b", f)).toEqual({ ok: true, status: 403, error: null });
     expect(await probeUrl("https://c", f)).toMatchObject({ ok: false, status: 502 });
@@ -196,5 +292,22 @@ describe("link-health (ตรวจลิงก์ปลายทาง)", () =>
     ]);
     // เสียครบ 2 รอบ → ขึ้นในปัญหาที่ต้องดู
     expect((await getProblems(db, 7)).brokenLinks.map((l) => l.url)).toEqual(["https://dead.example.com"]);
+  });
+
+  it("ทุกลิงก์เปิดไม่ได้พร้อมกัน (เน็ตของเซิร์ฟเวอร์เอง) ไม่นับเป็นลิงก์เสีย", async () => {
+    await createRule({
+      steps: singleStep("x", [
+        { id: "b1", title: "1", type: "link", url: "https://a.example.com" },
+        { id: "b2", title: "2", type: "link", url: "https://b.example.com" },
+      ]),
+    });
+    const down: FetchLike = async () => {
+      throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND" } });
+    };
+    await checkRuleLinks(db, down);
+    await checkRuleLinks(db, down);
+    const rows = await db.select().from(linkChecks);
+    expect(rows.map((r) => r.failures)).toEqual([0, 0]);
+    expect((await getProblems(db, 7)).brokenLinks).toEqual([]);
   });
 });
