@@ -2,26 +2,38 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ChartNoAxesColumn, Database, MessageCircleReply, Send, Zap } from "lucide-react";
 import { CopyField } from "@/components/copy-field";
+import { LanguageToggle } from "@/components/language-toggle";
 import { LogoMark } from "@/components/logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, Badge, PlatformIcon, cx } from "@/components/ui";
 import { getT } from "@/lib/i18n/server";
+import { getThemePref } from "@/lib/theme-server";
 import { ReloadButton } from "./login-form";
 
 /*
  * โครงหน้าก่อนเข้าสู่ระบบ (เข้าสู่ระบบ / ตั้งรหัสผ่านครั้งแรก / ยังไม่ได้เชื่อมฐานข้อมูล)
  * - เดสก์ท็อป (lg ขึ้นไป): แบ่งครึ่ง ซ้ายเป็นแผงแนะนำระบบ ขวาเป็นฟอร์ม
  * - มือถือ: โลโก้ + ชื่อระบบอยู่เหนือการ์ดฟอร์ม
+ * - มุมขวาบนมีปุ่มเลือกธีม (สว่าง/มืด/ตามเครื่อง) และภาษา — ใช้คุกกี้เดียวกับในแดชบอร์ด เลือกที่นี่แล้วล็อกอินเข้าไปก็ใช้ต่อ
  */
 
 const PRODUCT_NAME = "DM Automation";
 
 export async function AuthShell({ children, wide }: { children: ReactNode; wide?: boolean }) {
-  const t = await getT("auth");
+  const [t, theme] = await Promise.all([getT("auth"), getThemePref()]);
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-2">
       <BrandPanel />
       <main className="flex min-h-dvh min-w-0 flex-col">
-        <div className="flex flex-1 flex-col items-center justify-center px-4 pt-10 pb-6 sm:px-6 sm:pt-14">
+        <div className="flex flex-wrap items-center justify-end gap-2 px-4 pt-4 sm:px-6">
+          <div className="shrink-0">
+            <ThemeToggle initial={theme} variant="compact" />
+          </div>
+          <div className="shrink-0">
+            <LanguageToggle variant="compact" />
+          </div>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center px-4 pt-6 pb-6 sm:px-6 sm:pt-8">
           <div className={cx("w-full", wide ? "max-w-[520px]" : "max-w-[400px]")}>
             <div className="mb-6 flex flex-col items-center text-center lg:hidden">
               <LogoMark size={44} />
