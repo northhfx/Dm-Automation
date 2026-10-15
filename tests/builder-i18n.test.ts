@@ -308,7 +308,7 @@ describe("แผงข้อความ (เลือกการ์ดข้�
       "+ New message",
       "Add button",
       "Stats for this message",
-      "Counted since it started",
+      "Counted over the last 12 months",
       "Sent 1,234 total",
       "Tapped 123 of 1,000 reached",
       "Click rate 12% of people reached",

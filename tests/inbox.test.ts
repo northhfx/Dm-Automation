@@ -363,6 +363,19 @@ describe(`ลบเองเมื่อครบ ${INBOX_RETENTION_DAYS} วั
   });
 });
 
+describe("ประวัติกิจกรรมเก็บไว้ 12 เดือน", () => {
+  it("รอบดูแลระบบลบกิจกรรมที่เก่ากว่า 365 วัน — DM ที่ส่ง / ลิงก์ / ลูกค้า ไม่ถูกลบ", async () => {
+    await db.insert(events).values([
+      { type: "dm_received", platform: "facebook", text: "old", createdAt: new Date(Date.now() - 366 * DAY) },
+      { type: "dm_received", platform: "facebook", text: "recent", createdAt: new Date(Date.now() - 364 * DAY) },
+    ]);
+    const [contact] = await db.insert(contacts).values({ platform: "facebook", platformUserId: "PSID_OLD", pageId: "PAGE1", firstSeenAt: new Date(Date.now() - 400 * DAY) }).returning();
+    await cleanup(db);
+    expect((await db.select({ text: events.text }).from(events)).map((e) => e.text)).toEqual(["recent"]);
+    expect((await db.select().from(contacts)).map((c) => c.id)).toEqual([contact.id]);
+  });
+});
+
 describe("เติมชื่อ / ลิงก์ที่ขาด (ถาม Meta ตอนเปิดหน้า)", () => {
   it("แชท Facebook: ชื่อจากโปรไฟล์ — เติมให้ทุกข้อความของคนนั้น และถามครั้งเดียว", async () => {
     await deliver(fbDm({ text: "a", mid: "m.1" }));

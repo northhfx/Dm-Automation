@@ -1,6 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import type { Platform } from "@/db/schema";
+import { activityCutoff } from "@/lib/activity-retention";
 import { env } from "@/lib/env";
 
 export const RANGE_OPTIONS = [7, 30, 90] as const;
@@ -184,6 +185,39 @@ export async function getOverview(db: Db, days: number): Promise<Overview> {
   };
 }
 
+/** ตัวเลขหลักของช่วงก่อนหน้าที่ยาวเท่ากัน (ใช้แสดง "+12% เทียบช่วงก่อน" บนหน้าภาพรวม) */
+export interface PreviousTotals {
+  triggers: number;
+  sent: number;
+  clicks: number;
+  newContacts: number;
+}
+
+/**
+ * ช่วง N วันก่อนหน้าช่วงที่แสดงอยู่ เช่น ดู 30 วันล่าสุด → วันที่ 31–60 ย้อนหลัง
+ * นับแบบเดียวกับ getOverview: ตรงกับกฎ = rule_triggered, ส่งสำเร็จ = messages, กด/คลิก = กดปุ่ม + คลิกลิงก์ที่ส่งในช่วงนั้น
+ */
+export async function getPreviousTotals(db: Db, days: number): Promise<PreviousTotals> {
+  const tz = env.timezone;
+  const end = sql`((date_trunc('day', now() AT TIME ZONE ${tz}) - ${days - 1} * interval '1 day') AT TIME ZONE ${tz})`;
+  const start = sql`((date_trunc('day', now() AT TIME ZONE ${tz}) - ${2 * days - 1} * interval '1 day') AT TIME ZONE ${tz})`;
+  const result = await db.execute<Row>(sql`
+    SELECT
+      (SELECT count(*)::int FROM events WHERE type = 'rule_triggered' AND created_at >= ${start} AND created_at < ${end}) AS triggers,
+      (SELECT count(*)::int FROM messages WHERE status = 'sent' AND sent_at >= ${start} AND sent_at < ${end}) AS sent,
+      (SELECT count(*)::int FROM events WHERE type = 'button_clicked' AND created_at >= ${start} AND created_at < ${end})
+        + (SELECT coalesce(sum(clicks), 0)::int FROM links WHERE created_at >= ${start} AND created_at < ${end}) AS clicks,
+      (SELECT count(*)::int FROM contacts WHERE first_seen_at >= ${start} AND first_seen_at < ${end}) AS new_contacts
+  `);
+  const r = result.rows[0] ?? {};
+  return { triggers: num(r.triggers), sent: num(r.sent), clicks: num(r.clicks), newContacts: num(r.new_contacts) };
+}
+
+/** การเปลี่ยนแปลงเป็น % เทียบช่วงก่อน — null = ช่วงก่อนเป็น 0 (คำนวณ % ไม่ได้) */
+export function change(current: number, previous: number): number | null {
+  return previous > 0 ? ((current - previous) / previous) * 100 : null;
+}
+
 /** เงื่อนไข SQL: กฎนี้มีข้อความที่มีปุ่มอย่างน้อย 1 ข้อความ (กฎที่ไม่มีปุ่มไม่มี CTR) */
 const HAS_BUTTONS = sql.raw(
   `EXISTS (SELECT 1 FROM jsonb_array_elements(steps) st WHERE jsonb_array_length(coalesce(st->'buttons', '[]'::jsonb)) > 0)`,
@@ -235,9 +269,12 @@ function toRuleStats(r: Row): RuleStats {
   };
 }
 
-/** สถิติทั้งหมดของทุกกฎ ใช้ในหน้ารายการกฎ (แบบ "66 ครั้ง · CTR 87.9%") */
+/**
+ * สถิติย้อนหลัง 12 เดือนของทุกกฎ ใช้ในหน้ารายการกฎ (แบบ "66 ครั้ง · CTR 87.9%")
+ * นับเท่าอายุประวัติกิจกรรม (ACTIVITY_RETENTION_DAYS) — เก่ากว่านั้นถูกลบแล้ว ตัวเลขทุกช่องจะได้นับช่วงเดียวกัน
+ */
 export async function getAllTimeRuleStats(db: Db): Promise<Map<number, RuleStats>> {
-  const result = await db.execute<Row>(ruleStatsSql(null));
+  const result = await db.execute<Row>(ruleStatsSql(sql`${activityCutoff().toISOString()}::timestamptz`));
   return new Map(result.rows.map((r) => [num(r.id), toRuleStats(r)]));
 }
 
@@ -248,25 +285,30 @@ export interface StepStats {
   reached: number;
 }
 
-/** สถิติของแต่ละข้อความในกฎ (ทั้งหมดตั้งแต่เริ่มใช้) — key คือ stepId */
+/** สถิติของแต่ละข้อความในกฎ (ย้อนหลัง 12 เดือน เหมือน getAllTimeRuleStats) — key คือ stepId */
 export async function getStepStats(db: Db, ruleId: number): Promise<Record<string, StepStats>> {
+  const cutoff = activityCutoff().toISOString();
   // นับคนกดเฉพาะคนที่ได้รับข้อความนั้นจริง (กดปุ่มเก่าของข้อความที่ถูกแก้ไปแล้วไม่นับ)
   const result = await db.execute<Row>(sql`
     WITH reached AS (
       SELECT DISTINCT step_id, contact_id FROM messages
       WHERE rule_id = ${ruleId} AND status = 'sent' AND step_id IS NOT NULL AND contact_id IS NOT NULL
+        AND sent_at >= ${cutoff}::timestamptz
     ),
     sent AS (
       SELECT step_id, count(*)::int AS sent FROM messages
-      WHERE rule_id = ${ruleId} AND status = 'sent' AND step_id IS NOT NULL GROUP BY step_id
+      WHERE rule_id = ${ruleId} AND status = 'sent' AND step_id IS NOT NULL AND sent_at >= ${cutoff}::timestamptz
+      GROUP BY step_id
     ),
     engaged AS (
       SELECT DISTINCT x.step_id, x.contact_id FROM (
         SELECT meta->>'stepId' AS step_id, contact_id FROM events
           WHERE type = 'button_clicked' AND rule_id = ${ruleId} AND contact_id IS NOT NULL
+            AND created_at >= ${cutoff}::timestamptz
         UNION
         SELECT step_id, contact_id FROM links
           WHERE rule_id = ${ruleId} AND clicks > 0 AND contact_id IS NOT NULL AND step_id IS NOT NULL
+            AND created_at >= ${cutoff}::timestamptz
       ) x JOIN reached r ON r.step_id = x.step_id AND r.contact_id = x.contact_id
     )
     SELECT s.step_id, s.sent,

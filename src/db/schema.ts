@@ -157,6 +157,8 @@ export const links = pgTable(
   (t) => [
     uniqueIndex("links_code_idx").on(t.code),
     index("links_rule_idx").on(t.ruleId, t.createdAt),
+    // ยอดคลิกของลูกค้าแต่ละคน (หน้ารายชื่อลูกค้า)
+    index("links_contact_idx").on(t.contactId),
   ],
 );
 

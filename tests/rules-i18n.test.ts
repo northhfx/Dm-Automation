@@ -224,7 +224,7 @@ describe("รายการกฎ (RuleList)", () => {
       "(no buttons)",
       "On",
       "Off",
-      "Numbers count from when each automation was created · Click rate = share of people who got the DM and tapped a button or link · Move an automation up or down from its ⋮ button",
+      "Numbers cover the last 12 months · Click rate = share of people who got the DM and tapped a button or link · Move an automation up or down from its ⋮ button",
     ]) {
       expect(text, s).toContain(s);
     }
@@ -251,7 +251,7 @@ describe("รายการกฎ (RuleList)", () => {
       "อัตราการกด 13%",
       "(ไม่มีปุ่ม)",
       "ลำดับที่ 1",
-      "ตัวเลขนับตั้งแต่สร้างกฎ · อัตราการกด = สัดส่วนคนที่กดปุ่มหรือลิงก์ จากคนที่ได้รับ DM · ย้ายกฎขึ้น/ลงได้จากปุ่ม ⋮ ของแต่ละกฎ",
+      "ตัวเลขนับย้อนหลัง 12 เดือน · อัตราการกด = สัดส่วนคนที่กดปุ่มหรือลิงก์ จากคนที่ได้รับ DM · ย้ายกฎขึ้น/ลงได้จากปุ่ม ⋮ ของแต่ละกฎ",
     ]) {
       expect(text, s).toContain(s);
     }

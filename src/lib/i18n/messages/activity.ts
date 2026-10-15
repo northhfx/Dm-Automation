@@ -8,7 +8,8 @@ import { defineMessages } from "../core";
 export const activityMessages = defineMessages({
   th: {
     // ---- หัวหน้า (ชื่อหน้าอยู่ใน nav: "activity") ----
-    description: "ทุกอย่างที่ระบบได้รับและทำไป เรียงจากล่าสุด ใช้ดูว่าระบบตอบลูกค้าแล้วหรือยัง และหาสาเหตุเวลาระบบไม่ตอบ",
+    description:
+      "ทุกอย่างที่ระบบได้รับและทำไป เรียงจากล่าสุด ใช้ดูว่าระบบตอบลูกค้าแล้วหรือยัง และหาสาเหตุเวลาระบบไม่ตอบ (เก็บไว้ 12 เดือน)",
     refresh: "อัปเดตรายการ",
     /** loading.tsx (สำหรับโปรแกรมอ่านหน้าจอ) */
     loading: "กำลังโหลดกิจกรรม…",
@@ -144,7 +145,7 @@ export const activityMessages = defineMessages({
   },
   en: {
     description:
-      "Everything the system received and did, newest first. Check whether customers got a reply, and find out why when they didn't.",
+      "Everything the system received and did, newest first. Check whether customers got a reply, and find out why when they didn't. Kept for 12 months.",
     refresh: "Refresh",
     loading: "Loading activity…",
 

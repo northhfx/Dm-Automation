@@ -156,7 +156,7 @@ export const builderMessages = defineMessages({
     maxButtons: "ใส่ได้สูงสุด {max} ปุ่ม",
     addButton: "เพิ่มปุ่ม",
     statsTitle: "สถิติของข้อความนี้",
-    statsSince: "นับตั้งแต่เริ่มใช้งาน",
+    statsSince: "นับย้อนหลัง 12 เดือน",
     /** ช่องสถิติ: ชื่อ / ตัวเลข / คำใต้ตัวเลข */
     statSent: "ส่งแล้ว",
     statSentUnit: "ครั้ง",
@@ -347,7 +347,7 @@ export const builderMessages = defineMessages({
     maxButtons: "Up to {max} buttons",
     addButton: "Add button",
     statsTitle: "Stats for this message",
-    statsSince: "Counted since it started",
+    statsSince: "Counted over the last 12 months",
     statSent: "Sent",
     statSentUnit: "total",
     statEngaged: "Tapped",

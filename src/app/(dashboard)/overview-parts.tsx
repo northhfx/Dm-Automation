@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowRight, MessageCircle, MessagesSquare, Rocket, Zap } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, MessageCircle, MessagesSquare, Rocket } from "lucide-react";
 import type { Platform } from "@/db/schema";
 import { Badge, ButtonLink, cx, PlatformIcon, ProgressBar, tableClass } from "@/components/ui";
 import type { SetupStatus } from "@/lib/config";
@@ -72,76 +72,129 @@ export function SetupBanner({ status, done, total, locale }: { status: SetupStat
   );
 }
 
-// ---------------- ตัวเลขแยก Facebook / Instagram ----------------
+// ---------------- แถบตัวเลขสรุป ----------------
 
-/** "FB 3 · IG 5" พร้อมไอคอน (ใช้ใต้ตัวเลขสรุป) */
-export function PlatformSplitInline({ counts, locale }: { counts: PlatformCounts; locale: Locale }) {
-  const f = formatters(locale);
+export interface Kpi {
+  label: string;
+  /** คำอธิบายเมื่อชี้เมาส์ที่ชื่อ */
+  hint?: string;
+  value: string;
+  /** เปลี่ยนแปลงเป็น % เทียบช่วงก่อน — undefined = ไม่แสดง (เช่น อัตราการกด), null = ช่วงก่อนเป็น 0 */
+  change?: number | null;
+  /** บรรทัดเล็กใต้ตัวเลข (ใช้แทนตัวเลขเปลี่ยนแปลงเมื่อไม่มี) */
+  note?: ReactNode;
+  /** ข้อความเตือนสีแดง เช่น "ไม่สำเร็จ 2" */
+  alert?: string;
+  href?: string;
+}
+
+/** ตำแหน่งในตาราง: มือถือ 1 + 2×2 · แท็บเล็ต 3 + 2 · จอใหญ่ 5 ช่องเรียงกัน */
+const KPI_SPANS = [
+  "col-span-2 md:col-span-2 xl:col-span-1",
+  "md:col-span-2 xl:col-span-1",
+  "md:col-span-2 xl:col-span-1",
+  "md:col-span-3 xl:col-span-1",
+  "md:col-span-3 xl:col-span-1",
+];
+
+function ChangeLine({ change, compare, t, f }: { change: number | null; compare: string; t: T; f: Formatters }) {
+  if (change === null) return <span className="text-fg-3">{t("noPrevious")}</span>;
+  const rounded = Math.round(change);
+  const Icon = rounded > 0 ? ArrowUpRight : rounded < 0 ? ArrowDownRight : null;
+  const tone = rounded > 0 ? "text-good-text" : rounded < 0 ? "text-critical-text" : "text-fg-2";
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-      <span className="inline-flex items-center gap-1">
-        <PlatformIcon platform="facebook" size={12} title="Facebook" />
-        <span className="tabular">{f.number(counts.facebook)}</span>
+    <>
+      <span className={cx("inline-flex items-center font-medium tabular", tone)}>
+        {Icon && <Icon className="size-3.5" aria-hidden />}
+        {`${rounded > 0 ? "+" : ""}${f.number(rounded)}%`}
       </span>
-      <span className="inline-flex items-center gap-1">
-        <PlatformIcon platform="instagram" size={12} title="Instagram" />
-        <span className="tabular">{f.number(counts.instagram)}</span>
-      </span>
-    </span>
+      <span className="text-fg-3">{compare}</span>
+    </>
   );
 }
 
-/** แถวเปรียบเทียบ FB/IG: ชื่อ + ยอดรวม + แท่งสัดส่วน 2 สี */
-function SplitRow({ label, hint, counts, f }: { label: string; hint?: string; counts: PlatformCounts; f: Formatters }) {
-  const total = counts.facebook + counts.instagram;
-  const fbPct = total > 0 ? (counts.facebook / total) * 100 : 0;
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm text-fg">
-          {label}
-          {hint && <span className="ml-1.5 text-xs text-fg-3">{hint}</span>}
-        </span>
-        <span className="text-sm font-semibold text-fg tabular">{f.number(total)}</span>
-      </div>
-      <div className="mt-2 flex h-2 gap-0.5 overflow-hidden rounded-full bg-surface-3" aria-hidden>
-        {counts.facebook > 0 && <div className="h-full rounded-full bg-brand-facebook" style={{ width: `${fbPct}%` }} />}
-        {counts.instagram > 0 && <div className="h-full flex-1 rounded-full bg-brand-instagram" />}
-      </div>
-      <div className="mt-1.5 flex justify-between text-xs text-fg-3">
-        <span className="inline-flex items-center gap-1">
-          <PlatformIcon platform="facebook" size={12} />
-          Facebook <span className="font-medium text-fg-2 tabular">{f.number(counts.facebook)}</span>
-        </span>
-        <span className="inline-flex items-center gap-1">
-          Instagram <span className="font-medium text-fg-2 tabular">{f.number(counts.instagram)}</span>
-          <PlatformIcon platform="instagram" size={12} />
-        </span>
-      </div>
-    </div>
-  );
-}
-
-export function PlatformBreakdown({
-  incoming,
-  incomingHint,
-  triggers,
-  sent,
-  locale,
-}: {
-  incoming: PlatformCounts;
-  incomingHint: string;
-  triggers: PlatformCounts;
-  sent: PlatformCounts;
-  locale: Locale;
-}) {
+/** ตัวเลขสรุปหลายช่องในกรอบเดียว คั่นด้วยเส้นบางๆ (ไม่มีไอคอนสี — ตัวเลขเป็นพระเอก) */
+export function KpiStrip({ items, days, locale }: { items: Kpi[]; days: number; locale: Locale }) {
   const t = tOf(locale);
   const f = formatters(locale);
+  const compare = t("compareTo", { days });
   return (
-    <div className="space-y-5">
-      <SplitRow label={t("splitIncoming")} hint={incomingHint} counts={incoming} f={f} />
-      <SplitRow label={t("splitTriggers")} counts={triggers} f={f} />
-      <SplitRow label={t("splitSent")} counts={sent} f={f} />
+    <section aria-label={t("kpiAria")} className="overflow-hidden rounded-xl border border-line bg-line shadow-xs">
+      <div className="grid grid-cols-2 gap-px md:grid-cols-6 xl:grid-cols-5">
+        {items.map((k, i) => {
+          const body = (
+            <>
+              <p className="truncate text-[13px] leading-5 font-medium text-fg-2" title={k.hint}>
+                {k.label}
+              </p>
+              <p className="mt-1.5 text-[28px] leading-9 font-semibold tracking-tight text-fg">{k.value}</p>
+              <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs leading-5">
+                {k.change !== undefined ? <ChangeLine change={k.change} compare={compare} t={t} f={f} /> : <span className="text-fg-3">{k.note}</span>}
+              </p>
+              {k.alert && <p className="text-xs leading-5 font-medium text-critical-text">{k.alert}</p>}
+            </>
+          );
+          const cls = cx("min-w-0 bg-surface px-4 py-4 sm:px-5", KPI_SPANS[i]);
+          return k.href ? (
+            <Link key={k.label} href={k.href} className={cx(cls, "transition-colors hover:bg-surface-2/60 focus-visible:z-10")}>
+              {body}
+            </Link>
+          ) : (
+            <div key={k.label} className={cls}>
+              {body}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ---------------- ตารางแยกตามแพลตฟอร์ม ----------------
+
+/** ตาราง 3 แถว × Facebook / Instagram / รวม — hint = บรรทัดเล็กใต้ชื่อแถว (เช่น แยกคอมเมนต์ / แชท) */
+export function PlatformTable({ rows, locale }: { rows: { label: string; hint?: string; counts: PlatformCounts }[]; locale: Locale }) {
+  const t = tOf(locale);
+  const f = formatters(locale);
+  const th = "py-2 pl-3 text-right text-xs font-medium text-fg-3 first:pl-0 first:text-left";
+  const td = "py-2.5 pl-3 text-right text-sm text-fg-2 tabular first:pl-0 first:text-left first:text-fg";
+  return (
+    <div>
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-line">
+            <th className={th}>
+              <span className="sr-only">{t("platformTitle")}</span>
+            </th>
+            <th className={th}>
+              <span className="inline-flex items-center gap-1">
+                <PlatformIcon platform="facebook" size={12} />
+                Facebook
+              </span>
+            </th>
+            <th className={th}>
+              <span className="inline-flex items-center gap-1">
+                <PlatformIcon platform="instagram" size={12} />
+                Instagram
+              </span>
+            </th>
+            <th className={th}>{t("colTotal")}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {rows.map((r) => (
+            <tr key={r.label}>
+              <th scope="row" className={cx(td, "font-normal")}>
+                {r.label}
+                {r.hint && <span className="block text-xs leading-5 text-fg-3">{r.hint}</span>}
+              </th>
+              <td className={td}>{f.number(r.counts.facebook)}</td>
+              <td className={td}>{f.number(r.counts.instagram)}</td>
+              <td className={cx(td, "font-semibold text-fg")}>{f.number(r.counts.facebook + r.counts.instagram)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -250,22 +303,20 @@ function RuleListItem({ rule: r, t, f }: { rule: RuleStats; t: T; f: Formatters 
             <p className="truncate font-medium text-fg">{r.name}</p>
             <RuleMeta rule={r} t={t} />
           </div>
-          <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-fg tabular">
-            <Zap className="size-3.5 text-accent" aria-hidden />
-            {f.number(r.triggers)}
-            <span className="text-xs font-normal text-fg-3">{t("runsUnit")}</span>
+          <span className="shrink-0 text-sm font-semibold text-fg tabular">
+            {f.number(r.triggers)} <span className="text-xs font-normal text-fg-3">{t("runsUnit")}</span>
           </span>
         </div>
-        <dl className="mt-2.5 grid grid-cols-4 gap-2 text-center">
+        <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5">
           {[
             { label: t("colSent"), value: f.number(r.sent) },
             { label: t("colFailed"), value: f.number(r.failed), critical: r.failed > 0 },
             { label: t("colRead"), value: f.percent(rate(r.read, r.sent)) },
             { label: t("colCtr"), value: ctrOf(r, f) },
           ].map((s) => (
-            <div key={s.label} className="rounded-lg bg-surface-2 px-1 py-1.5">
-              <dt className="text-[11px] leading-4 text-fg-3">{s.label}</dt>
-              <dd className={cx("text-sm font-semibold tabular", s.critical ? "text-critical-text" : "text-fg")}>{s.value}</dd>
+            <div key={s.label} className="flex gap-1">
+              <dt className="text-fg-3">{s.label}</dt>
+              <dd className={cx("font-medium tabular", s.critical ? "text-critical-text" : "text-fg-2")}>{s.value}</dd>
             </div>
           ))}
         </dl>

@@ -1,21 +1,22 @@
-import { ArrowRight, ChartLine, Inbox, ListChecks, MousePointerClick, Plus, Send, UserPlus, Zap } from "lucide-react";
+import { ArrowRight, ChartLine, Inbox, ListChecks, Plus } from "lucide-react";
 import { getDb } from "@/db/client";
 import { LineChart } from "@/components/line-chart";
 import { SegmentedControl } from "@/components/segmented-control";
-import { ButtonLink, Card, EmptyState, PageHeader, StatTile } from "@/components/ui";
+import { ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { getSetupStatus, setupProgress } from "@/lib/config";
 import { getFormat, getT } from "@/lib/i18n/server";
-import { getOverview, parseRange, RANGE_OPTIONS, rate, sum } from "@/lib/stats";
+import { change, getOverview, getPreviousTotals, parseRange, RANGE_OPTIONS, rate, sum } from "@/lib/stats";
 import { loadEvents } from "./activity/load-events";
 import { TimelineItemCompact } from "./activity/timeline";
-import { FactList, PlatformBreakdown, PlatformSplitInline, RuleTable, SetupBanner } from "./overview-parts";
+import { FactList, KpiStrip, PlatformTable, RuleTable, SetupBanner } from "./overview-parts";
 
 export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const days = parseRange((await searchParams).range);
   const now = new Date();
   const db = getDb();
-  const [overview, setup, recent, f, tNav, tPage] = await Promise.all([
+  const [overview, previous, setup, recent, f, tNav, tPage] = await Promise.all([
     getOverview(db, days),
+    getPreviousTotals(db, days),
     getSetupStatus(db),
     loadEvents(db, { limit: 6 }),
     getFormat(),
@@ -29,8 +30,6 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const comments = sum(totals.commentsReceived);
   const chats = sum(totals.dmsReceived);
   const clicks = totals.buttonTaps + totals.totalClicks;
-  const dailySent = overview.daily.reduce((n, d) => n + d.sent, 0);
-  const dailyClicks = overview.daily.reduce((n, d) => n + d.clicks, 0);
   const hasActivity = overview.daily.some((d) => d.sent || d.clicks || d.triggers) || comments + chats > 0;
   const noRules = overview.rules.length === 0;
   const since = overview.daily[0]?.date;
@@ -59,69 +58,47 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
       <div className="space-y-6">
         {progress.done < progress.total && <SetupBanner status={setup} done={progress.done} total={progress.total} locale={locale} />}
 
-        {/* มือถือ 1 + 2×2 · แท็บเล็ต 3 + 2 · จอใหญ่ 5 ช่องเรียงกัน */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <StatTile
-            className="col-span-2 md:col-span-1"
-            label={tPage("statTriggers")}
-            icon={<Zap />}
-            tone="accent"
-            value={f.number(sum(totals.triggers))}
-            detail={
-              <>
-                <span className="block">{tPage("statTriggersDetail")}</span>
-                <PlatformSplitInline counts={totals.triggers} locale={locale} />
-              </>
-            }
-          />
-          <StatTile
-            label={tPage("statSent")}
-            icon={<Send />}
-            tone="good"
-            href="/activity?filter=sent"
-            value={f.number(sent)}
-            detail={
-              <>
-                <PlatformSplitInline counts={totals.dmsSent} locale={locale} />
-                {totals.dmsFailed > 0 && (
-                  <span className="block text-critical-text">{tPage("statSentFailed", { count: totals.dmsFailed })}</span>
-                )}
-              </>
-            }
-          />
-          <StatTile
-            label={tPage("statCtr")}
-            icon={<ChartLine />}
-            tone="accent"
-            value={f.percent(rate(totals.engagedContacts, totals.reachedContacts))}
-            detail={tPage("statCtrDetail", { engaged: totals.engagedContacts, reached: totals.reachedContacts })}
-          />
-          <StatTile
-            label={tPage("statClicks")}
-            icon={<MousePointerClick />}
-            tone="warning"
-            href="/activity?filter=clicks"
-            value={f.number(clicks)}
-            detail={tPage("statClicksDetail", { taps: totals.buttonTaps, clicks: totals.totalClicks })}
-          />
-          <StatTile
-            label={tPage("statNewContacts")}
-            icon={<UserPlus />}
-            tone="neutral"
-            href="/contacts"
-            value={f.number(totals.newContacts)}
-            detail={tPage("statNewContactsDetail")}
-          />
-        </div>
+        <KpiStrip
+          days={days}
+          locale={locale}
+          items={[
+            {
+              label: tPage("statTriggers"),
+              hint: tPage("statTriggersHint"),
+              value: f.number(sum(totals.triggers)),
+              change: change(sum(totals.triggers), previous.triggers),
+            },
+            {
+              label: tPage("statSent"),
+              value: f.number(sent),
+              change: change(sent, previous.sent),
+              alert: totals.dmsFailed > 0 ? tPage("statSentFailed", { count: totals.dmsFailed }) : undefined,
+              href: "/activity?filter=sent",
+            },
+            {
+              label: tPage("statCtr"),
+              hint: tPage("statCtrHint"),
+              value: f.percent(rate(totals.engagedContacts, totals.reachedContacts)),
+              note: tPage("statCtrDetail", { engaged: totals.engagedContacts, reached: totals.reachedContacts }),
+            },
+            {
+              label: tPage("statClicks"),
+              value: f.number(clicks),
+              change: change(clicks, previous.clicks),
+              href: "/activity?filter=clicks",
+            },
+            {
+              label: tPage("statNewContacts"),
+              hint: tPage("statNewContactsHint"),
+              value: f.number(totals.newContacts),
+              change: change(totals.newContacts, previous.newContacts),
+              href: "/contacts",
+            },
+          ]}
+        />
 
         <div className="grid gap-6 xl:grid-cols-3">
-          <Card
-            className="xl:col-span-2"
-            title={tPage("chartTitle")}
-            description={
-              hasActivity ? tPage("chartSummary", { days, sent: dailySent, clicks: dailyClicks }) : tPage("chartRangeOnly", { days })
-            }
-          >
+          <Card className="xl:col-span-2" title={tPage("chartTitle")}>
             {hasActivity ? (
               <LineChart
                 height={300}
@@ -156,18 +133,24 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             )}
           </Card>
 
-          <Card title={tPage("platformTitle")} description={tPage("platformDescription")}>
-            <PlatformBreakdown
-              incoming={{
-                facebook: totals.commentsReceived.facebook + totals.dmsReceived.facebook,
-                instagram: totals.commentsReceived.instagram + totals.dmsReceived.instagram,
-              }}
-              incomingHint={tPage("splitIncomingHint", { comments, chats })}
-              triggers={totals.triggers}
-              sent={totals.dmsSent}
+          <Card title={tPage("platformTitle")}>
+            <PlatformTable
               locale={locale}
+              rows={[
+                {
+                  label: tPage("splitIncoming"),
+                  hint: tPage("splitIncomingHint", { comments, chats }),
+                  counts: {
+                    facebook: totals.commentsReceived.facebook + totals.dmsReceived.facebook,
+                    instagram: totals.commentsReceived.instagram + totals.dmsReceived.instagram,
+                  },
+                },
+                { label: tPage("splitTriggers"), counts: totals.triggers },
+                { label: tPage("splitSent"), counts: totals.dmsSent },
+              ]}
             />
-            <div className="mt-5 border-t border-line pt-2">
+            <div className="mt-4 border-t border-line pt-4">
+              <h3 className="text-xs font-medium text-fg-3">{tPage("resultsHeading")}</h3>
               <FactList
                 items={[
                   { label: tPage("factPublicReplies"), value: tPage("factPublicRepliesValue", { count: totals.publicReplies }) },

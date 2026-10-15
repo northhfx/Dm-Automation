@@ -21,7 +21,7 @@ export const rulesMessages = defineMessages({
     moveHint: "ย้ายกฎขึ้น/ลงได้จากปุ่ม ⋮ ของแต่ละกฎ",
     topWins: "ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนสุด",
     /** หมายเหตุท้ายรายการ (ต่อด้วย ctrHint และ moveHint คั่นด้วย ·) */
-    statsSince: "ตัวเลขนับตั้งแต่สร้างกฎ",
+    statsSince: "ตัวเลขนับย้อนหลัง 12 เดือน",
     ctrHint: "อัตราการกด = สัดส่วนคนที่กดปุ่มหรือลิงก์ จากคนที่ได้รับ DM",
 
     // ---- การ์ดของแต่ละกฎ ----
@@ -158,7 +158,7 @@ export const rulesMessages = defineMessages({
     beforeSaveHint: "แตะรายการเพื่อไปแก้ที่การ์ดนั้น",
     readyToSave: "ครบแล้ว พร้อมบันทึก",
     resultsTitle: "ผลลัพธ์ของกฎนี้",
-    resultsSince: "นับตั้งแต่เริ่มใช้งาน",
+    resultsSince: "นับย้อนหลัง 12 เดือน",
     resultRuns: "ทำงาน",
     resultRunsUnit: "ครั้ง",
     resultSent: "ส่ง DM",
@@ -275,7 +275,7 @@ export const rulesMessages = defineMessages({
     groupDm: "When someone messages you",
     moveHint: "Move an automation up or down from its ⋮ button",
     topWins: "If several automations match, the top one is used",
-    statsSince: "Numbers count from when each automation was created",
+    statsSince: "Numbers cover the last 12 months",
     ctrHint: "Click rate = share of people who got the DM and tapped a button or link",
 
     // ---- การ์ดของแต่ละกฎ ----
@@ -397,7 +397,7 @@ export const rulesMessages = defineMessages({
     beforeSaveHint: "Tap an item to go fix that card",
     readyToSave: "All set. Ready to save.",
     resultsTitle: "Results for this automation",
-    resultsSince: "Counted since it started",
+    resultsSince: "Counted over the last 12 months",
     resultRuns: "Runs",
     resultRunsUnit: "total",
     resultSent: "DMs sent",

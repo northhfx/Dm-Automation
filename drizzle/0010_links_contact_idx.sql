@@ -1,0 +1,1 @@
+CREATE INDEX "links_contact_idx" ON "links" USING btree ("contact_id");

@@ -30,22 +30,26 @@ export const dashboardMessages = defineMessages({
     stepTest: "ทดสอบโดยคอมเมนต์ที่โพสต์ของเพจ",
 
     // ---- ตัวเลขสรุป 5 ช่อง ----
+    kpiAria: "ตัวเลขสรุป",
     statTriggers: "ตรงกับกฎ",
-    statTriggersDetail: "คอมเมนต์/แชทที่ระบบตอบให้",
+    statTriggersHint: "คอมเมนต์และแชทที่ระบบตอบให้",
     statSent: "DM ที่ส่งสำเร็จ",
     statSentFailed: "ไม่สำเร็จ {count}",
     statCtr: "อัตราการกด",
     /** {engaged} = คนที่กดปุ่มหรือลิงก์, {reached} = คนที่ได้รับ DM */
-    statCtrDetail: "{engaged} จาก {reached} คนที่ได้รับ DM กดปุ่มหรือลิงก์",
+    statCtrDetail: "{engaged} จาก {reached} คนที่ได้รับ DM",
+    statCtrHint: "สัดส่วนคนที่กดปุ่มหรือลิงก์ จากคนที่ได้รับ DM",
     statClicks: "กดปุ่ม / คลิกลิงก์",
     statClicksDetail: "กดปุ่ม {taps} · คลิกลิงก์ {clicks}",
     statNewContacts: "ลูกค้าใหม่",
-    statNewContactsDetail: "คนใหม่ที่คอมเมนต์หรือทักแชทตรงกับคำในกฎ",
+    statNewContactsHint: "คนใหม่ที่คอมเมนต์หรือทักแชทตรงกับคำในกฎ",
+    /** ต่อท้ายตัวเลขเปลี่ยนแปลง เช่น "+12% เทียบ 30 วันก่อนหน้า" */
+    compareTo: "เทียบ {days} วันก่อนหน้า",
+    /** ช่วงก่อนหน้าเป็น 0 — คำนวณ % ไม่ได้ */
+    noPrevious: "ช่วงก่อนหน้ายังไม่มีข้อมูล",
 
     // ---- กราฟรายวัน ----
     chartTitle: "DM ที่ส่ง และการกดปุ่ม/คลิกลิงก์ รายวัน",
-    chartSummary: "รวม {days} วัน: ส่ง {sent} ข้อความ · กด/คลิก {clicks} ครั้ง",
-    chartRangeOnly: "{days} วันล่าสุด",
     /** ชื่อเส้นในกราฟ */
     chartSeriesSent: "DM ที่ส่งสำเร็จ",
     chartSeriesClicks: "กดปุ่ม/คลิกลิงก์",
@@ -57,9 +61,10 @@ export const dashboardMessages = defineMessages({
     createFirstRule: "สร้างกฎแรก",
     viewRules: "ดูกฎอัตโนมัติ",
 
-    // ---- การ์ด Facebook กับ Instagram ----
-    platformTitle: "Facebook กับ Instagram",
-    platformDescription: "เทียบสองแพลตฟอร์มในช่วงเดียวกัน",
+    // ---- การ์ดแยกตามแพลตฟอร์ม ----
+    platformTitle: "แยกตามแพลตฟอร์ม",
+    colTotal: "รวม",
+    resultsHeading: "ผลของข้อความที่ส่ง",
     splitIncoming: "ข้อความเข้า",
     splitIncomingHint: "คอมเมนต์ {comments} · แชท {chats}",
     splitTriggers: "ตรงกับกฎ",
@@ -123,20 +128,22 @@ export const dashboardMessages = defineMessages({
     stepFirstRule: "Create your first automation",
     stepTest: "Test it by commenting on a post on your Page",
 
+    kpiAria: "Key numbers",
     statTriggers: "Automation matches",
-    statTriggersDetail: "Comments and messages answered for you",
+    statTriggersHint: "Comments and messages answered for you",
     statSent: "DMs sent",
     statSentFailed: "Failed: {count}",
     statCtr: "Click rate",
-    statCtrDetail: "{engaged} of {reached} people who got a DM tapped a button or link",
+    statCtrDetail: "{engaged} of {reached} people who got a DM",
+    statCtrHint: "Share of people who got a DM and tapped a button or link",
     statClicks: "Taps and clicks",
     statClicksDetail: "Button taps {taps} · Link clicks {clicks}",
     statNewContacts: "New contacts",
-    statNewContactsDetail: "New people whose comment or message matched a keyword",
+    statNewContactsHint: "New people whose comment or message matched a keyword",
+    compareTo: "vs. previous {days} days",
+    noPrevious: "No data for the previous period",
 
     chartTitle: "DMs sent and taps/clicks per day",
-    chartSummary: "Last {days} days: Sent {sent} · Taps/clicks {clicks}",
-    chartRangeOnly: "Last {days} days",
     chartSeriesSent: "DMs sent",
     chartSeriesClicks: "Taps/clicks",
     chartEmptyTitle: "No data in the last {days} days",
@@ -146,8 +153,9 @@ export const dashboardMessages = defineMessages({
     createFirstRule: "Create your first automation",
     viewRules: "View automations",
 
-    platformTitle: "Facebook vs. Instagram",
-    platformDescription: "Both platforms side by side for the same period",
+    platformTitle: "By platform",
+    colTotal: "Total",
+    resultsHeading: "Message results",
     splitIncoming: "Incoming",
     splitIncomingHint: "Comments {comments} · Messages {chats}",
     splitTriggers: "Matched an automation",
