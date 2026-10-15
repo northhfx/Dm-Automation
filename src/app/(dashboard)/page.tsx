@@ -1,6 +1,6 @@
 import { ArrowRight, ChartLine, Inbox, ListChecks, Plus } from "lucide-react";
 import { getDb } from "@/db/client";
-import { LineChart } from "@/components/line-chart";
+import { PlatformBarChart } from "@/components/platform-bar-chart";
 import { SegmentedControl } from "@/components/segmented-control";
 import { ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { getSetupStatus, setupProgress } from "@/lib/config";
@@ -8,7 +8,7 @@ import { getFormat, getT } from "@/lib/i18n/server";
 import { change, getOverview, getPreviousTotals, parseRange, RANGE_OPTIONS, rate, sum } from "@/lib/stats";
 import { loadEvents } from "./activity/load-events";
 import { TimelineItemCompact } from "./activity/timeline";
-import { FactList, KpiStrip, PlatformTable, RuleTable, SetupBanner } from "./overview-parts";
+import { FactList, KpiCards, PlatformTable, RuleTable, SetupBanner } from "./overview-parts";
 
 export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const days = parseRange((await searchParams).range);
@@ -30,7 +30,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const comments = sum(totals.commentsReceived);
   const chats = sum(totals.dmsReceived);
   const clicks = totals.buttonTaps + totals.totalClicks;
-  const hasActivity = overview.daily.some((d) => d.sent || d.clicks || d.triggers) || comments + chats > 0;
+  const hasActivity = overview.daily.some((d) => sum(d.sent) + sum(d.clicks) + sum(d.triggers) > 0) || comments + chats > 0;
   const noRules = overview.rules.length === 0;
   const since = overview.daily[0]?.date;
 
@@ -58,7 +58,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
       <div className="space-y-6">
         {progress.done < progress.total && <SetupBanner status={setup} done={progress.done} total={progress.total} locale={locale} />}
 
-        <KpiStrip
+        <KpiCards
           days={days}
           locale={locale}
           items={[
@@ -66,11 +66,13 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
               label: tPage("statTriggers"),
               hint: tPage("statTriggersHint"),
               value: f.number(sum(totals.triggers)),
+              split: totals.triggers,
               change: change(sum(totals.triggers), previous.triggers),
             },
             {
               label: tPage("statSent"),
               value: f.number(sent),
+              split: totals.dmsSent,
               change: change(sent, previous.sent),
               alert: totals.dmsFailed > 0 ? tPage("statSentFailed", { count: totals.dmsFailed }) : undefined,
               href: "/activity?filter=sent",
@@ -83,7 +85,9 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             },
             {
               label: tPage("statClicks"),
+              hint: tPage("statClicksDetail", { taps: totals.buttonTaps, clicks: totals.totalClicks }),
               value: f.number(clicks),
+              split: totals.clicksByPlatform,
               change: change(clicks, previous.clicks),
               href: "/activity?filter=clicks",
             },
@@ -91,6 +95,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
               label: tPage("statNewContacts"),
               hint: tPage("statNewContactsHint"),
               value: f.number(totals.newContacts),
+              split: totals.newContactsByPlatform,
               change: change(totals.newContacts, previous.newContacts),
               href: "/contacts",
             },
@@ -100,12 +105,13 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
         <div className="grid gap-6 xl:grid-cols-3">
           <Card className="xl:col-span-2" title={tPage("chartTitle")}>
             {hasActivity ? (
-              <LineChart
+              <PlatformBarChart
                 height={300}
-                data={overview.daily}
-                series={[
-                  { key: "sent", label: tPage("chartSeriesSent"), color: "var(--series-1)" },
-                  { key: "clicks", label: tPage("chartSeriesClicks"), color: "var(--series-2)" },
+                ariaLabel={tPage("chartTitle")}
+                metrics={[
+                  { key: "sent", label: tPage("statSent"), data: overview.daily.map((d) => ({ date: d.date, ...d.sent })) },
+                  { key: "triggers", label: tPage("statTriggers"), data: overview.daily.map((d) => ({ date: d.date, ...d.triggers })) },
+                  { key: "clicks", label: tPage("statClicks"), data: overview.daily.map((d) => ({ date: d.date, ...d.clicks })) },
                 ]}
               />
             ) : (

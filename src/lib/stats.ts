@@ -34,13 +34,18 @@ export interface OverviewTotals {
   /** จำนวนคน (ไม่ซ้ำ) ที่กดปุ่มหรือกดลิงก์อย่างน้อย 1 ครั้ง */
   engagedContacts: number;
   newContacts: number;
+  /** ลูกค้าใหม่แยกแพลตฟอร์ม (รวมกัน = newContacts) */
+  newContactsByPlatform: PlatformCounts;
+  /** กดปุ่ม + คลิกลิงก์ แยกแพลตฟอร์ม (นับจากกิจกรรม — ลิงก์เก่าที่ไม่รู้แพลตฟอร์มไม่นับ) */
+  clicksByPlatform: PlatformCounts;
 }
 
+/** ตัวเลขรายวันแยก Facebook / Instagram (กราฟแท่งบนหน้าภาพรวม) */
 export interface DailyPoint {
   date: string; // YYYY-MM-DD ตามเขตเวลาของระบบ
-  sent: number;
-  clicks: number;
-  triggers: number;
+  triggers: PlatformCounts;
+  sent: PlatformCounts;
+  clicks: PlatformCounts;
 }
 
 export interface RuleStats {
@@ -95,7 +100,7 @@ export async function getOverview(db: Db, days: number): Promise<Overview> {
       SELECT count(*)::int AS sent, count(*) FILTER (WHERE clicks > 0)::int AS clicked, coalesce(sum(clicks), 0)::int AS clicks
       FROM links WHERE created_at >= ${since}
     `),
-    db.execute<Row>(sql`SELECT count(*)::int AS n FROM contacts WHERE first_seen_at >= ${since}`),
+    db.execute<Row>(sql`SELECT platform, count(*)::int AS n FROM contacts WHERE first_seen_at >= ${since} GROUP BY platform`),
     db.execute<Row>(sql`
       WITH days AS (
         SELECT generate_series(
@@ -105,14 +110,16 @@ export async function getOverview(db: Db, days: number): Promise<Overview> {
         ) AS day
       ),
       counts AS (
-        SELECT date_trunc('day', created_at AT TIME ZONE ${tz}) AS day,
+        SELECT date_trunc('day', created_at AT TIME ZONE ${tz}) AS day, platform,
           count(*) FILTER (WHERE type = 'dm_sent')::int AS sent,
           count(*) FILTER (WHERE type IN ('link_clicked', 'button_clicked'))::int AS clicks,
           count(*) FILTER (WHERE type = 'rule_triggered')::int AS triggers
-        FROM events WHERE created_at >= ${since}
-        GROUP BY 1
+        FROM events
+        WHERE created_at >= ${since} AND platform IS NOT NULL
+          AND type IN ('dm_sent', 'link_clicked', 'button_clicked', 'rule_triggered')
+        GROUP BY 1, 2
       )
-      SELECT to_char(days.day, 'YYYY-MM-DD') AS date,
+      SELECT to_char(days.day, 'YYYY-MM-DD') AS date, counts.platform,
         coalesce(counts.sent, 0) AS sent, coalesce(counts.clicks, 0) AS clicks, coalesce(counts.triggers, 0) AS triggers
       FROM days LEFT JOIN counts ON counts.day = days.day
       ORDER BY days.day
@@ -148,8 +155,34 @@ export async function getOverview(db: Db, days: number): Promise<Overview> {
     buttonTaps: 0,
     reachedContacts: num(engagementRow.rows[0]?.reached),
     engagedContacts: num(engagementRow.rows[0]?.engaged),
-    newContacts: num(contactRow.rows[0]?.n),
+    newContacts: 0,
+    newContactsByPlatform: emptyPlatformCounts(),
+    clicksByPlatform: emptyPlatformCounts(),
   };
+
+  for (const row of contactRow.rows) {
+    const platform = row.platform as Platform;
+    if (platform !== "facebook" && platform !== "instagram") continue;
+    totals.newContactsByPlatform[platform] += num(row.n);
+    totals.newContacts += num(row.n);
+  }
+
+  // แถวละ (วัน, แพลตฟอร์ม) — วันที่ไม่มีอะไรเลยมาเป็นแถวเดียวที่ platform = null
+  const daily = new Map<string, DailyPoint>();
+  for (const r of dailyRows.rows) {
+    const date = String(r.date);
+    let point = daily.get(date);
+    if (!point) {
+      point = { date, triggers: emptyPlatformCounts(), sent: emptyPlatformCounts(), clicks: emptyPlatformCounts() };
+      daily.set(date, point);
+    }
+    const platform = r.platform as Platform | null;
+    if (platform !== "facebook" && platform !== "instagram") continue;
+    point.triggers[platform] += num(r.triggers);
+    point.sent[platform] += num(r.sent);
+    point.clicks[platform] += num(r.clicks);
+    totals.clicksByPlatform[platform] += num(r.clicks);
+  }
 
   for (const row of eventRows.rows) {
     const platform = row.platform as Platform | null;
@@ -175,12 +208,7 @@ export async function getOverview(db: Db, days: number): Promise<Overview> {
   return {
     days,
     totals,
-    daily: dailyRows.rows.map((r) => ({
-      date: String(r.date),
-      sent: num(r.sent),
-      clicks: num(r.clicks),
-      triggers: num(r.triggers),
-    })),
+    daily: [...daily.values()],
     rules: ruleRows.rows.map(toRuleStats),
   };
 }

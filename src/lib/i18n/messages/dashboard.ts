@@ -49,10 +49,7 @@ export const dashboardMessages = defineMessages({
     noPrevious: "ช่วงก่อนหน้ายังไม่มีข้อมูล",
 
     // ---- กราฟรายวัน ----
-    chartTitle: "DM ที่ส่ง และการกดปุ่ม/คลิกลิงก์ รายวัน",
-    /** ชื่อเส้นในกราฟ */
-    chartSeriesSent: "DM ที่ส่งสำเร็จ",
-    chartSeriesClicks: "กดปุ่ม/คลิกลิงก์",
+    chartTitle: "กิจกรรมรายวัน",
     chartEmptyTitle: "ยังไม่มีข้อมูลใน {days} วันนี้",
     chartEmptyNoRules: "สร้างกฎอัตโนมัติก่อน แล้วเมื่อมีคนคอมเมนต์คำที่ตั้งไว้ กราฟจะแสดงที่นี่",
     chartEmptyBody: "เมื่อมีคนคอมเมนต์หรือทักแชทตรงกับกฎ กราฟจะแสดงที่นี่",
@@ -143,9 +140,7 @@ export const dashboardMessages = defineMessages({
     compareTo: "vs. previous {days} days",
     noPrevious: "No data for the previous period",
 
-    chartTitle: "DMs sent and taps/clicks per day",
-    chartSeriesSent: "DMs sent",
-    chartSeriesClicks: "Taps/clicks",
+    chartTitle: "Daily activity",
     chartEmptyTitle: "No data in the last {days} days",
     chartEmptyNoRules: "Create an automation first. When someone comments one of your keywords, the chart shows up here.",
     chartEmptyBody: "When a comment or message matches an automation, the chart shows up here.",

@@ -64,7 +64,14 @@ describe("getOverview", () => {
     expect(o.totals.dmsRead).toBe(1);
 
     expect(o.daily).toHaveLength(7);
-    expect(o.daily.at(-1)).toEqual({ date: expect.any(String), sent: 4, clicks: 2, triggers: 4 });
+    const today = o.daily.at(-1)!;
+    expect(today.date).toEqual(expect.any(String));
+    // แยกแพลตฟอร์ม: รวมกันต้องเท่ากับยอดของวัน
+    expect(today.sent.facebook + today.sent.instagram).toBe(4);
+    expect(today.clicks.facebook + today.clicks.instagram).toBe(2);
+    expect(today.triggers.facebook + today.triggers.instagram).toBe(4);
+    expect(o.totals.clicksByPlatform.facebook + o.totals.clicksByPlatform.instagram).toBe(2);
+    expect(o.totals.newContactsByPlatform.facebook + o.totals.newContactsByPlatform.instagram).toBe(3);
 
     const byId = Object.fromEntries(o.rules.map((r) => [r.id, r]));
     expect(byId[commentRule.id]).toMatchObject({ triggers: 2, sent: 3, failed: 0, reached: 2, engaged: 1 });

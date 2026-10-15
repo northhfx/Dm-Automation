@@ -372,7 +372,7 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
     expect(thaiIn(html)).toEqual([]);
     for (const s of [
       "How your automations did over the last 7 days",
-      "DMs sent and taps/clicks per day",
+      "Daily activity",
       "No data for the previous period",
       "Message results",
       "Total",

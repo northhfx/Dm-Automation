@@ -30,7 +30,7 @@ async function render(el: ReactElement, locale: Locale): Promise<string> {
 
 async function renderLogin(cookies: Record<string, string>, locale: Locale) {
   cookieJar.values = cookies;
-  return render(createElement(AuthCard, { title: "Log in", children: createElement("form") }), locale);
+  return render(createElement(AuthCard, { title: "Log in" } as ComponentProps<typeof AuthCard>, createElement("form")), locale);
 }
 
 afterEach(() => {

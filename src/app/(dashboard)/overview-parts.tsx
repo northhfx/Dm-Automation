@@ -72,30 +72,23 @@ export function SetupBanner({ status, done, total, locale }: { status: SetupStat
   );
 }
 
-// ---------------- แถบตัวเลขสรุป ----------------
+// ---------------- ตัวเลขสรุป ----------------
 
 export interface Kpi {
   label: string;
   /** คำอธิบายเมื่อชี้เมาส์ที่ชื่อ */
   hint?: string;
   value: string;
+  /** แยก Facebook / Instagram ใต้ตัวเลข */
+  split?: PlatformCounts;
+  /** บรรทัดเล็กใต้ตัวเลข (ใช้เมื่อไม่มี split) */
+  note?: ReactNode;
   /** เปลี่ยนแปลงเป็น % เทียบช่วงก่อน — undefined = ไม่แสดง (เช่น อัตราการกด), null = ช่วงก่อนเป็น 0 */
   change?: number | null;
-  /** บรรทัดเล็กใต้ตัวเลข (ใช้แทนตัวเลขเปลี่ยนแปลงเมื่อไม่มี) */
-  note?: ReactNode;
   /** ข้อความเตือนสีแดง เช่น "ไม่สำเร็จ 2" */
   alert?: string;
   href?: string;
 }
-
-/** ตำแหน่งในตาราง: มือถือ 1 + 2×2 · แท็บเล็ต 3 + 2 · จอใหญ่ 5 ช่องเรียงกัน */
-const KPI_SPANS = [
-  "col-span-2 md:col-span-2 xl:col-span-1",
-  "md:col-span-2 xl:col-span-1",
-  "md:col-span-2 xl:col-span-1",
-  "md:col-span-3 xl:col-span-1",
-  "md:col-span-3 xl:col-span-1",
-];
 
 function ChangeLine({ change, compare, t, f }: { change: number | null; compare: string; t: T; f: Formatters }) {
   if (change === null) return <span className="text-fg-3">{t("noPrevious")}</span>;
@@ -113,39 +106,56 @@ function ChangeLine({ change, compare, t, f }: { change: number | null; compare:
   );
 }
 
-/** ตัวเลขสรุปหลายช่องในกรอบเดียว คั่นด้วยเส้นบางๆ (ไม่มีไอคอนสี — ตัวเลขเป็นพระเอก) */
-export function KpiStrip({ items, days, locale }: { items: Kpi[]; days: number; locale: Locale }) {
+/** "[f] 105  [ig] 106" */
+function SplitLine({ counts, f }: { counts: PlatformCounts; f: Formatters }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[13px] text-fg-2">
+      <span className="inline-flex items-center gap-1.5">
+        <PlatformIcon platform="facebook" size={13} title="Facebook" />
+        <span className="font-medium tabular">{f.number(counts.facebook)}</span>
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <PlatformIcon platform="instagram" size={13} title="Instagram" />
+        <span className="font-medium tabular">{f.number(counts.instagram)}</span>
+      </span>
+    </span>
+  );
+}
+
+/** การ์ดตัวเลขสรุป: มือถือ 1 + 2×2 · แท็บเล็ต 3 + 2 · จอใหญ่ 5 ช่องเรียงกัน */
+export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; locale: Locale }) {
   const t = tOf(locale);
   const f = formatters(locale);
   const compare = t("compareTo", { days });
   return (
-    <section aria-label={t("kpiAria")} className="overflow-hidden rounded-xl border border-line bg-line shadow-xs">
-      <div className="grid grid-cols-2 gap-px md:grid-cols-6 xl:grid-cols-5">
-        {items.map((k, i) => {
-          const body = (
-            <>
-              <p className="truncate text-[13px] leading-5 font-medium text-fg-2" title={k.hint}>
-                {k.label}
-              </p>
-              <p className="mt-1.5 text-[28px] leading-9 font-semibold tracking-tight text-fg">{k.value}</p>
-              <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs leading-5">
-                {k.change !== undefined ? <ChangeLine change={k.change} compare={compare} t={t} f={f} /> : <span className="text-fg-3">{k.note}</span>}
-              </p>
-              {k.alert && <p className="text-xs leading-5 font-medium text-critical-text">{k.alert}</p>}
-            </>
-          );
-          const cls = cx("min-w-0 bg-surface px-4 py-4 sm:px-5", KPI_SPANS[i]);
-          return k.href ? (
-            <Link key={k.label} href={k.href} className={cx(cls, "transition-colors hover:bg-surface-2/60 focus-visible:z-10")}>
-              {body}
-            </Link>
-          ) : (
-            <div key={k.label} className={cls}>
-              {body}
-            </div>
-          );
-        })}
-      </div>
+    <section aria-label={t("kpiAria")} className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      {items.map((k, i) => {
+        const body = (
+          <>
+            <p className="truncate text-sm leading-6 text-fg-2" title={k.hint}>
+              {k.label}
+            </p>
+            <p className="mt-1 text-[28px] leading-9 font-semibold tracking-tight text-fg">{k.value}</p>
+            <div className="mt-1.5 min-h-5 text-xs leading-5">{k.split && <SplitLine counts={k.split} f={f} />}</div>
+            {k.alert && <p className="text-xs leading-5 font-medium text-critical-text">{k.alert}</p>}
+            {/* ล่างสุดของการ์ด: เทียบช่วงก่อน (หรือคำอธิบายสำหรับช่องที่ไม่มีตัวเทียบ) — ทุกการ์ดเส้นคั่นอยู่ระดับเดียวกัน */}
+            <div className="min-h-3 flex-1" aria-hidden />
+            <p className="flex flex-wrap items-center gap-x-1.5 border-t border-line pt-2.5 text-xs leading-5">
+              {k.change !== undefined ? <ChangeLine change={k.change} compare={compare} t={t} f={f} /> : <span className="text-fg-3">{k.note}</span>}
+            </p>
+          </>
+        );
+        const cls = cx("flex min-w-0 flex-col rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5", i === 0 && "col-span-2 md:col-span-1");
+        return k.href ? (
+          <Link key={k.label} href={k.href} className={cx(cls, "transition hover:border-line-strong hover:shadow-sm")}>
+            {body}
+          </Link>
+        ) : (
+          <div key={k.label} className={cls}>
+            {body}
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -156,8 +166,9 @@ export function KpiStrip({ items, days, locale }: { items: Kpi[]; days: number; 
 export function PlatformTable({ rows, locale }: { rows: { label: string; hint?: string; counts: PlatformCounts }[]; locale: Locale }) {
   const t = tOf(locale);
   const f = formatters(locale);
-  const th = "py-2 pl-3 text-right text-xs font-medium text-fg-3 first:pl-0 first:text-left";
-  const td = "py-2.5 pl-3 text-right text-sm text-fg-2 tabular first:pl-0 first:text-left first:text-fg";
+  // คอลัมน์ตัวเลขกว้างเท่าที่จำเป็น (w-px) ให้ชื่อแถว (คอลัมน์แรก) ได้ที่เหลือทั้งหมด
+  const th = "w-px py-2 pl-5 text-right text-xs font-medium whitespace-nowrap text-fg-3 first:w-auto first:pl-0 first:text-left";
+  const td = "py-2.5 pl-5 text-right text-sm text-fg-2 tabular first:pl-0 first:text-left first:text-fg";
   return (
     <div>
       <table className="w-full">
@@ -166,16 +177,17 @@ export function PlatformTable({ rows, locale }: { rows: { label: string; hint?: 
             <th className={th}>
               <span className="sr-only">{t("platformTitle")}</span>
             </th>
+            {/* หัวคอลัมน์เป็นโลโก้ (ชื่อเต็มอยู่ใน sr-only / title) — การ์ดแคบ ชื่อแถวจะได้ไม่ถูกบีบ */}
             <th className={th}>
-              <span className="inline-flex items-center gap-1">
-                <PlatformIcon platform="facebook" size={12} />
-                Facebook
+              <span className="inline-flex" title="Facebook">
+                <PlatformIcon platform="facebook" size={16} />
+                <span className="sr-only">Facebook</span>
               </span>
             </th>
             <th className={th}>
-              <span className="inline-flex items-center gap-1">
-                <PlatformIcon platform="instagram" size={12} />
-                Instagram
+              <span className="inline-flex" title="Instagram">
+                <PlatformIcon platform="instagram" size={16} />
+                <span className="sr-only">Instagram</span>
               </span>
             </th>
             <th className={th}>{t("colTotal")}</th>
