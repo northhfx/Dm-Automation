@@ -3,6 +3,7 @@ import { activityMessages } from "./messages/activity";
 import { appearanceMessages } from "./messages/appearance";
 import { authMessages } from "./messages/auth";
 import { builderMessages } from "./messages/builder";
+import { chatMessages } from "./messages/chat";
 import { commonMessages } from "./messages/common";
 import { contactsMessages } from "./messages/contacts";
 import { dashboardMessages } from "./messages/dashboard";
@@ -24,6 +25,7 @@ export const catalogs = {
   appearance: appearanceMessages,
   auth: authMessages,
   builder: builderMessages,
+  chat: chatMessages,
   common: commonMessages,
   contacts: contactsMessages,
   dashboard: dashboardMessages,

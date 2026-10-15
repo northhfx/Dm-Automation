@@ -239,6 +239,34 @@ export const inboxItems = pgTable(
 );
 export type InboxItem = typeof inboxItems.$inferSelect;
 
+/**
+ * ข้อความที่เจ้าของร้านพิมพ์ตอบเองในหน้าแชท (/inbox/<platform>/<account>/<user>)
+ * แยกจาก messages (ข้อความอัตโนมัติ) เพื่อไม่ให้ปนสถิติของกฎ และไม่สร้าง contact ให้คนที่ไม่ได้พิมพ์ keyword
+ * ลบเองเมื่อครบ INBOX_RETENTION_DAYS วันเหมือนข้อความรอตอบ
+ */
+export const chatReplies = pgTable(
+  "chat_replies",
+  {
+    id: serial("id").primaryKey(),
+    platform: text("platform").$type<Platform>().notNull(),
+    /** Connection.id แบบเดียวกับ inbox_items.page_id */
+    pageId: text("page_id").notNull(),
+    /** PSID / IGSID ของลูกค้า */
+    recipientId: text("recipient_id").notNull(),
+    text: text("text").notNull(),
+    mid: text("mid"),
+    status: text("status").$type<"sent" | "failed">().notNull(),
+    /** error จาก Meta (ภาษาอังกฤษตามที่ Meta ส่งมา) — แสดงใต้ข้อความที่ส่งไม่สำเร็จ */
+    error: text("error"),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("chat_replies_thread_idx").on(t.platform, t.pageId, t.recipientId, t.sentAt),
+    index("chat_replies_sent_at_idx").on(t.sentAt),
+  ],
+);
+export type ChatReply = typeof chatReplies.$inferSelect;
+
 /** คิวงานแบบง่ายบน Postgres (ไม่ต้องใช้ Redis) */
 export const jobs = pgTable(
   "jobs",

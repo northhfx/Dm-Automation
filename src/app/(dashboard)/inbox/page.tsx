@@ -5,6 +5,7 @@ import { getDb } from "@/db/client";
 import { pages, type InboxKind, type Platform } from "@/db/schema";
 import { SegmentedControl } from "@/components/segmented-control";
 import { Badge, buttonStyle, ButtonLink, EmptyState, PageHeader, PlatformIcon } from "@/components/ui";
+import { chatHref } from "@/lib/chat/thread";
 import { getT } from "@/lib/i18n/server";
 import { inboxPostUrl, inboxReplyLink } from "@/lib/inbox/links";
 import { countInboxRows, loadInboxRows, parseInboxPage, sumCounts } from "@/lib/inbox/list";
@@ -12,7 +13,8 @@ import { INBOX_RETENTION_DAYS } from "@/lib/inbox/retention";
 import { InboxList, ShowDoneSwitch, type InboxRowView } from "./inbox-list";
 
 /*
- * ข้อความรอตอบ: คนที่ทักแชท/คอมเมนต์โดยไม่ตรง keyword ของกฎไหน (ระบบไม่ได้ตอบ) — กดไปตอบเองในแอปของ Meta
+ * ข้อความรอตอบ: คนที่ทักแชท/คอมเมนต์โดยไม่ตรง keyword ของกฎไหน (ระบบไม่ได้ตอบ)
+ * แชท → กด "ตอบ" เปิดห้องแชทในเว็บนี้ (./[platform]/[account]/[user]) · คอมเมนต์ → ไปตอบใต้โพสต์
  * ข้อมูลมาจาก inbox_items (lib/inbox/*) ลบเองเมื่อครบ INBOX_RETENTION_DAYS วัน
  */
 
@@ -80,6 +82,7 @@ export default async function InboxPage({ searchParams }: PageProps<"/inbox">) {
     handledAt: r.handledAt?.toISOString() ?? null,
     messageCount: r.messageCount,
     reply: inboxReplyLink(r, facebookPageIds),
+    chatHref: r.kind === "dm" ? chatHref({ platform: r.platform, account: r.pageId, user: r.senderId }) : null,
     postUrl: inboxPostUrl(r),
   }));
   const detailsIds = rows.flatMap((r) => (r.detailsId ? [r.detailsId] : []));

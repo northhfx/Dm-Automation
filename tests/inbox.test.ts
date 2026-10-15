@@ -606,6 +606,7 @@ describe("รายการในหน้า (ไทย / อังกฤษ)"
           commentId: null,
           permalink: null,
         }),
+        chatHref: "/inbox/facebook/P1/PSID1",
         postUrl: null,
       },
       {
@@ -620,6 +621,7 @@ describe("รายการในหน้า (ไทย / อังกฤษ)"
         handledAt: "2026-10-14T09:00:00.000Z",
         messageCount: 1,
         reply: { href: "https://ig/M1", where: "Instagram" as const, hint: "replyHintInstagramComment" as const },
+        chatHref: null,
         postUrl: "https://ig/M1",
       },
     ],
@@ -640,13 +642,11 @@ describe("รายการในหน้า (ไทย / อังกฤษ)"
       expect(text).toContain(s);
     }
     for (const thai of ["ผู้ใช้", "ตอบ", "เสร็จ", "แชท", "บนโพสต์"]) expect(text).not.toContain(thai);
-    expect(html).toContain('aria-label="Reply to Facebook user in Meta Business Suite (opens in a new tab)"');
+    // แชท → ห้องแชทในเว็บนี้ (แท็บเดิม พิมพ์ตอบได้เลย) · คอมเมนต์ → ไปตอบใต้โพสต์ (แท็บใหม่)
+    expect(html).toMatch(/<a aria-label="Reply to Facebook user" [^>]*href="\/inbox\/facebook\/P1\/PSID1">/);
+    expect(html).not.toContain("business.facebook.com");
+    expect(html).toContain('aria-label="Reply to @nok.ig in Instagram (opens in a new tab)"');
     expect(html).toContain('target="_blank"');
-    // แชท Facebook: จอสัมผัสเปิดแอป Messenger (แท็บเดิม) · เมาส์เปิด Business Suite
-    expect(html).toContain('href="fb-messenger://"');
-    expect(html).toContain('aria-label="Reply to Facebook user in the Messenger app"');
-    expect(html).toMatch(/<span class="contents pointer-fine:hidden"><a href="fb-messenger:\/\/"/);
-    expect(html).toMatch(/<span class="hidden pointer-fine:contents"><a href="https:\/\/business\.facebook\.com\/latest\/inbox\/all\?/);
   });
 
   it("เวลาของรายการใช้เขตเวลาของระบบที่เซิร์ฟเวอร์ส่งมา (ตรงกันทั้งตอนเรนเดอร์ฝั่งเซิร์ฟเวอร์และในเบราว์เซอร์)", () => {

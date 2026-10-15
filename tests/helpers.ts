@@ -124,6 +124,12 @@ export async function startMockGraph() {
       if (text.includes("FAIL_TRANSIENT")) {
         return send(500, { error: { message: "An unexpected error has occurred.", code: 2, is_transient: true } });
       }
+      if (text.includes("FAIL_WINDOW")) {
+        return send(400, { error: { message: "(#10) This message is sent outside of allowed window.", code: 10, error_subcode: 2018278 } });
+      }
+      if (text.includes("FAIL_TOKEN")) {
+        return send(400, { error: { message: "Error validating access token: Session has expired.", type: "OAuthException", code: 190 } });
+      }
 
       if (api === "instagram") {
         const token = url.searchParams.get("access_token") ?? authorization?.replace(/^Bearer\s+/i, "") ?? "";
@@ -268,7 +274,7 @@ export async function resetDatabase() {
   const db = getDb();
   await runMigrations();
   await db.execute(sql`
-    TRUNCATE pages, instagram_accounts, rules, contacts, messages, links, events, inbox_items, jobs, dedup_keys, webhook_logs, settings
+    TRUNCATE pages, instagram_accounts, rules, contacts, messages, links, events, inbox_items, chat_replies, jobs, dedup_keys, webhook_logs, settings
     RESTART IDENTITY
   `);
   await savePage(db, { id: "PAGE1", name: "ร้านทดสอบ", token: "PAGE_TOKEN", igUserId: "IG1", igUsername: "test.shop" });

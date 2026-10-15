@@ -11,7 +11,7 @@ export const inboxMessages = defineMessages({
   th: {
     // ---- หัวหน้า ----
     description:
-      "คนที่ทักแชทหรือคอมเมนต์แล้วไม่ตรงกับกฎไหนเลย ระบบจึงไม่ได้ตอบให้ — กด “ตอบ” เพื่อไปคุยต่อใน Messenger หรือ Instagram แล้วกด “เสร็จแล้ว” รายการจะถูกลบเองเมื่อครบ {days} วัน",
+      "คนที่ทักแชทหรือคอมเมนต์แล้วไม่ตรงกับกฎไหนเลย ระบบจึงไม่ได้ตอบให้ — กด “ตอบ” เพื่อพิมพ์ตอบแชทได้จากที่นี่ (คอมเมนต์จะพาไปตอบใต้โพสต์) ตอบแล้วรายการจะย้ายไปที่เสร็จแล้วเอง และถูกลบเมื่อครบ {days} วัน",
     /** ป้ายข้างชื่อหน้า */
     badgeWaiting: "รอตอบ {count}",
 
@@ -36,8 +36,8 @@ export const inboxMessages = defineMessages({
     messageCount: "{count} ข้อความ · แสดงข้อความล่าสุด",
     reply: "ตอบ",
     replyAria: "ตอบ {person} ใน {where} (เปิดแท็บใหม่)",
-    /** แชท Facebook บนมือถือ: เปิดแอป Messenger */
-    replyAppAria: "ตอบ {person} ในแอป Messenger",
+    /** แชท: เปิดห้องแชทในเว็บนี้ */
+    replyChatAria: "ตอบ {person}",
     /** แชท Facebook บนคอมพิวเตอร์ (มือถือเปิดแอป Messenger — ข้อความอยู่ใน common) */
     replyHintMessenger: "เปิดแชทนี้ในกล่องข้อความของเพจ (Meta Business Suite) — บนคอมพิวเตอร์ Facebook ปิดแอป Messenger ไปแล้ว",
     replyHintInstagramChat: "เปิดแชทกับลูกค้าคนนี้ในแอป Instagram",
@@ -59,7 +59,7 @@ export const inboxMessages = defineMessages({
     // ---- หน้าว่าง ----
     emptyTitle: "ยังไม่มีข้อความรอตอบ",
     emptyBody:
-      "เมื่อมีคนทักแชทหรือคอมเมนต์แล้วไม่ตรงกับกฎไหนเลย จะขึ้นที่นี่ให้คุณกดไปตอบเองใน Messenger หรือ Instagram รายการจะถูกลบอัตโนมัติเมื่อครบ {days} วัน",
+      "เมื่อมีคนทักแชทหรือคอมเมนต์แล้วไม่ตรงกับกฎไหนเลย จะขึ้นที่นี่ให้คุณพิมพ์ตอบเองได้ รายการจะถูกลบอัตโนมัติเมื่อครบ {days} วัน",
     emptyAction: "ดูกฎอัตโนมัติ",
     caughtUpTitle: "ตอบครบทุกคนแล้ว",
     caughtUpBody: "ตอนนี้ไม่มีใครรอคำตอบอยู่",
@@ -77,7 +77,7 @@ export const inboxMessages = defineMessages({
   },
   en: {
     description:
-      "People who messaged or commented without matching any of your automations, so nothing was sent to them. Tap “Reply” to answer in Messenger or Instagram, then tap “Done”. Items are deleted automatically after {days} days.",
+      "People who messaged or commented without matching any of your automations, so nothing was sent to them. Tap “Reply” to answer a chat right here (for comments, it opens the post). Once you reply, the item moves to Done. Items are deleted automatically after {days} days.",
     badgeWaiting: "{count} waiting",
 
     filterKindLabel: "Message type",
@@ -96,7 +96,7 @@ export const inboxMessages = defineMessages({
     messageCount: "{count} messages · showing the latest",
     reply: "Reply",
     replyAria: "Reply to {person} in {where} (opens in a new tab)",
-    replyAppAria: "Reply to {person} in the Messenger app",
+    replyChatAria: "Reply to {person}",
     replyHintMessenger: "Open this chat in your Page inbox (Meta Business Suite). Facebook no longer has a Messenger app for computers.",
     replyHintInstagramChat: "Open the chat with this customer in the Instagram app",
     replyHintInstagramProfile: "Open this customer's Instagram profile, then tap “Message”",
@@ -115,7 +115,7 @@ export const inboxMessages = defineMessages({
 
     emptyTitle: "Nothing waiting for a reply",
     emptyBody:
-      "When someone messages or comments without matching any of your automations, they'll show up here so you can reply yourself in Messenger or Instagram. Items are deleted automatically after {days} days.",
+      "When someone messages or comments without matching any of your automations, they'll show up here so you can reply yourself. Items are deleted automatically after {days} days.",
     emptyAction: "View automations",
     caughtUpTitle: "You're all caught up",
     caughtUpBody: "No one is waiting for a reply right now.",

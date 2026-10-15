@@ -1,6 +1,6 @@
 import { and, eq, lt } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { dedupKeys, inboxItems, jobs, webhookLogs, type Job } from "@/db/schema";
+import { chatReplies, dedupKeys, inboxItems, jobs, webhookLogs, type Job } from "@/db/schema";
 import { handleComment, handleDm, handlePagePost, handleRead, handleSendDm, RescheduledError } from "@/lib/automation/handlers";
 import { inboxCutoff } from "@/lib/inbox/retention";
 import { refreshDueInstagramTokens } from "@/lib/instagram/token";
@@ -51,6 +51,8 @@ export async function cleanup(db: Db): Promise<void> {
   await db.delete(jobs).where(and(eq(jobs.status, "done"), lt(jobs.updatedAt, new Date(Date.now() - 7 * day))));
   // ข้อความรอตอบเก็บไว้ INBOX_RETENTION_DAYS วัน (ทั้งที่ยังรอตอบและที่กดเสร็จแล้ว)
   await db.delete(inboxItems).where(lt(inboxItems.createdAt, inboxCutoff()));
+  // ข้อความที่พิมพ์ตอบเองในหน้าแชท เก็บนานเท่ากัน
+  await db.delete(chatReplies).where(lt(chatReplies.sentAt, inboxCutoff()));
 }
 
 /** งานดูแลระบบทุก 10 นาที: ล้างข้อมูลเก่า แล้วต่ออายุ token Instagram ที่ถึงเวลา (อย่างหนึ่งพังไม่กระทบอีกอย่าง) */

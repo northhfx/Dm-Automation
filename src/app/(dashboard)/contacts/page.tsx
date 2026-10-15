@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
-import { ArrowUpRight, ChevronLeft, ChevronRight, MessageCircle, MessagesSquare, Search, SearchX, Users, X } from "lucide-react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, MessageCircle, MessageSquareReply, MessagesSquare, Search, SearchX, Users, X } from "lucide-react";
 import { getDb } from "@/db/client";
 import type { Platform } from "@/db/schema";
 import { NavTitle } from "@/components/localized";
-import { MessengerAppLink } from "@/components/messenger-app-link";
 import { SegmentedControl } from "@/components/segmented-control";
 import {
   Avatar,
@@ -21,7 +21,7 @@ import {
 import type { MessageKey, TFunction } from "@/lib/i18n";
 import type { contactsMessages } from "@/lib/i18n/messages/contacts";
 import { getFormat, getT } from "@/lib/i18n/server";
-import { businessSuiteThreadUrl } from "@/lib/inbox/links";
+import { chatHref } from "@/lib/chat/thread";
 import { RelativeTime } from "../activity/timeline";
 import { loadPreviews, type Preview } from "./load-previews";
 
@@ -54,73 +54,20 @@ function displayName(c: ContactRow, t: T): string {
   return c.name ?? (c.username ? `@${c.username}` : t("unknownPerson", { platform: PLATFORM_LABEL[c.platform] }));
 }
 
-/**
- * ลิงก์ไปคุยต่อในแอปของ Meta
- * - Facebook: ห้องแชทใน Meta Business Suite (คอมพิวเตอร์) · จอสัมผัสเปิดแอป Messenger แทน (messengerApp)
- *   Facebook ไม่มีลิงก์เข้าห้องแชทในแอป Messenger ในนามเพจ — ดู src/lib/inbox/links.ts
- * - Instagram ไม่มีลิงก์เข้าห้องแชท จึงเปิดหน้าโปรไฟล์ (ต้องรู้ username) ให้กดส่งข้อความต่อเอง
- */
-function chatLink(c: ContactRow, t: T): { href: string; where: string; hint: string; messengerApp?: true } | null {
-  if (c.platform === "facebook") {
-    return {
-      href: businessSuiteThreadUrl(c.page_id, c.platform_user_id),
-      messengerApp: true,
-      where: "Meta Business Suite",
-      hint: t("openChatHintMessenger"),
-    };
-  }
-  if (c.username) {
-    return {
-      href: `https://www.instagram.com/${encodeURIComponent(c.username)}/`,
-      where: "Instagram",
-      hint: t("openChatHintInstagram"),
-    };
-  }
-  return null;
-}
-
-/** ปุ่มเล็ก "เปิดแชท" (เปิดแท็บใหม่ / แอป Messenger บนมือถือ) — ไม่แสดงถ้าไม่มีที่ให้ลิงก์ไป */
+/** ปุ่มเล็ก "เปิดแชท" → ห้องแชทในเว็บนี้ (ดูข้อความ + พิมพ์ตอบได้ ถ้าลูกค้าทักมาภายใน 24 ชั่วโมง) */
 function ChatLink({ contact, t, size = "md" }: { contact: ContactRow; t: T; size?: "sm" | "md" }) {
-  const link = chatLink(contact, t);
-  if (!link) return null;
-  const person = displayName(contact, t);
-  const className = cx(
-    "inline-flex shrink-0 items-center gap-1 rounded-md font-medium whitespace-nowrap text-accent transition-colors hover:bg-accent-soft active:bg-accent-soft-hover",
-    size === "sm" ? "-mr-1.5 h-6 px-1.5 text-xs [&_svg]:size-3.5" : "h-8 px-2.5 text-[13px] [&_svg]:size-4",
-  );
-  const label = (
-    <>
-      {t("openChat")}
-      <ArrowUpRight aria-hidden />
-    </>
-  );
-  const webLink = (
-    <a
-      href={link.href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={t("openChatAria", { person, where: link.where })}
-      title={link.hint}
-      className={className}
-    >
-      {label}
-    </a>
-  );
-  if (!link.messengerApp) return webLink;
   return (
-    <>
-      <span className="contents pointer-fine:hidden">
-        <MessengerAppLink
-          chatUrl={link.href}
-          name={contact.name}
-          ariaLabel={t("openChatAppAria", { person })}
-          className={className}
-        >
-          {label}
-        </MessengerAppLink>
-      </span>
-      <span className="hidden pointer-fine:contents">{webLink}</span>
-    </>
+    <Link
+      href={chatHref({ platform: contact.platform, account: contact.page_id, user: contact.platform_user_id }, "contacts")}
+      aria-label={t("openChatAria", { person: displayName(contact, t) })}
+      className={cx(
+        "inline-flex shrink-0 items-center gap-1 rounded-md font-medium whitespace-nowrap text-accent transition-colors hover:bg-accent-soft active:bg-accent-soft-hover",
+        size === "sm" ? "-mr-1.5 h-6 px-1.5 text-xs [&_svg]:size-3.5" : "h-8 px-2.5 text-[13px] [&_svg]:size-4",
+      )}
+    >
+      <MessageSquareReply aria-hidden />
+      {t("openChat")}
+    </Link>
   );
 }
 

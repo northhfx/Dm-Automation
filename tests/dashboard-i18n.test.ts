@@ -478,10 +478,8 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
       expect(text, s).toContain(s);
     }
     expect(html).toContain('placeholder="Search by name or username"');
-    expect(html).toContain('aria-label="Open chat with Mali Shop Fan in Meta Business Suite (opens in a new tab)"');
-    // มือถือ: ปุ่มเดียวกันเปิดแอป Messenger แทน
-    expect(html).toContain('aria-label="Open chat with Mali Shop Fan in the Messenger app"');
-    expect(html).toContain('href="fb-messenger://"');
+    // เปิดห้องแชทในเว็บนี้ (กลับมาหน้ารายชื่อลูกค้าได้)
+    expect(html).toMatch(/<a aria-label="Open chat with Mali Shop Fan" [^>]*href="\/inbox\/facebook\/[^"]+\?from=contacts">/);
 
     html = await renderPage(ContactsPage, "/contacts", { q: "mali" }, "en");
     text = textOf(html);

@@ -3,7 +3,6 @@ import { defineMessages } from "../core";
 /**
  * หน้ารายชื่อลูกค้า (/contacts) — src/app/(dashboard)/contacts/*
  * {person} = ชื่อลูกค้า / @username / "ผู้ใช้ Facebook" (ไม่ใช้ {name} เพราะเป็นคำแทนชื่อลูกค้าในข้อความของกฎ)
- * {where} = ชื่อแอปของ Meta (Meta Business Suite / Instagram) ไม่แปล
  */
 export const contactsMessages = defineMessages({
   th: {
@@ -64,12 +63,8 @@ export const contactsMessages = defineMessages({
     previewComment: "คอมเมนต์ล่าสุด:",
     previewChat: "ข้อความแชทล่าสุด:",
     openChat: "เปิดแชท",
-    openChatAria: "เปิดแชทกับ {person} ใน {where} (เปิดแท็บใหม่)",
-    /** แชท Facebook บนมือถือ: เปิดแอป Messenger */
-    openChatAppAria: "เปิดแชทกับ {person} ในแอป Messenger",
-    /** แชท Facebook บนคอมพิวเตอร์ (มือถือเปิดแอป Messenger — ข้อความอยู่ใน common) */
-    openChatHintMessenger: "เปิดแชทนี้ในกล่องข้อความของเพจ (Meta Business Suite) — บนคอมพิวเตอร์ Facebook ปิดแอป Messenger ไปแล้ว",
-    openChatHintInstagram: "เปิดหน้าโปรไฟล์ Instagram ของลูกค้า แล้วกดส่งข้อความเพื่อคุยต่อ",
+    /** เปิดห้องแชทในเว็บนี้ */
+    openChatAria: "เปิดแชทกับ {person}",
   },
   en: {
     badgeTotal: "{count} total",
@@ -116,9 +111,6 @@ export const contactsMessages = defineMessages({
     previewComment: "Latest comment:",
     previewChat: "Latest message:",
     openChat: "Open chat",
-    openChatAria: "Open chat with {person} in {where} (opens in a new tab)",
-    openChatAppAria: "Open chat with {person} in the Messenger app",
-    openChatHintMessenger: "Open this chat in your Page inbox (Meta Business Suite). Facebook no longer has a Messenger app for computers.",
-    openChatHintInstagram: "Open the customer's Instagram profile, then tap Message to keep chatting",
+    openChatAria: "Open chat with {person}",
   },
 });
