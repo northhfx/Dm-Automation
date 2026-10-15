@@ -213,34 +213,6 @@ export async function getOverview(db: Db, days: number): Promise<Overview> {
   };
 }
 
-/** ตัวเลขหลักของช่วงก่อนหน้าที่ยาวเท่ากัน (ใช้แสดง "+12% เทียบช่วงก่อน" บนหน้าภาพรวม) */
-export interface PreviousTotals {
-  triggers: number;
-  sent: number;
-  clicks: number;
-  newContacts: number;
-}
-
-/**
- * ช่วง N วันก่อนหน้าช่วงที่แสดงอยู่ เช่น ดู 30 วันล่าสุด → วันที่ 31–60 ย้อนหลัง
- * นับแบบเดียวกับ getOverview: ตรงกับกฎ = rule_triggered, ส่งสำเร็จ = messages, กด/คลิก = กดปุ่ม + คลิกลิงก์ที่ส่งในช่วงนั้น
- */
-export async function getPreviousTotals(db: Db, days: number): Promise<PreviousTotals> {
-  const tz = env.timezone;
-  const end = sql`((date_trunc('day', now() AT TIME ZONE ${tz}) - ${days - 1} * interval '1 day') AT TIME ZONE ${tz})`;
-  const start = sql`((date_trunc('day', now() AT TIME ZONE ${tz}) - ${2 * days - 1} * interval '1 day') AT TIME ZONE ${tz})`;
-  const result = await db.execute<Row>(sql`
-    SELECT
-      (SELECT count(*)::int FROM events WHERE type = 'rule_triggered' AND created_at >= ${start} AND created_at < ${end}) AS triggers,
-      (SELECT count(*)::int FROM messages WHERE status = 'sent' AND sent_at >= ${start} AND sent_at < ${end}) AS sent,
-      (SELECT count(*)::int FROM events WHERE type = 'button_clicked' AND created_at >= ${start} AND created_at < ${end})
-        + (SELECT coalesce(sum(clicks), 0)::int FROM links WHERE created_at >= ${start} AND created_at < ${end}) AS clicks,
-      (SELECT count(*)::int FROM contacts WHERE first_seen_at >= ${start} AND first_seen_at < ${end}) AS new_contacts
-  `);
-  const r = result.rows[0] ?? {};
-  return { triggers: num(r.triggers), sent: num(r.sent), clicks: num(r.clicks), newContacts: num(r.new_contacts) };
-}
-
 /** การเปลี่ยนแปลงเป็น % เทียบช่วงก่อน — null = ช่วงก่อนเป็น 0 (คำนวณ % ไม่ได้) */
 export function change(current: number, previous: number): number | null {
   return previous > 0 ? ((current - previous) / previous) * 100 : null;

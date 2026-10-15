@@ -2,11 +2,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { contacts, events, links, messages } from "@/db/schema";
+import { links } from "@/db/schema";
 import { ingestWebhook } from "@/lib/automation/ingest";
 import { flowPayload } from "@/lib/flows/types";
 import { drainQueue } from "@/lib/queue/worker";
-import { change, getAllTimeRuleStats, getOverview, getPreviousTotals, getStepStats, parseRange, rate } from "@/lib/stats";
+import { change, getAllTimeRuleStats, getOverview, getStepStats, parseRange, rate } from "@/lib/stats";
 import { GET as clickLink } from "@/app/r/[code]/route";
 import { createRule, resetDatabase, singleStep, startMockGraph } from "./helpers";
 import { fbComment, fbDm, fbRead, igComment, postback } from "./fixtures";
@@ -114,27 +114,8 @@ describe("getOverview", () => {
   });
 });
 
-describe("getPreviousTotals (เทียบช่วงก่อนหน้า)", () => {
-  it("นับเฉพาะช่วง N วันก่อนหน้าช่วงที่แสดงอยู่ — ไม่รวมช่วงปัจจุบันและเก่ากว่านั้น", async () => {
-    const day = 24 * 60 * 60_000;
-    const at = (daysAgo: number) => new Date(Date.now() - daysAgo * day);
-    // ช่วง 7 วัน: ปัจจุบัน = 0–6 วันก่อน, ก่อนหน้า = 7–13 วันก่อน (ห่างขอบวันไว้ 1 วัน กันเขตเวลา)
-    await db.insert(events).values([
-      { type: "rule_triggered", platform: "facebook", createdAt: at(2) },
-      { type: "rule_triggered", platform: "facebook", createdAt: at(9) },
-      { type: "rule_triggered", platform: "instagram", createdAt: at(10) },
-      { type: "rule_triggered", platform: "instagram", createdAt: at(20) },
-      { type: "button_clicked", platform: "instagram", createdAt: at(9) },
-    ]);
-    await db.insert(messages).values([
-      { platform: "facebook", pageId: "PAGE1", source: "dm", status: "sent", sentAt: at(9) },
-      { platform: "facebook", pageId: "PAGE1", source: "dm", status: "failed", sentAt: at(9) },
-      { platform: "facebook", pageId: "PAGE1", source: "dm", status: "sent", sentAt: at(1) },
-    ]);
-    await db.insert(links).values({ code: "prev1", targetUrl: "https://x.example", clicks: 3, createdAt: at(11) });
-    await db.insert(contacts).values({ platform: "facebook", platformUserId: "P_OLD", pageId: "PAGE1", firstSeenAt: at(12) });
-
-    expect(await getPreviousTotals(db, 7)).toEqual({ triggers: 2, sent: 1, clicks: 4, newContacts: 1 });
+describe("change (เทียบช่วงก่อนหน้า)", () => {
+  it("เป็น % ของช่วงก่อน — ช่วงก่อนเป็น 0 คืน null", () => {
     expect(change(15, 10)).toBe(50);
     expect(change(5, 10)).toBe(-50);
     expect(change(3, 0)).toBeNull();

@@ -541,10 +541,23 @@ async function handleButtonTap(
     meta: { mid: job.mid, stepId: tap.stepId, buttonId: tap.buttonId, via: viaOf(job) },
   });
 
-  // ปุ่มจากข้อความเก่าที่ถูกแก้/ลบไปแล้ว → ไม่ต้องทำอะไรต่อ
-  if (!rule || button?.type !== "next") return;
-  const next = rule.steps.find((s) => s.id === button.nextStepId);
-  if (!next) return;
+  // ปุ่มจากข้อความเก่าที่ถูกแก้/ลบไปแล้ว → ส่งต่อไม่ได้ บันทึกไว้ให้เห็นใน "ปัญหาที่ต้องดู" (ลูกค้ากดแล้วไม่มีอะไรเกิดขึ้น)
+  const next = button?.type === "next" ? rule?.steps.find((s) => s.id === button.nextStepId) : undefined;
+  if (!rule || !next) {
+    if (!rule || !button || button.type === "next") {
+      await logEvent(db, {
+        type: "skipped",
+        platform: job.platform,
+        pageId: conn.id,
+        ruleId: rule ? rule.id : null,
+        contactId,
+        actorId: job.senderId,
+        text: job.text,
+        meta: { reason: "button_target_missing", stepId: tap.stepId, buttonId: tap.buttonId },
+      });
+    }
+    return;
+  }
   if (!rule.active) {
     await logEvent(db, {
       type: "skipped",

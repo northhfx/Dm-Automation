@@ -1,12 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, MessageCircle, MessagesSquare, Rocket } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, CircleAlert, CircleCheck, MessageCircle, MessagesSquare, Rocket, TriangleAlert } from "lucide-react";
 import type { Platform } from "@/db/schema";
 import { Badge, ButtonLink, cx, PlatformIcon, ProgressBar, tableClass } from "@/components/ui";
 import type { SetupStatus } from "@/lib/config";
 import { createT, formatters, type Formatters, type Locale, type MessageKey, type TFunction } from "@/lib/i18n";
 import { dashboardMessages } from "@/lib/i18n/messages/dashboard";
-import { rate, type PlatformCounts, type RuleStats } from "@/lib/stats";
+import type { Problems } from "@/lib/funnel";
+import { rate, type RuleStats } from "@/lib/stats";
 import { ShowMore } from "./show-more";
 
 /*
@@ -79,69 +80,71 @@ export interface Kpi {
   /** คำอธิบายเมื่อชี้เมาส์ที่ชื่อ */
   hint?: string;
   value: string;
-  /** แยก Facebook / Instagram ใต้ตัวเลข */
-  split?: PlatformCounts;
-  /** บรรทัดเล็กใต้ตัวเลข (ใช้เมื่อไม่มี split) */
-  note?: ReactNode;
-  /** เปลี่ยนแปลงเป็น % เทียบช่วงก่อน — undefined = ไม่แสดง (เช่น อัตราการกด), null = ช่วงก่อนเป็น 0 */
-  change?: number | null;
-  /** ข้อความเตือนสีแดง เช่น "ไม่สำเร็จ 2" */
-  alert?: string;
+  /** แยก Facebook / Instagram ใต้ตัวเลข (จัดรูปแบบแล้ว เช่น "68" หรือ "20%") */
+  split?: { facebook: string; instagram: string };
+  /** บรรทัดเล็กใต้ split เช่น "Contact ใหม่ 85 · เดิม 35" */
+  extra?: string;
+  /** เปลี่ยนแปลงเทียบช่วงก่อน — null = ช่วงก่อนเป็น 0 / ไม่มีข้อมูล */
+  change: number | null;
+  /** percent = "+12%" (ตัวเลข), points = "+4.5 จุด" (อัตรา) */
+  changeKind?: "percent" | "points";
   href?: string;
 }
 
-function ChangeLine({ change, compare, t, f }: { change: number | null; compare: string; t: T; f: Formatters }) {
-  if (change === null) return <span className="text-fg-3">{t("noPrevious")}</span>;
-  const rounded = Math.round(change);
+function ChangeLine({ kpi, compare, t, f }: { kpi: Kpi; compare: string; t: T; f: Formatters }) {
+  if (kpi.change === null) return <span className="text-fg-3">{t("noPrevious")}</span>;
+  const points = kpi.changeKind === "points";
+  const rounded = points ? Math.round(kpi.change * 10) / 10 : Math.round(kpi.change);
   const Icon = rounded > 0 ? ArrowUpRight : rounded < 0 ? ArrowDownRight : null;
   const tone = rounded > 0 ? "text-good-text" : rounded < 0 ? "text-critical-text" : "text-fg-2";
+  const sign = rounded > 0 ? "+" : "";
   return (
     <>
       <span className={cx("inline-flex items-center font-medium tabular", tone)}>
         {Icon && <Icon className="size-3.5" aria-hidden />}
-        {`${rounded > 0 ? "+" : ""}${f.number(rounded)}%`}
+        {points ? t("points", { value: `${sign}${rounded.toFixed(1)}` }) : `${sign}${f.number(rounded)}%`}
       </span>
       <span className="text-fg-3">{compare}</span>
     </>
   );
 }
 
-/** "[f] 105  [ig] 106" */
-function SplitLine({ counts, f }: { counts: PlatformCounts; f: Formatters }) {
+/** "[f] 68  [ig] 103" */
+function SplitLine({ split }: { split: { facebook: string; instagram: string } }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[13px] text-fg-2">
       <span className="inline-flex items-center gap-1.5">
         <PlatformIcon platform="facebook" size={13} title="Facebook" />
-        <span className="font-medium tabular">{f.number(counts.facebook)}</span>
+        <span className="font-medium tabular">{split.facebook}</span>
       </span>
       <span className="inline-flex items-center gap-1.5">
         <PlatformIcon platform="instagram" size={13} title="Instagram" />
-        <span className="font-medium tabular">{f.number(counts.instagram)}</span>
+        <span className="font-medium tabular">{split.instagram}</span>
       </span>
     </span>
   );
 }
 
-/** การ์ดตัวเลขสรุป: มือถือ 1 + 2×2 · แท็บเล็ต 3 + 2 · จอใหญ่ 5 ช่องเรียงกัน */
+/** การ์ดตัวเลขสรุป 3 ใบ: มือถือ 1 + 2 · จอกว้าง 3 ใบเรียงกัน */
 export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; locale: Locale }) {
   const t = tOf(locale);
   const f = formatters(locale);
   const compare = t("compareTo", { days });
   return (
-    <section aria-label={t("kpiAria")} className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+    <section aria-label={t("kpiAria")} className="grid grid-cols-2 gap-3 md:grid-cols-3">
       {items.map((k, i) => {
         const body = (
           <>
             <p className="truncate text-sm leading-6 text-fg-2" title={k.hint}>
               {k.label}
             </p>
-            <p className="mt-1 text-[28px] leading-9 font-semibold tracking-tight text-fg">{k.value}</p>
-            <div className="mt-1.5 min-h-5 text-xs leading-5">{k.split && <SplitLine counts={k.split} f={f} />}</div>
-            {k.alert && <p className="text-xs leading-5 font-medium text-critical-text">{k.alert}</p>}
-            {/* ล่างสุดของการ์ด: เทียบช่วงก่อน (หรือคำอธิบายสำหรับช่องที่ไม่มีตัวเทียบ) — ทุกการ์ดเส้นคั่นอยู่ระดับเดียวกัน */}
+            <p className="mt-1 text-[30px] leading-9 font-semibold tracking-tight text-fg">{k.value}</p>
+            <div className="mt-1.5 min-h-5 text-xs leading-5">{k.split && <SplitLine split={k.split} />}</div>
+            {k.extra && <p className="text-xs leading-5 text-fg-3">{k.extra}</p>}
+            {/* ล่างสุดของการ์ด: เทียบช่วงก่อน — เส้นคั่นของทุกการ์ดอยู่ระดับเดียวกัน */}
             <div className="min-h-3 flex-1" aria-hidden />
             <p className="flex flex-wrap items-center gap-x-1.5 border-t border-line pt-2.5 text-xs leading-5">
-              {k.change !== undefined ? <ChangeLine change={k.change} compare={compare} t={t} f={f} /> : <span className="text-fg-3">{k.note}</span>}
+              <ChangeLine kpi={k} compare={compare} t={t} f={f} />
             </p>
           </>
         );
@@ -160,84 +163,129 @@ export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; 
   );
 }
 
-// ---------------- ตารางแยกตามแพลตฟอร์ม ----------------
+// ---------------- ปัญหาที่ต้องดู ----------------
 
-/** ตาราง 3 แถว × Facebook / Instagram / รวม — hint = บรรทัดเล็กใต้ชื่อแถว (เช่น แยกคอมเมนต์ / แชท) */
-export function PlatformTable({ rows, locale }: { rows: { label: string; hint?: string; counts: PlatformCounts }[]; locale: Locale }) {
+function ProblemItem({
+  tone,
+  title,
+  detail,
+  action,
+}: {
+  tone: "critical" | "warning";
+  title: ReactNode;
+  detail?: ReactNode;
+  action?: { href: string; label: string };
+}) {
+  return (
+    <li className="flex items-start gap-3 py-3">
+      <span className={cx("mt-0.5 shrink-0 [&_svg]:size-[18px]", tone === "critical" ? "text-critical" : "text-warning")}>
+        {tone === "critical" ? <CircleAlert aria-hidden /> : <TriangleAlert aria-hidden />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm leading-6 font-medium text-fg">{title}</p>
+        {detail && <p className="text-xs leading-5 [overflow-wrap:anywhere] text-fg-3">{detail}</p>}
+      </div>
+      {action && (
+        <Link href={action.href} className="inline-flex shrink-0 items-center gap-0.5 rounded-md py-0.5 text-[13px] font-medium text-accent hover:underline">
+          {action.label}
+          <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+      )}
+    </li>
+  );
+}
+
+/** รายการปัญหา (ส่งไม่สำเร็จ / กดปุ่มแล้วไม่มีข้อความถัดไป / ลิงก์เสีย / การเชื่อมต่อ) — ไม่มีเลยขึ้น ✓ */
+export function ProblemsList({ problems, locale }: { problems: Problems; locale: Locale }) {
   const t = tOf(locale);
   const f = formatters(locale);
-  // คอลัมน์ตัวเลขกว้างเท่าที่จำเป็น (w-px) ให้ชื่อแถว (คอลัมน์แรก) ได้ที่เหลือทั้งหมด
-  const th = "w-px py-2 pl-5 text-right text-xs font-medium whitespace-nowrap text-fg-3 first:w-auto first:pl-0 first:text-left";
-  const td = "py-2.5 pl-5 text-right text-sm text-fg-2 tabular first:pl-0 first:text-left first:text-fg";
+  const count = problems.connections.length + problems.brokenLinks.length + (problems.failedSends > 0 ? 1 : 0) + (problems.deadTaps > 0 ? 1 : 0);
+  if (count === 0) {
+    return (
+      <div className="flex items-start gap-3 py-1">
+        <span className="mt-0.5 shrink-0 text-good [&_svg]:size-[18px]">
+          <CircleCheck aria-hidden />
+        </span>
+        <div>
+          <p className="text-sm leading-6 font-medium text-fg">{t("problemsNone")}</p>
+          <p className="text-xs leading-5 text-fg-3">{t("problemsNoneBody")}</p>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div>
-      <table className="w-full">
-        <thead>
-          <tr className="border-b border-line">
-            <th className={th}>
-              <span className="sr-only">{t("platformTitle")}</span>
-            </th>
-            {/* หัวคอลัมน์เป็นโลโก้ (ชื่อเต็มอยู่ใน sr-only / title) — การ์ดแคบ ชื่อแถวจะได้ไม่ถูกบีบ */}
-            <th className={th}>
-              <span className="inline-flex" title="Facebook">
-                <PlatformIcon platform="facebook" size={16} />
-                <span className="sr-only">Facebook</span>
+    <ul className="-my-3 divide-y divide-line">
+      {problems.connections.map((c) => (
+        <ProblemItem
+          key={`${c.platform}:${c.name}`}
+          tone="critical"
+          title={t("problemConnection", { name: c.name })}
+          detail={t("problemConnectionHint")}
+          action={{ href: "/settings", label: t("problemFix") }}
+        />
+      ))}
+      {problems.failedSends > 0 && (
+        <ProblemItem
+          tone="critical"
+          title={t("problemFailed", { count: f.number(problems.failedSends) })}
+          detail={problems.failedAfterTap > 0 ? t("problemFailedAfterTap", { count: f.number(problems.failedAfterTap) }) : t("problemFailedHint")}
+          action={{ href: "/activity?filter=failed", label: t("problemView") }}
+        />
+      )}
+      {problems.deadTaps > 0 && (
+        <ProblemItem
+          tone="warning"
+          title={t("problemDeadTaps", { count: f.number(problems.deadTaps) })}
+          detail={t("problemDeadTapsHint")}
+          action={{ href: "/activity", label: t("problemView") }}
+        />
+      )}
+      {problems.brokenLinks.map((l) => (
+        <ProblemItem
+          key={l.url}
+          tone="critical"
+          title={t("problemBrokenLink")}
+          detail={
+            <>
+              <span className="block truncate text-fg-2" title={l.url}>
+                {l.url}
               </span>
-            </th>
-            <th className={th}>
-              <span className="inline-flex" title="Instagram">
-                <PlatformIcon platform="instagram" size={16} />
-                <span className="sr-only">Instagram</span>
-              </span>
-            </th>
-            <th className={th}>{t("colTotal")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {rows.map((r) => (
-            <tr key={r.label}>
-              <th scope="row" className={cx(td, "font-normal")}>
-                {r.label}
-                {r.hint && <span className="block text-xs leading-5 text-fg-3">{r.hint}</span>}
-              </th>
-              <td className={td}>{f.number(r.counts.facebook)}</td>
-              <td className={td}>{f.number(r.counts.instagram)}</td>
-              <td className={cx(td, "font-semibold text-fg")}>{f.number(r.counts.facebook + r.counts.instagram)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+              {t("problemBrokenLinkDetail", {
+                reason: l.status !== null ? t("linkReasonStatus", { status: String(l.status) }) : t("linkReasonError", { error: l.error ?? "" }),
+                rules: f.list(l.ruleNames),
+              })}
+            </>
+          }
+          action={{ href: "/rules", label: t("problemFix") }}
+        />
+      ))}
+    </ul>
   );
 }
 
 /** รายการตัวเลขย่อย (ชื่อซ้าย ค่าขวา) */
-export function FactList({ items }: { items: { label: ReactNode; value: ReactNode; href?: string; tone?: "critical" }[] }) {
+export function FactList({ items }: { items: { label: ReactNode; value: ReactNode }[] }) {
   return (
     <dl className="divide-y divide-line">
-      {items.map((item, i) => {
-        const value = (
-          <dd className={cx("text-sm font-semibold tabular", item.tone === "critical" ? "text-critical-text" : "text-fg")}>{item.value}</dd>
-        );
-        return (
-          <div key={i} className="flex min-h-10 items-center justify-between gap-3 py-2">
-            <dt className="text-sm text-fg-2">{item.label}</dt>
-            {item.href ? (
-              <Link href={item.href} className="inline-flex items-center gap-1 rounded hover:underline">
-                {value}
-                <ArrowRight className="size-3.5 text-fg-3" aria-hidden />
-              </Link>
-            ) : (
-              value
-            )}
-          </div>
-        );
-      })}
+      {items.map((item, i) => (
+        <div key={i} className="flex min-h-10 items-center justify-between gap-3 py-2">
+          <dt className="text-sm text-fg-2">{item.label}</dt>
+          <dd className="text-sm font-semibold text-fg tabular">{item.value}</dd>
+        </div>
+      ))}
     </dl>
   );
 }
 
 // ---------------- ตารางกฎ ----------------
+
+export interface RuleRowData {
+  rule: RuleStats;
+  typed: number;
+  clicked: number;
+  /** กฎนี้มีปุ่มลิงก์ไหม (ไม่มี = คลิก / อัตราคลิกเป็น "–") */
+  hasLinks: boolean;
+}
 
 function TriggerBadge({ trigger, t }: { trigger: RuleStats["trigger"]; t: T }) {
   return trigger === "comment" ? (
@@ -275,56 +323,55 @@ function RuleMeta({ rule, t }: { rule: RuleStats; t: T }) {
   );
 }
 
-const ctrOf = (r: RuleStats, f: Formatters) => (r.hasButtons ? f.percent(rate(r.engaged, r.reached)) : "–");
+const clickedOf = (r: RuleRowData, f: Formatters) => (r.hasLinks ? f.number(r.clicked) : "–");
+const rateOf = (r: RuleRowData, f: Formatters) => (r.hasLinks ? f.percent(rate(r.clicked, r.typed)) : "–");
 
 /** แถวตาราง (จอใหญ่) */
-function RuleRow({ rule: r, maxTriggers, t, f }: { rule: RuleStats; maxTriggers: number; t: T; f: Formatters }) {
+function RuleRow({ row: r, maxTyped, t, f }: { row: RuleRowData; maxTyped: number; t: T; f: Formatters }) {
   return (
     <tr className={tableClass.trHover}>
       <td className={cx(tableClass.td, "max-w-72")}>
-        <Link href={`/rules/${r.id}`} className="block truncate font-medium text-fg hover:text-accent">
-          {r.name}
+        <Link href={`/rules/${r.rule.id}`} className="block truncate font-medium text-fg hover:text-accent">
+          {r.rule.name}
         </Link>
-        <RuleMeta rule={r} t={t} />
+        <RuleMeta rule={r.rule} t={t} />
       </td>
       <td className={cx(tableClass.td, tableClass.num)}>
         <div className="flex items-center justify-end gap-2.5">
           <span className="hidden h-1.5 w-14 overflow-hidden rounded-full bg-surface-3 lg:block" aria-hidden>
-            <span className="block h-full rounded-full bg-accent" style={{ width: `${(r.triggers / maxTriggers) * 100}%` }} />
+            <span className="block h-full rounded-full bg-accent" style={{ width: `${(r.typed / maxTyped) * 100}%` }} />
           </span>
-          <span className="min-w-6 font-medium">{f.number(r.triggers)}</span>
+          <span className="min-w-6 font-medium">{f.number(r.typed)}</span>
         </div>
       </td>
-      <td className={cx(tableClass.td, tableClass.num)}>{f.number(r.sent)}</td>
-      <td className={cx(tableClass.td, tableClass.num, r.failed > 0 ? "font-medium text-critical-text" : "text-fg-3")}>
-        {f.number(r.failed)}
+      <td className={cx(tableClass.td, tableClass.num)}>{clickedOf(r, f)}</td>
+      <td className={cx(tableClass.td, tableClass.num, "font-medium")}>{rateOf(r, f)}</td>
+      <td className={cx(tableClass.td, tableClass.num, r.rule.failed > 0 ? "font-medium text-critical-text" : "text-fg-3")}>
+        {f.number(r.rule.failed)}
       </td>
-      <td className={cx(tableClass.td, tableClass.num)}>{f.percent(rate(r.read, r.sent))}</td>
-      <td className={cx(tableClass.td, tableClass.num, "font-medium")}>{ctrOf(r, f)}</td>
     </tr>
   );
 }
 
 /** รายการซ้อนกัน (จอมือถือ) */
-function RuleListItem({ rule: r, t, f }: { rule: RuleStats; t: T; f: Formatters }) {
+function RuleListItem({ row: r, t, f }: { row: RuleRowData; t: T; f: Formatters }) {
   return (
     <li>
-      <Link href={`/rules/${r.id}`} className="block px-5 py-3.5 transition-colors active:bg-surface-2">
+      <Link href={`/rules/${r.rule.id}`} className="block px-5 py-3.5 transition-colors active:bg-surface-2">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate font-medium text-fg">{r.name}</p>
-            <RuleMeta rule={r} t={t} />
+            <p className="truncate font-medium text-fg">{r.rule.name}</p>
+            <RuleMeta rule={r.rule} t={t} />
           </div>
           <span className="shrink-0 text-sm font-semibold text-fg tabular">
-            {f.number(r.triggers)} <span className="text-xs font-normal text-fg-3">{t("runsUnit")}</span>
+            {f.number(r.typed)} <span className="text-xs font-normal text-fg-3">{t("peopleUnit")}</span>
           </span>
         </div>
         <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5">
           {[
-            { label: t("colSent"), value: f.number(r.sent) },
-            { label: t("colFailed"), value: f.number(r.failed), critical: r.failed > 0 },
-            { label: t("colRead"), value: f.percent(rate(r.read, r.sent)) },
-            { label: t("colCtr"), value: ctrOf(r, f) },
+            { label: t("colClicked"), value: clickedOf(r, f) },
+            { label: t("colClickRate"), value: rateOf(r, f) },
+            { label: t("colFailed"), value: f.number(r.rule.failed), critical: r.rule.failed > 0 },
           ].map((s) => (
             <div key={s.label} className="flex gap-1">
               <dt className="text-fg-3">{s.label}</dt>
@@ -340,15 +387,15 @@ function RuleListItem({ rule: r, t, f }: { rule: RuleStats; t: T; f: Formatters 
 /** แสดงกฎอันดับต้นๆ ก่อน ที่เหลือกด "แสดงอีก" */
 const VISIBLE_RULES = 5;
 
-/** ตารางผลงานของแต่ละกฎ: จอใหญ่เป็นตาราง จอมือถือเป็นรายการซ้อนกัน */
-export function RuleTable({ rules, locale }: { rules: RuleStats[]; locale: Locale }) {
+/** ตารางผลของแต่ละกฎ (เรียงตามคนพิมพ์ keyword): จอใหญ่เป็นตาราง จอมือถือเป็นรายการซ้อนกัน */
+export function RuleTable({ rows, locale }: { rows: RuleRowData[]; locale: Locale }) {
   const t = tOf(locale);
   const f = formatters(locale);
-  const maxTriggers = Math.max(1, ...rules.map((r) => r.triggers));
+  const maxTyped = Math.max(1, ...rows.map((r) => r.typed));
   // ซ่อนเฉพาะเมื่อเหลือมากกว่า 1 กฎ (ไม่ซ่อนแค่กฎเดียว)
-  const cut = rules.length > VISIBLE_RULES + 1 ? VISIBLE_RULES : rules.length;
-  const top = rules.slice(0, cut);
-  const rest = rules.slice(cut);
+  const cut = rows.length > VISIBLE_RULES + 1 ? VISIBLE_RULES : rows.length;
+  const top = rows.slice(0, cut);
+  const rest = rows.slice(cut);
   const showMore = { more: t("showMoreRules", { count: rest.length }), less: t("showLess") };
   return (
     <>
@@ -357,28 +404,29 @@ export function RuleTable({ rules, locale }: { rules: RuleStats[]; locale: Local
           <thead className={tableClass.thead}>
             <tr>
               <th className={tableClass.th}>{t("colRule")}</th>
-              <th className={cx(tableClass.th, tableClass.num)} title={t("colRunsHint")}>
-                {t("colRuns")}
+              <th className={cx(tableClass.th, tableClass.num)} title={t("statTypedHint")}>
+                {t("colTyped")}
               </th>
-              <th className={cx(tableClass.th, tableClass.num)}>{t("colSent")}</th>
-              <th className={cx(tableClass.th, tableClass.num)}>{t("colFailed")}</th>
-              <th className={cx(tableClass.th, tableClass.num)} title={t("colReadHint")}>
-                {t("colRead")}
+              <th className={cx(tableClass.th, tableClass.num)} title={t("statClickedHint")}>
+                {t("colClicked")}
               </th>
-              <th className={cx(tableClass.th, tableClass.num)} title={t("ctrHint")}>
-                {t("colCtr")}
+              <th className={cx(tableClass.th, tableClass.num)} title={t("colClickRateHint")}>
+                {t("colClickRate")}
+              </th>
+              <th className={cx(tableClass.th, tableClass.num)} title={t("colFailedHint")}>
+                {t("colFailed")}
               </th>
             </tr>
           </thead>
           <tbody>
             {top.map((r) => (
-              <RuleRow key={r.id} rule={r} maxTriggers={maxTriggers} t={t} f={f} />
+              <RuleRow key={r.rule.id} row={r} maxTyped={maxTyped} t={t} f={f} />
             ))}
           </tbody>
           {rest.length > 0 && (
-            <ShowMore labels={showMore} table={{ colSpan: 6 }}>
+            <ShowMore labels={showMore} table={{ colSpan: 5 }}>
               {rest.map((r) => (
-                <RuleRow key={r.id} rule={r} maxTriggers={maxTriggers} t={t} f={f} />
+                <RuleRow key={r.rule.id} row={r} maxTyped={maxTyped} t={t} f={f} />
               ))}
             </ShowMore>
           )}
@@ -388,13 +436,13 @@ export function RuleTable({ rules, locale }: { rules: RuleStats[]; locale: Local
       <div className="md:hidden">
         <ul className="divide-y divide-line">
           {top.map((r) => (
-            <RuleListItem key={r.id} rule={r} t={t} f={f} />
+            <RuleListItem key={r.rule.id} row={r} t={t} f={f} />
           ))}
         </ul>
         {rest.length > 0 && (
           <ShowMore labels={showMore} listClassName="divide-y divide-line border-t border-line">
             {rest.map((r) => (
-              <RuleListItem key={r.id} rule={r} t={t} f={f} />
+              <RuleListItem key={r.rule.id} row={r} t={t} f={f} />
             ))}
           </ShowMore>
         )}

@@ -279,6 +279,19 @@ export const webhookLogs = pgTable(
   (t) => [index("webhook_logs_received_idx").on(t.receivedAt)],
 );
 
+/**
+ * ผลตรวจลิงก์ปลายทางในกฎที่เปิดอยู่ (worker เปิดลิงก์ดูเองทุก 6 ชั่วโมง — lib/link-health.ts)
+ * failures = ตรวจไม่ผ่านติดกันกี่รอบ (แจ้งเตือนเมื่อ >= 2 กันเว็บที่ล่มแป๊บเดียว)
+ */
+export const linkChecks = pgTable("link_checks", {
+  url: text("url").primaryKey(),
+  ok: boolean("ok").notNull(),
+  status: integer("status"),
+  error: text("error"),
+  failures: integer("failures").notNull().default(0),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** ค่าตั้งค่าที่ผู้ใช้กรอกผ่านหน้าเว็บ (App ID, รหัสผ่าน ฯลฯ) — ค่าลับถูกเข้ารหัสก่อนเก็บ */
 export const settings = pgTable("settings", {
   key: text("key").primaryKey(),

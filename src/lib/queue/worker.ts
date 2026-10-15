@@ -6,6 +6,7 @@ import { handleComment, handleDm, handlePagePost, handleRead, handleSendDm, Resc
 import { systemMessage } from "@/lib/i18n/system";
 import { inboxCutoff } from "@/lib/inbox/retention";
 import { refreshDueInstagramTokens } from "@/lib/instagram/token";
+import { checkRuleLinksIfDue } from "@/lib/link-health";
 import type { CommentJob, DmJob, PagePostJob, ReadJob } from "@/lib/meta/webhook";
 import { claimJobs, completeJob, failJob, recoverStuckJobs } from "./queue";
 
@@ -63,6 +64,12 @@ export async function maintenance(db: Db): Promise<void> {
     await cleanup(db);
   } catch (err) {
     console.error("[worker] ล้างข้อมูลเก่าไม่สำเร็จ:", err);
+  }
+  try {
+    // ลิงก์ปลายทางในกฎ (ตรวจจริงทุก 6 ชั่วโมง) — เสียจะขึ้นใน "ปัญหาที่ต้องดู" บนหน้าภาพรวม
+    await checkRuleLinksIfDue(db);
+  } catch (err) {
+    console.error("[worker] ตรวจลิงก์ในกฎไม่สำเร็จ:", err);
   }
   try {
     const r = await refreshDueInstagramTokens(db);

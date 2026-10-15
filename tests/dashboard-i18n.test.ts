@@ -343,15 +343,20 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
       "Dashboard",
       "Almost ready to auto-reply. Steps left:",
       "Next step:",
-      "Automation matches",
-      "DMs sent",
+      "Typed a keyword",
+      "Clicked a link",
       "Click rate",
-      "Taps and clicks",
-      "New contacts",
+      "No data for the previous period",
       "No data in the last 30 days",
       "Create your first automation",
-      "By platform",
-      "Top automations",
+      "Needs attention",
+      "No problems in this period",
+      "Links in your automations are checked every 6 hours",
+      "System",
+      "DMs sent",
+      "DMs opened by customers",
+      "Public replies",
+      "Best-performing automations",
       "No automations yet",
       "Recent activity",
       "No activity yet",
@@ -362,7 +367,8 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
     const th = textOf(await renderPage(OverviewPage, "/"));
     expect(th).toContain("ภาพรวม");
     expect(th).toContain("ยังไม่มีกฎอัตโนมัติ");
-    expect(th).not.toContain("Top automations");
+    expect(th).toContain("ไม่พบปัญหาในช่วงนี้");
+    expect(th).not.toContain("Best-performing automations");
   });
 
   it("ภาพรวม: มีข้อมูล (กราฟ ตารางกฎ กิจกรรมล่าสุด)", async () => {
@@ -372,26 +378,29 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
     expect(thaiIn(html)).toEqual([]);
     for (const s of [
       "How your automations did over the last 7 days",
-      "Daily activity",
+      "Daily",
+      // พิมพ์ keyword 3 คน (Contact ใหม่ทั้งหมด) · คลิกลิงก์ 1 คน
+      "New 3 · Returning 0",
+      "33%",
       "No data for the previous period",
-      "Message results",
-      "Total",
       "Show as a table",
-      "Public replies",
-      "DMs opened by customers",
-      "Links opened",
-      "Failed to send",
-      "Matched an automation",
+      "Needs attention",
+      "Failed to send: 1",
+      "Taps with no next message: 1",
+      "System",
+      "Best-performing automations",
+      "Sorted by people who typed a keyword in the last 7 days",
+      "Typed keyword",
+      "Clicked link",
       "Show 2 more",
       "Promo 1",
-      "Runs",
       "Off",
       "All automations",
       "See all",
     ]) {
       expect(text, s).toContain(s);
     }
-    expect(html).toContain('title="Share of people who got a DM and tapped a button or link (– for automations without buttons)"');
+    expect(html).toContain('title="People who clicked a link ÷ people who typed a keyword (– for automations without links)"');
   });
 
   it("กิจกรรม: ทุกประเภท + ส่วนตรวจสอบปัญหา", async () => {

@@ -4,19 +4,30 @@ import { PlatformBarChart } from "@/components/platform-bar-chart";
 import { SegmentedControl } from "@/components/segmented-control";
 import { ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { getSetupStatus, setupProgress } from "@/lib/config";
+import { getFunnel, getPreviousFunnel, getProblems, rulesWithLinks } from "@/lib/funnel";
 import { getFormat, getT } from "@/lib/i18n/server";
-import { change, getOverview, getPreviousTotals, parseRange, RANGE_OPTIONS, rate, sum } from "@/lib/stats";
+import { change, getOverview, parseRange, RANGE_OPTIONS, rate, sum, type PlatformCounts } from "@/lib/stats";
 import { loadEvents } from "./activity/load-events";
 import { TimelineItemCompact } from "./activity/timeline";
-import { FactList, KpiCards, PlatformTable, RuleTable, SetupBanner } from "./overview-parts";
+import { FactList, KpiCards, ProblemsList, RuleTable, SetupBanner, type RuleRowData } from "./overview-parts";
+
+/** อัตราคลิกช่วงนี้ − ช่วงก่อน (หน่วย "จุด") — null ถ้าช่วงใดช่วงหนึ่งไม่มีคนพิมพ์ keyword */
+function pointsChange(current: number | null, previous: number | null): number | null {
+  return current === null || previous === null ? null : current - previous;
+}
 
 export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const days = parseRange((await searchParams).range);
   const now = new Date();
   const db = getDb();
-  const [overview, previous, setup, recent, f, tNav, tPage] = await Promise.all([
-    getOverview(db, days),
-    getPreviousTotals(db, days),
+  const overviewP = getOverview(db, days);
+  const [overview, funnel, previous, problems, linkRules, setup, recent, f, tNav, tPage] = await Promise.all([
+    overviewP,
+    // วันที่ของกราฟชุดเดียวกับ getOverview
+    overviewP.then((o) => getFunnel(db, days, o.daily.map((d) => d.date))),
+    getPreviousFunnel(db, days),
+    getProblems(db, days),
+    rulesWithLinks(db),
     getSetupStatus(db),
     loadEvents(db, { limit: 6 }),
     getFormat(),
@@ -27,12 +38,17 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const progress = setupProgress(setup);
   const totals = overview.totals;
   const sent = sum(totals.dmsSent);
-  const comments = sum(totals.commentsReceived);
-  const chats = sum(totals.dmsReceived);
-  const clicks = totals.buttonTaps + totals.totalClicks;
-  const hasActivity = overview.daily.some((d) => sum(d.sent) + sum(d.clicks) + sum(d.triggers) > 0) || comments + chats > 0;
+  const { typed, clicked } = funnel.totals;
+  const typedAll = sum(typed);
+  const clickedAll = sum(clicked);
+  const clickRate = rate(clickedAll, typedAll);
+  const counts = (c: PlatformCounts) => ({ facebook: f.number(c.facebook), instagram: f.number(c.instagram) });
+  const hasActivity = typedAll + clickedAll > 0 || sent > 0;
   const noRules = overview.rules.length === 0;
   const since = overview.daily[0]?.date;
+  const ruleRows: RuleRowData[] = overview.rules
+    .map((rule) => ({ rule, ...(funnel.byRule.get(rule.id) ?? { typed: 0, clicked: 0 }), hasLinks: linkRules.has(rule.id) }))
+    .sort((a, b) => b.typed - a.typed || b.rule.failed - a.rule.failed);
 
   return (
     <>
@@ -63,41 +79,35 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
           locale={locale}
           items={[
             {
-              label: tPage("statTriggers"),
-              hint: tPage("statTriggersHint"),
-              value: f.number(sum(totals.triggers)),
-              split: totals.triggers,
-              change: change(sum(totals.triggers), previous.triggers),
+              label: tPage("statTyped"),
+              hint: tPage("statTypedHint"),
+              value: f.number(typedAll),
+              split: counts(typed),
+              extra:
+                typedAll > 0
+                  ? tPage("statNewReturning", { new: f.number(funnel.totals.newPeople), returning: f.number(funnel.totals.returningPeople) })
+                  : undefined,
+              change: change(typedAll, sum(previous.typed)),
+              href: "/contacts",
             },
             {
-              label: tPage("statSent"),
-              value: f.number(sent),
-              split: totals.dmsSent,
-              change: change(sent, previous.sent),
-              alert: totals.dmsFailed > 0 ? tPage("statSentFailed", { count: totals.dmsFailed }) : undefined,
-              href: "/activity?filter=sent",
-            },
-            {
-              label: tPage("statCtr"),
-              hint: tPage("statCtrHint"),
-              value: f.percent(rate(totals.engagedContacts, totals.reachedContacts)),
-              note: tPage("statCtrDetail", { engaged: totals.engagedContacts, reached: totals.reachedContacts }),
-            },
-            {
-              label: tPage("statClicks"),
-              hint: tPage("statClicksDetail", { taps: totals.buttonTaps, clicks: totals.totalClicks }),
-              value: f.number(clicks),
-              split: totals.clicksByPlatform,
-              change: change(clicks, previous.clicks),
+              label: tPage("statClicked"),
+              hint: tPage("statClickedHint"),
+              value: f.number(clickedAll),
+              split: counts(clicked),
+              change: change(clickedAll, sum(previous.clicked)),
               href: "/activity?filter=clicks",
             },
             {
-              label: tPage("statNewContacts"),
-              hint: tPage("statNewContactsHint"),
-              value: f.number(totals.newContacts),
-              split: totals.newContactsByPlatform,
-              change: change(totals.newContacts, previous.newContacts),
-              href: "/contacts",
+              label: tPage("statClickRate"),
+              hint: tPage("statClickRateHint"),
+              value: f.percent(clickRate),
+              split: {
+                facebook: f.percent(rate(clicked.facebook, typed.facebook)),
+                instagram: f.percent(rate(clicked.instagram, typed.instagram)),
+              },
+              change: pointsChange(clickRate, rate(sum(previous.clicked), sum(previous.typed))),
+              changeKind: "points",
             },
           ]}
         />
@@ -109,9 +119,8 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                 height={300}
                 ariaLabel={tPage("chartTitle")}
                 metrics={[
-                  { key: "sent", label: tPage("statSent"), data: overview.daily.map((d) => ({ date: d.date, ...d.sent })) },
-                  { key: "triggers", label: tPage("statTriggers"), data: overview.daily.map((d) => ({ date: d.date, ...d.triggers })) },
-                  { key: "clicks", label: tPage("statClicks"), data: overview.daily.map((d) => ({ date: d.date, ...d.clicks })) },
+                  { key: "typed", label: tPage("statTyped"), data: funnel.daily.map((d) => ({ date: d.date, ...d.typed })) },
+                  { key: "clicked", label: tPage("statClicked"), data: funnel.daily.map((d) => ({ date: d.date, ...d.clicked })) },
                 ]}
               />
             ) : (
@@ -139,38 +148,16 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             )}
           </Card>
 
-          <Card title={tPage("platformTitle")}>
-            <PlatformTable
-              locale={locale}
-              rows={[
-                {
-                  label: tPage("splitIncoming"),
-                  hint: tPage("splitIncomingHint", { comments, chats }),
-                  counts: {
-                    facebook: totals.commentsReceived.facebook + totals.dmsReceived.facebook,
-                    instagram: totals.commentsReceived.instagram + totals.dmsReceived.instagram,
-                  },
-                },
-                { label: tPage("splitTriggers"), counts: totals.triggers },
-                { label: tPage("splitSent"), counts: totals.dmsSent },
-              ]}
-            />
+          <Card title={tPage("problemsTitle")}>
+            <ProblemsList problems={problems} locale={locale} />
+            <p className="mt-3 text-xs leading-5 text-fg-3">{tPage("linkCheckNote")}</p>
             <div className="mt-4 border-t border-line pt-4">
-              <h3 className="text-xs font-medium text-fg-3">{tPage("resultsHeading")}</h3>
+              <h3 className="text-xs font-medium text-fg-3">{tPage("systemHeading")}</h3>
               <FactList
                 items={[
-                  { label: tPage("factPublicReplies"), value: tPage("factPublicRepliesValue", { count: totals.publicReplies }) },
-                  {
-                    label: tPage("factRead"),
-                    value: `${f.percent(rate(totals.dmsRead, sent))} (${f.number(totals.dmsRead)})`,
-                  },
-                  { label: tPage("factLinks"), value: tPage("factLinksValue", { clicked: totals.linksClicked, sent: totals.linksSent }) },
-                  {
-                    label: tPage("factFailed"),
-                    value: f.number(totals.dmsFailed),
-                    tone: totals.dmsFailed > 0 ? "critical" : undefined,
-                    href: totals.dmsFailed > 0 ? "/activity?filter=failed" : undefined,
-                  },
+                  { label: tPage("factSent"), value: tPage("factSentValue", { count: f.number(sent) }) },
+                  { label: tPage("factRead"), value: f.percent(rate(totals.dmsRead, sent)) },
+                  { label: tPage("factPublicReplies"), value: tPage("factPublicRepliesValue", { count: f.number(totals.publicReplies) }) },
                 ]}
               />
             </div>
@@ -207,7 +194,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                 </EmptyState>
               </div>
             ) : (
-              <RuleTable rules={overview.rules} locale={locale} />
+              <RuleTable rows={ruleRows} locale={locale} />
             )}
           </Card>
 

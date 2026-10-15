@@ -120,12 +120,12 @@ describe("คอมเมนต์ → ตอบคอมเมนต์ + ส�
     expect(await eventTypes()).not.toContain("dm_received");
   });
 
-  it("ปุ่มจากข้อความเก่าที่ถูกลบไปแล้ว → บันทึกการกดแต่ไม่ส่งอะไร", async () => {
+  it("ปุ่มจากข้อความเก่าที่ถูกลบไปแล้ว → บันทึกการกด + ข้าม (ขึ้นใน \"ปัญหาที่ต้องดู\") แต่ไม่ส่งอะไร", async () => {
     const rule = await createRule();
     await db.update(rules).set({ steps: singleStep("ข้อความใหม่") }).where(eq(rules.id, rule.id));
     await deliver(postback("facebook", flowPayload(rule.id, "s1", "b1")));
     expect(sentMessages()).toHaveLength(0);
-    expect(await eventTypes()).toEqual(["button_clicked"]);
+    expect(await eventTypes()).toEqual(["button_clicked", "skipped"]);
   });
 
   it("กฎที่ปิดอยู่ไม่ส่งข้อความถัดไป", async () => {
