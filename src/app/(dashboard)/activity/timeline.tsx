@@ -22,6 +22,7 @@ import {
 import { cx, PlatformIcon } from "@/components/ui";
 import { createT, DEFAULT_LOCALE, formatters, type Locale, type MessageKey, type TFunction } from "@/lib/i18n";
 import { activityMessages } from "@/lib/i18n/messages/activity";
+import { localizeSystemMessage } from "@/lib/i18n/system";
 import { inboxCutoff } from "@/lib/inbox/retention";
 import { INSTAGRAM_MESSAGE_ACCESS_MENU } from "@/lib/meta/setup-info";
 import type { TimelineEvent } from "./load-events";
@@ -67,6 +68,21 @@ export const EVENT_TYPES: Record<string, EventType> = {
 
 /** ประเภทที่ไม่รู้จัก: ใช้ชื่อประเภทตามที่บันทึกไว้เป็นชื่อกิจกรรม */
 const FALLBACK: Omit<EventType, "label"> = { tone: "neutral", icon: Activity, who: "whoFrom" };
+
+/**
+ * กิจกรรมที่ระบบเขียนข้อความ (text) เอง — แปลตามภาษาได้ (ประเภทอื่น text คือข้อความของลูกค้า/ร้าน ห้ามแปล)
+ * dm_rate_limited: system.rateLimitNotice
+ */
+const SYSTEM_TEXT_TYPES = new Set(["dm_rate_limited"]);
+
+/** ข้อความของกิจกรรม + สาเหตุที่ผิดพลาด ตามภาษา (ข้อความของระบบเก็บเป็นภาษาไทยต้นฉบับ / ข้อความจาก Meta คงเดิม) */
+function localized(event: TimelineEvent, locale: Locale): Pick<TimelineEvent, "text" | "error"> {
+  const { text, error } = event;
+  return {
+    text: text && SYSTEM_TEXT_TYPES.has(event.type) ? localizeSystemMessage(text, locale) : text,
+    error: error?.message ? { ...error, message: localizeSystemMessage(error.message, locale) } : error,
+  };
+}
 
 /** ประเภทกิจกรรม + ชื่อตามภาษา */
 export function eventType(type: string, locale: Locale = DEFAULT_LOCALE): Omit<EventType, "label"> & { label: string } {
@@ -249,10 +265,11 @@ export function TimelineItem({
 }) {
   const t = tOf(locale);
   const type = eventType(event.type, locale);
+  const { text, error } = localized(event, locale);
   const isButton = event.type === "button_clicked";
   const skipKey = event.skipReason ? SKIP_REASONS[event.skipReason] : undefined;
   const skip = skipKey ? t(skipKey) : event.skipReason;
-  const hint = event.error ? errorHint(event.error.code, locale) : null;
+  const hint = error ? errorHint(error.code, locale) : null;
 
   return (
     <li className="relative flex gap-3 px-4 py-3.5 sm:px-5">
@@ -286,11 +303,11 @@ export function TimelineItem({
           <UnmatchedInboxLink event={event} now={now} t={t} />
         </div>
 
-        {!isButton && (event.text || event.buttons.length > 0) && (
+        {!isButton && (text || event.buttons.length > 0) && (
           <div className="mt-2 max-w-2xl rounded-xl bg-surface-2 px-3 py-2 text-sm leading-6 text-fg-2">
-            {event.text && <Expandable text={event.text} t={t} />}
+            {text && <Expandable text={text} t={t} />}
             {event.buttons.length > 0 && (
-              <div className={cx("flex flex-wrap gap-1.5", event.text && "mt-2")} role="group" aria-label={t("buttonsAria")}>
+              <div className={cx("flex flex-wrap gap-1.5", text && "mt-2")} role="group" aria-label={t("buttonsAria")}>
                 {event.buttons.map((b, i) => (
                   // แค่บอกว่าข้อความมีปุ่มอะไร (กดไม่ได้) → เส้นประ สีเทา ไม่ให้ดูเหมือนปุ่มจริง
                   <span
@@ -309,18 +326,18 @@ export function TimelineItem({
 
         {skip && <p className="mt-1.5 text-sm text-warning-text">{skip}</p>}
 
-        {event.error && (
+        {error && (
           <div className="mt-2 flex max-w-2xl gap-2 rounded-xl border border-critical/25 bg-critical-soft px-3 py-2 text-sm leading-6">
             <CircleAlert className="mt-1 size-4 shrink-0 text-critical-text" aria-hidden />
             <div className="min-w-0 flex-1">
               <Expandable
-                text={t("errorReason", { message: event.error.message ?? t("errorUnknown") })}
+                text={t("errorReason", { message: error.message ?? t("errorUnknown") })}
                 t={t}
                 className="text-critical-text"
                 lines={2}
               />
               {hint && <p className="mt-1 text-fg-2">{hint}</p>}
-              {event.error.code && <p className="mt-0.5 text-xs text-fg-3">{t("errorCode", { code: event.error.code })}</p>}
+              {error.code && <p className="mt-0.5 text-xs text-fg-3">{t("errorCode", { code: error.code })}</p>}
               {event.type === "token_refresh_failed" && (
                 <Link
                   href="/settings#instagram"
@@ -342,14 +359,15 @@ export function TimelineItem({
 export function TimelineItemCompact({ event, now, locale = DEFAULT_LOCALE }: { event: TimelineEvent; now: Date; locale?: Locale }) {
   const t = tOf(locale);
   const type = eventType(event.type, locale);
+  const { text, error } = localized(event, locale);
   const detail: ReactNode =
-    event.type === "button_clicked" && event.text
-      ? `“${event.text}”`
-      : event.error
-        ? (event.error.message ?? t("errorUnknown"))
+    event.type === "button_clicked" && text
+      ? `“${text}”`
+      : error
+        ? (error.message ?? t("errorUnknown"))
         : event.unmatched
           ? unmatchedNote(event.type, locale)
-          : (event.text ?? (event.ruleName ? t("ruleName", { rule: event.ruleName }) : null));
+          : (text ?? (event.ruleName ? t("ruleName", { rule: event.ruleName }) : null));
   return (
     <li className="flex items-start gap-3 px-5 py-3">
       <EventMark event={event} size="sm" className="mt-0.5" />
@@ -361,7 +379,7 @@ export function TimelineItemCompact({ event, now, locale = DEFAULT_LOCALE }: { e
           </p>
           <RelativeTime date={event.createdAt} now={now} locale={locale} className="mt-0.5 shrink-0 text-xs leading-5 text-fg-3" />
         </div>
-        {detail && <p className={cx("truncate text-xs leading-5", event.error ? "text-critical-text" : "text-fg-3")}>{detail}</p>}
+        {detail && <p className={cx("truncate text-xs leading-5", error ? "text-critical-text" : "text-fg-3")}>{detail}</p>}
       </div>
     </li>
   );

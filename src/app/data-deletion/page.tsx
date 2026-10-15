@@ -1,40 +1,45 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
+import { legalMessages } from "@/lib/i18n/messages/legal";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "การลบข้อมูลผู้ใช้" };
 export const dynamic = "force-dynamic";
 
-/** หน้าแจ้งวิธีขอลบข้อมูล — ใช้กรอกช่อง "Data Deletion Instructions URL" ใน Meta App */
-export default function DataDeletionPage() {
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getT("legal"))("deletionMetaTitle") };
+}
+
+/** หน้าแจ้งวิธีขอลบข้อมูล — ใช้กรอกช่อง "Data Deletion Instructions URL" ใน Meta App (ภาษาตามคุกกี้ lang ไม่มีคุกกี้ = ไทย) */
+export default async function DataDeletionPage() {
+  const t = await getT("legal");
   const businessName = process.env.BUSINESS_NAME;
   const email = process.env.CONTACT_EMAIL;
   return (
     <LegalPage
-      title="การขอลบข้อมูล"
-      subtitle="Data Deletion Instructions"
+      title={t("deletionTitle")}
+      subtitle={legalMessages.en.deletionTitle}
       current="/data-deletion"
       brand={businessName || undefined}
+      locale={t.locale}
     >
-      <h2>วิธีขอลบข้อมูล</h2>
-      <p>หากต้องการให้เราลบข้อมูลของคุณที่ได้รับผ่าน Facebook หรือ Instagram ทำได้ดังนี้</p>
+      <h2>{t("deletionHowHeading")}</h2>
+      <p>{t("deletionHowIntro")}</p>
       <ul>
-        <li>
-          ส่งข้อความถึงเพจของเราว่า <strong>&quot;ขอลบข้อมูล&quot;</strong> พร้อมชื่อบัญชีของคุณ
-        </li>
-        {email && (
-          <li>
-            หรือส่งอีเมลมาที่ <a href={`mailto:${email}`}>{email}</a>
-          </li>
-        )}
+        <li>{t.rich("deletionHowMessage", { phrase: <strong>{t("deletionHowPhrase")}</strong> })}</li>
+        {email && <li>{t.rich("deletionHowEmail", { email: <a href={`mailto:${email}`}>{email}</a> })}</li>}
       </ul>
 
-      <h2>สิ่งที่เราจะลบ</h2>
-      <p>เราจะลบชื่อ รหัสผู้ใช้ ประวัติข้อความ และข้อมูลการคลิกลิงก์ของคุณออกจากระบบภายใน 30 วัน และแจ้งกลับเมื่อดำเนินการเสร็จ</p>
+      <h2>{t("deletionWhatHeading")}</h2>
+      <p>{t("deletionWhat")}</p>
 
-      <h2>ถอนสิทธิ์ของแอปด้วยตัวเอง</h2>
+      <h2>{t("deletionSelfHeading")}</h2>
       <p>
-        คุณยังสามารถถอนสิทธิ์การเข้าถึงของแอปได้เองที่ Facebook: <strong>การตั้งค่า</strong> → <strong>แอปและเว็บไซต์</strong> →{" "}
-        <strong>เลือกแอปนี้</strong> → <strong>ลบ</strong>
+        {t.rich("deletionSelf", {
+          settings: <strong>{t("deletionSelfSettings")}</strong>,
+          apps: <strong>{t("deletionSelfApps")}</strong>,
+          select: <strong>{t("deletionSelfSelect")}</strong>,
+          remove: <strong>{t("deletionSelfRemove")}</strong>,
+        })}
       </p>
     </LegalPage>
   );

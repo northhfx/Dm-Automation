@@ -1,19 +1,22 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
+import { createT, DEFAULT_LOCALE, type Locale } from "@/lib/i18n";
+import { legalMessages } from "@/lib/i18n/messages/legal";
+import { LanguageToggle } from "./language-toggle";
 import { LogoMark } from "./logo";
 import { cx } from "./ui";
 
 /*
  * หน้าเอกสารสาธารณะ (นโยบายความเป็นส่วนตัว / การลบข้อมูล) — เปิดได้โดยไม่ต้องล็อกอิน
  * เนื้อหาใส่เป็น <h2> <p> <ul> <ol> <a> ธรรมดา ไฟล์นี้จัดรูปแบบให้อ่านง่าย (ความกว้างบรรทัดไม่เกิน ~70 ตัวอักษร)
- * เนื้อหาเป็นภาษาไทยเสมอ (ไม่ตามภาษาที่เจ้าของร้านเลือกในหน้าจัดการ) → ใส่ lang="th" ไว้ที่ตัวหน้า
- * ให้โปรแกรมอ่านหน้าจออ่านถูกภาษา แม้ <html lang> เป็น "en" จากคุกกี้ภาษาของเบราว์เซอร์นี้
+ * ภาษาตามคุกกี้ "lang" เหมือนหน้าอื่น: หน้าที่เรียกอ่านภาษาด้วย getT("legal") แล้วส่ง locale มา (ไม่ส่ง = ไทย)
+ * มีปุ่มเลือกภาษาที่หัวหน้า — ผู้ตรวจของ Meta ที่เปิดลิงก์มาครั้งแรก (ไม่มีคุกกี้ = ไทย) กดเปลี่ยนเป็น English ได้เอง
  */
 
 const DOCS = [
-  { href: "/privacy", label: "นโยบายความเป็นส่วนตัว" },
-  { href: "/data-deletion", label: "การลบข้อมูล" },
+  { href: "/privacy", label: "navPrivacy" },
+  { href: "/data-deletion", label: "navDataDeletion" },
 ] as const;
 
 export type LegalDoc = (typeof DOCS)[number]["href"];
@@ -24,24 +27,31 @@ export function LegalPage({
   description,
   current,
   brand = "DM Automation",
+  locale = DEFAULT_LOCALE,
   children,
 }: {
   title: string;
-  /** ชื่อภาษาอังกฤษใต้หัวข้อ เช่น "Privacy Policy" (ผู้ตรวจของ Meta อ่านได้) */
+  /** ชื่อภาษาอังกฤษเหนือหัวข้อ เช่น "Privacy Policy" (ผู้ตรวจของ Meta อ่านได้) — แสดงเฉพาะหน้าภาษาไทย (หน้าอังกฤษหัวข้อเป็นชื่อนี้อยู่แล้ว) */
   subtitle?: string;
   description?: ReactNode;
   /** เอกสารที่กำลังเปิด (ไฮไลต์ในแถบเอกสาร) */
   current?: LegalDoc;
   /** ชื่อที่แสดงข้างโลโก้ด้านบน */
   brand?: string;
+  /** ภาษาของหน้า (จากคุกกี้ — getT("legal").locale) */
+  locale?: Locale;
   children: ReactNode;
 }) {
+  const t = createT(legalMessages, locale);
   return (
-    <div lang="th" className="flex min-h-dvh flex-col">
+    <div lang={locale} className="flex min-h-dvh flex-col">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-2.5 px-4 sm:px-6">
           <LogoMark size={28} />
-          <span className="truncate text-[15px] font-semibold tracking-tight text-fg">{brand}</span>
+          <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-fg">{brand}</span>
+          <div className="ml-auto shrink-0">
+            <LanguageToggle variant="compact" />
+          </div>
         </div>
       </header>
 
@@ -51,11 +61,11 @@ export function LegalPage({
           className="-ml-1 inline-flex h-10 items-center gap-0.5 rounded-md px-1 text-sm text-fg-2 transition-colors hover:text-fg"
         >
           <ChevronLeft className="size-4" aria-hidden />
-          กลับหน้าหลัก
+          {t("backHome")}
         </Link>
 
         <div className="mt-2">
-          {subtitle && (
+          {subtitle && locale !== "en" && (
             <p lang="en" className="text-xs font-semibold tracking-wide text-accent uppercase">
               {subtitle}
             </p>
@@ -64,7 +74,7 @@ export function LegalPage({
           {description && <div className="mt-2 max-w-[68ch] text-[15px] leading-7 text-fg-2">{description}</div>}
         </div>
 
-        <nav aria-label="เอกสารที่เกี่ยวข้อง" className="mt-6 flex flex-wrap gap-2">
+        <nav aria-label={t("relatedDocs")} className="mt-6 flex flex-wrap gap-2">
           {DOCS.map((d) => {
             const active = d.href === current;
             return (
@@ -77,7 +87,7 @@ export function LegalPage({
                   active ? "border-accent/30 bg-accent-soft text-accent" : "border-line bg-surface text-fg-2 hover:border-line-strong hover:text-fg",
                 )}
               >
-                {d.label}
+                {t(d.label)}
               </Link>
             );
           })}
@@ -103,7 +113,7 @@ export function LegalPage({
           <span className="mr-auto py-2">{brand}</span>
           {DOCS.map((d) => (
             <Link key={d.href} href={d.href} className="inline-flex h-10 items-center rounded-md px-2 transition-colors hover:text-fg">
-              {d.label}
+              {t(d.label)}
             </Link>
           ))}
         </div>

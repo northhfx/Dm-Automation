@@ -1,5 +1,6 @@
 import type { Db } from "@/db/client";
 import { events } from "@/db/schema";
+import { systemMessage } from "@/lib/i18n/system";
 import {
   errorInfo,
   GraphApiError,
@@ -32,7 +33,7 @@ export const REFRESH_WINDOW_MS = 10 * 24 * HOUR;
 /** ต่ออายุไม่สำเร็จ → ลองใหม่ได้ทุก 6 ชั่วโมง */
 export const REFRESH_RETRY_MS = 6 * HOUR;
 
-const DECRYPT_FAILED = "token ถอดรหัสไม่ได้ — วาง token ใหม่";
+const DECRYPT_FAILED = systemMessage("igTokenDecrypt");
 
 export function isRefreshDue(
   a: Pick<InstagramAccount, "tokenRefreshedAt" | "tokenExpiresAt" | "tokenExpiryEstimated" | "tokenCheckedAt">,
@@ -72,7 +73,7 @@ async function refreshAccount(db: Db, account: InstagramAccount, now: Date): Pro
       (err instanceof GraphApiError && err.code === 190) || account.tokenExpiresAt.getTime() < now.getTime();
     const message = expired
       ? INSTAGRAM_ERRORS.tokenExpired
-      : `${INSTAGRAM_ERRORS.refreshPrefix}: ${(err as Error)?.message ?? String(err)}`;
+      : systemMessage("igRefreshFailed", { detail: (err as Error)?.message ?? String(err) });
     return recordFailure(db, account, message, err, now);
   }
 
@@ -87,7 +88,7 @@ async function refreshAccount(db: Db, account: InstagramAccount, now: Date): Pro
     await updateInstagramAccountStatus(db, account.id, { subscribed: true });
   } catch (err) {
     await updateInstagramAccountStatus(db, account.id, {
-      lastError: `${INSTAGRAM_ERRORS.subscribePrefix} (${(err as Error)?.message ?? String(err)})`,
+      lastError: systemMessage("igSubscribeFailed", { detail: (err as Error)?.message ?? String(err) }),
     });
   }
   return { ok: true, tokenExpiresAt };
@@ -101,9 +102,9 @@ export async function refreshInstagramAccountToken(
 ): Promise<RefreshResult> {
   const now = opts.now ?? new Date();
   const account = await getInstagramAccount(db, accountId);
-  if (!account) return { ok: false, error: "ไม่พบบัญชี Instagram นี้ อาจถูกยกเลิกการเชื่อมต่อไปแล้ว" };
+  if (!account) return { ok: false, error: systemMessage("igAccountNotFound") };
   if (opts.manual && account.token && now.getTime() - account.tokenRefreshedAt.getTime() < REFRESH_MIN_AGE_MS) {
-    return { ok: false, error: "token เพิ่งสร้างไม่ถึง 24 ชั่วโมง ยังต่ออายุไม่ได้ (ระบบจะต่ออายุให้เองอัตโนมัติ)" };
+    return { ok: false, error: systemMessage("igTokenTooNew") };
   }
   return refreshAccount(db, account, now);
 }

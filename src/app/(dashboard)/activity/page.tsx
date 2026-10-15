@@ -23,6 +23,7 @@ import { createT, formatters, type Locale, type MessageKey, type TFunction } fro
 import type { activityMessages } from "@/lib/i18n/messages/activity";
 import { commonMessages } from "@/lib/i18n/messages/common";
 import { getT } from "@/lib/i18n/server";
+import { localizeSystemMessage } from "@/lib/i18n/system";
 import { FAILED_TYPES, failureSummary } from "./failure-summary";
 import { FilterScroller } from "./filter-scroller";
 import { loadEvents, type TimelineEvent } from "./load-events";
@@ -269,7 +270,9 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
                       </span>
                       <RelativeTime date={j.updatedAt} now={now} locale={locale} className="text-xs text-fg-3" />
                     </div>
-                    {j.lastError && <p className="mt-1 text-sm break-words text-critical-text">{j.lastError}</p>}
+                    {j.lastError && (
+                      <p className="mt-1 text-sm break-words text-critical-text">{localizeSystemMessage(j.lastError, locale)}</p>
+                    )}
                     <p className="mt-0.5 text-xs text-fg-3">{t("jobAttempts", { count: j.attempts })}</p>
                   </li>
                 ))}

@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement, type ComponentProps, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,6 +8,8 @@ import { createT } from "@/lib/i18n/core";
 import { I18nProvider } from "@/lib/i18n/client";
 import type { Locale } from "@/lib/i18n/locale";
 import { settingsMessages } from "@/lib/i18n/messages/settings";
+import { systemMessages } from "@/lib/i18n/messages/system";
+import { localizeSystemMessage, systemMessage } from "@/lib/i18n/system";
 import { INSTAGRAM_ERRORS, type InstagramAccount } from "@/lib/instagram/accounts";
 import type { ConnectedPage } from "@/lib/pages";
 
@@ -27,6 +27,8 @@ const fx = vi.hoisted(() => ({
   pages: [] as unknown[],
   accounts: [] as unknown[],
   igConfig: { appSecret: null as string | null, metaAppSecret: null as string | null, fromEnv: false },
+  // ยังไม่ได้ใส่ App ID / App Secret → แลก token ไม่ได้ (ข้อความจาก lib/meta/graph.ts)
+  metaConfig: { appId: null as string | null, appSecret: null as string | null, verifyToken: "verify", fromEnv: false },
 }));
 
 vi.mock("next/headers", () => ({
@@ -39,6 +41,7 @@ vi.mock("@/lib/config", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/config")>()),
   getSetupStatus: async () => fx.status,
   getInstagramConfig: async () => fx.igConfig,
+  getMetaConfig: async () => fx.metaConfig,
 }));
 vi.mock("@/lib/instagram/accounts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/instagram/accounts")>()),
@@ -62,7 +65,6 @@ const { DisconnectButton, ResubscribeButton } = await import("@/app/(dashboard)/
 const { DisconnectInstagramButton, RefreshInstagramTokenButton, ResubscribeInstagramButton } = await import(
   "@/app/(dashboard)/settings/instagram-actions"
 );
-const { localizeSetupMessage } = await import("@/app/(dashboard)/settings/setup-errors");
 
 const ROUTER = { back() {}, forward() {}, refresh() {}, push() {}, replace() {}, prefetch() {}, hmrRefresh() {} };
 const DAY = 24 * 60 * 60_000;
@@ -390,6 +392,32 @@ describe("ฟอร์มและรายการของหน้าตั�
     expect(html).not.toContain("IG_TOKEN");
   });
 
+  it("lastError ที่เก็บเป็นภาษาไทย (ข้อความของระบบ ซ้อนกันได้) แสดงเป็นภาษาอังกฤษ — ข้อความจาก Meta คงเดิม", () => {
+    const network = systemMessage("graphUnreachable", { detail: "fetch failed" });
+    const pages = [
+      page({ id: "P5", name: "Offline Shop", subscribed: false, lastError: network }),
+      page({ id: "P6", name: "Status Shop", subscribed: false, lastError: systemMessage("graphHttpStatus", { status: "502" }) }),
+    ];
+    const html = render(createElement(PagesList, { pages }), "en");
+    expectNoThai(html);
+    expect(textOf(html)).toContain("Couldn't reach the Graph API: fetch failed");
+    expect(textOf(html)).toContain("The Graph API responded with status 502");
+    expect(textOf(render(createElement(PagesList, { pages })))).toContain(network);
+
+    const accounts = [
+      account({ id: "IG9", username: "retry2.shop", lastError: systemMessage("igRefreshFailed", { detail: network }) }),
+      account({
+        id: "IG10",
+        username: "sub2.shop",
+        lastError: systemMessage("igSubscribeFailed", { detail: systemMessage("igSubscribeUnconfirmed") }),
+      }),
+    ];
+    const ig = render(createElement(InstagramAccountsList, { accounts, pages: [] }), "en");
+    expectNoThai(ig);
+    expect(textOf(ig)).toContain("Couldn't renew the token: Couldn't reach the Graph API: fetch failed — we'll try again every 6 hours.");
+    expect(textOf(ig)).toContain("Couldn't subscribe to the webhook (Instagram didn't confirm the webhook subscription)");
+  });
+
   it("ปุ่มจัดการเพจ / บัญชี", () => {
     const html = [
       render(createElement(ResubscribeButton, { pageId: "P1", pageName: "Mali Shop" }), "en"),
@@ -455,6 +483,15 @@ describe("ข้อผิดพลาดจาก Server Action ตามภา�
     expect((await actions.connectInstagramAction({}, form({ token: "EAAG123" }))).error).toContain(
       "This is a Facebook token (it starts with EAA).",
     );
+    expect(await actions.connectInstagramAction({}, form({ token: "IGQVJ123" }))).toEqual({
+      error: "Enter your Instagram app secret in the Instagram App section first.",
+      field: "appSecret",
+    });
+
+    // ข้อความจาก lib/meta/graph.ts ที่อยู่ใน {detail}
+    expect((await actions.connectAction({ step: "token" }, form({ intent: "fetch", token: "EAAB" }))).error).toBe(
+      "Couldn't connect: The App ID / App Secret of your Meta App hasn't been entered yet",
+    );
   });
 
   it("ภาษาไทย (ไม่มีคุกกี้) เหมือนเดิม", async () => {
@@ -467,63 +504,39 @@ describe("ข้อผิดพลาดจาก Server Action ตามภา�
       "รหัสผ่านถูกตั้งผ่าน ADMIN_PASSWORD ใน Railway — เปลี่ยนที่นั่นแทน",
     );
     expect((await actions.connectInstagramAction({}, form({ token: "" }))).error).toBe("วาง access token ของ Instagram ก่อน");
+    expect((await actions.connectAction({ step: "token" }, form({ intent: "fetch", token: "EAAB" }))).error).toBe(
+      "เชื่อมต่อไม่สำเร็จ: ยังไม่ได้ใส่ App ID / App Secret ของ Meta App",
+    );
   });
 });
 
-// ---------- ข้อความภาษาไทยจาก lib/instagram/* ----------
+// ---------- ข้อความภาษาไทยจาก lib/instagram/* (หมวด system) ----------
 
-describe("localizeSetupMessage", () => {
+describe("ข้อความจาก lib/instagram/* ในหน้าตั้งค่า (localizeSystemMessage)", () => {
   const en = createT(settingsMessages, "en");
   const th = createT(settingsMessages, "th");
 
   it("แปลข้อความที่รู้จัก พร้อมคงรายละเอียดจาก Meta ไว้ / ไม่รู้จัก → คงเดิม / ภาษาไทย → คงเดิมเสมอ", () => {
-    expect(localizeSetupMessage(`${INSTAGRAM_ERRORS.refreshPrefix}: (#190) Bad token`, en)).toBe("Couldn't renew the token: (#190) Bad token");
-    expect(localizeSetupMessage(`${INSTAGRAM_ERRORS.subscribePrefix} (oops)`, en)).toBe("Couldn't subscribe to the webhook (oops)");
-    expect(localizeSetupMessage("บัญชีนี้ผูกกับเพจ Mali Shop ด้วย — ระบบจะใช้ Instagram Login กับบัญชีนี้แทน", en)).toBe(
+    expect(localizeSystemMessage(`${INSTAGRAM_ERRORS.refreshPrefix}: (#190) Bad token`, "en")).toBe("Couldn't renew the token: (#190) Bad token");
+    expect(localizeSystemMessage(`${INSTAGRAM_ERRORS.subscribePrefix} (oops)`, "en")).toBe("Couldn't subscribe to the webhook (oops)");
+    expect(localizeSystemMessage("บัญชีนี้ผูกกับเพจ Mali Shop ด้วย — ระบบจะใช้ Instagram Login กับบัญชีนี้แทน", "en")).toBe(
       "This account is also linked to your Page Mali Shop — we'll use Instagram Login for it instead.",
     );
-    expect(localizeSetupMessage("(#100) Invalid parameter", en)).toBe("(#100) Invalid parameter");
-    expect(localizeSetupMessage(INSTAGRAM_ERRORS.tokenExpired, th)).toBe(INSTAGRAM_ERRORS.tokenExpired);
+    expect(localizeSystemMessage("(#100) Invalid parameter", "en")).toBe("(#100) Invalid parameter");
+    expect(localizeSystemMessage(INSTAGRAM_ERRORS.tokenExpired, "th")).toBe(INSTAGRAM_ERRORS.tokenExpired);
   });
 
-  it("ข้อความไทยในหมวด settings ตรงกับต้นฉบับใน lib (ถ้า lib เปลี่ยนข้อความ ต้องแก้ที่นี่ด้วย)", () => {
-    const th = settingsMessages.th;
-    expect(th.libIgTokenRejected).toBe(INSTAGRAM_ERRORS.tokenRejected);
-    expect(th.libIgTokenExpired).toBe(INSTAGRAM_ERRORS.tokenExpired);
-    expect(th.libIgRefreshFailed).toBe(`${INSTAGRAM_ERRORS.refreshPrefix}: {detail}`);
-    expect(th.libIgSubscribeFailed).toBe(`${INSTAGRAM_ERRORS.subscribePrefix} ({detail})`);
-
-    const root = path.resolve(import.meta.dirname, "..");
-    const source = ["src/lib/instagram/connect.ts", "src/lib/instagram/token.ts"]
-      .map((f) => readFileSync(path.join(root, f), "utf8"))
-      .join("\n");
-    const keys = [
-      "errConnectFailed",
-      "libIgTokenInvalid",
-      "libIgTokenWrongKind",
-      "libIgTokenMissing",
-      "libIgTokenFacebook",
-      "libIgSecretMissing",
-      "libIgTokenNotIg",
-      "libIgLinkedNotice",
-      "libIgIdMismatch",
-      "libIgAccountNotFound",
-      "libIgTokenDecrypt",
-      "libIgTokenTooNew",
-    ] as const;
-    for (const key of keys) {
-      // {ตัวแปร} ในแม่แบบ = ${...} ในโค้ดต้นฉบับ
-      const pattern = th[key]
-        .split(/\{\w+\}/)
-        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-        .join("\\$\\{[^}]+\\}");
-      expect(source, key).toMatch(new RegExp(pattern));
-    }
+  it("INSTAGRAM_ERRORS ตรงกับข้อความต้นฉบับในหมวด system (หน้าตั้งค่าใช้ prefix แยกสถานะของบัญชี)", () => {
+    expect(INSTAGRAM_ERRORS.tokenRejected).toBe(systemMessages.th.igTokenRejected);
+    expect(INSTAGRAM_ERRORS.tokenExpired).toBe(systemMessages.th.igTokenExpired);
+    expect(systemMessages.th.igRefreshFailed).toBe(`${INSTAGRAM_ERRORS.refreshPrefix}: {detail}`);
+    expect(systemMessages.th.igSubscribeFailed).toBe(`${INSTAGRAM_ERRORS.subscribePrefix} ({detail})`);
   });
 
   it("ข้อความแจ้ง 'ผูกกับเพจ' ขึ้นต้นด้วย igLinkedPrefix ทั้งสองภาษา (ฟอร์มใช้กรองข้อความนี้ออก)", () => {
+    const notice = systemMessage("igLinkedNotice", { page: "Mali Shop" });
     for (const t of [en, th]) {
-      expect(t("libIgLinkedNotice", { page: "Mali Shop" }).startsWith(t("igLinkedPrefix", { page: "Mali Shop" }))).toBe(true);
+      expect(localizeSystemMessage(notice, t.locale).startsWith(t("igLinkedPrefix", { page: "Mali Shop" }))).toBe(true);
     }
   });
 });

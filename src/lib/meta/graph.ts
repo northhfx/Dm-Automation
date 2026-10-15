@@ -3,6 +3,7 @@ import type { GraphApi, Platform } from "@/db/schema";
 import { getMetaConfig } from "@/lib/config";
 import { appSecretProof } from "@/lib/crypto";
 import { env } from "@/lib/env";
+import { systemMessage } from "@/lib/i18n/system";
 
 /** error จาก Graph API พร้อมบอกว่าควรลองใหม่หรือไม่ */
 export class GraphApiError extends Error {
@@ -72,7 +73,7 @@ export async function graphRequest<T = Record<string, unknown>>(path: string, op
       signal: AbortSignal.timeout(15_000),
     });
   } catch (err) {
-    throw new GraphApiError(`เชื่อมต่อ Graph API ไม่ได้: ${(err as Error).message}`, 0, undefined, undefined, true);
+    throw new GraphApiError(systemMessage("graphUnreachable", { detail: (err as Error).message }), 0, undefined, undefined, true);
   }
 
   const text = await res.text();
@@ -85,7 +86,7 @@ export async function graphRequest<T = Record<string, unknown>>(path: string, op
   if (!res.ok || json.error) {
     const e = (json.error ?? {}) as { message?: string; code?: number; error_subcode?: number; is_transient?: boolean };
     throw new GraphApiError(
-      e.message ?? `Graph API ตอบกลับสถานะ ${res.status}`,
+      e.message ?? systemMessage("graphHttpStatus", { status: String(res.status) }),
       res.status,
       e.code,
       e.error_subcode,
@@ -202,7 +203,7 @@ export async function fetchMessengerParticipantName(pageId: string, psid: string
 
 export async function exchangeForLongLivedUserToken(shortLivedToken: string): Promise<string> {
   const { appId, appSecret } = await getMetaConfig(getDb());
-  if (!appId || !appSecret) throw new Error("ยังไม่ได้ใส่ App ID / App Secret ของ Meta App");
+  if (!appId || !appSecret) throw new Error(systemMessage("metaAppMissing"));
   const data = await graphRequest<{ access_token: string }>("/oauth/access_token", {
     query: {
       grant_type: "fb_exchange_token",
@@ -404,7 +405,7 @@ export async function getInstagramMe(token: string): Promise<InstagramMe> {
   });
   const o = firstObject(json);
   const userId = textOrNull(o.user_id);
-  if (!userId) throw new Error("Instagram ไม่ได้บอก user_id ของบัญชีนี้");
+  if (!userId) throw new Error(systemMessage("igNoUserId"));
   return {
     userId,
     appScopedId: textOrNull(o.id),
@@ -422,7 +423,7 @@ export async function subscribeInstagramAccount(token: string, fields: readonly 
     query: { subscribed_fields: fields.join(",") },
     api: "instagram",
   });
-  if (res.success !== true) throw new Error("Instagram ไม่ยืนยันการรับ webhook");
+  if (res.success !== true) throw new Error(systemMessage("igSubscribeUnconfirmed"));
 }
 
 export async function unsubscribeInstagramAccount(token: string): Promise<void> {
@@ -438,7 +439,7 @@ export interface InstagramTokenGrant {
 function tokenGrant(json: Record<string, unknown>): InstagramTokenGrant {
   const o = firstObject(json);
   const token = textOrNull(o.access_token);
-  if (!token) throw new Error("Instagram ไม่ได้ส่ง access token กลับมา");
+  if (!token) throw new Error(systemMessage("igNoAccessToken"));
   const expiresIn = Number(o.expires_in);
   return { token, expiresInSec: Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : null };
 }

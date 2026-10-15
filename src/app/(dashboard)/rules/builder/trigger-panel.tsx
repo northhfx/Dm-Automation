@@ -31,6 +31,7 @@ import { useFormat, useT } from "@/lib/i18n/client";
 import type { MessageKey, TFunction } from "@/lib/i18n/core";
 import type { Formatters } from "@/lib/i18n/format";
 import { rulesMessages } from "@/lib/i18n/messages/rules";
+import { localizeSystemMessage } from "@/lib/i18n/system";
 import type { RecentPost } from "@/lib/meta/graph";
 import { nextPostStatus, postIdsOf, splitKeywords, type BuilderAction, type BuilderDoc, type Problem } from "./model";
 import { ChipInput } from "./widgets";
@@ -399,7 +400,7 @@ function SpecificPosts({ doc, onPatch, problem, recentPosts, postsError }: Scope
       {postsError && (
         <Notice tone="warning" title={t("postsErrorTitle")}>
           {t("postsErrorBody")}
-          <span className="mt-1 block text-xs break-words opacity-75">{postsError}</span>
+          <span className="mt-1 block text-xs break-words opacity-75">{localizeSystemMessage(postsError, t.locale)}</span>
         </Notice>
       )}
 

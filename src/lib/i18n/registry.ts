@@ -13,6 +13,7 @@ import { navMessages } from "./messages/nav";
 import { rulesMessages } from "./messages/rules";
 import { settingsMessages } from "./messages/settings";
 import { shellMessages } from "./messages/shell";
+import { systemMessages } from "./messages/system";
 
 /*
  * รวมทุกหมวด (namespace) ไว้ที่เดียว — ใช้ฝั่งเซิร์ฟเวอร์ (getT("nav")) และในเทสที่ตรวจว่าแปลครบ
@@ -34,6 +35,7 @@ export const catalogs = {
   rules: rulesMessages,
   settings: settingsMessages,
   shell: shellMessages,
+  system: systemMessages,
 } as const;
 
 export type Namespace = keyof typeof catalogs;

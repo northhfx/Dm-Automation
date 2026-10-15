@@ -177,7 +177,7 @@ export const settingsMessages = defineMessages({
 
     // ---- ฟอร์มวาง token ของ Instagram (instagram-connect-form.tsx) ----
     igConnectPartialToast: "แต่ยังรับคอมเมนต์และข้อความไม่ได้ ดูรายละเอียดในหน้า",
-    /** ต้องเป็นส่วนต้นของ libIgLinkedNotice (ใช้กรองข้อความนั้นออก เพราะแสดงเป็นข้อความสีเขียวแยกแล้ว) */
+    /** ต้องเป็นส่วนต้นของ system.igLinkedNotice ในภาษาเดียวกัน (ใช้กรองข้อความนั้นออก เพราะแสดงเป็นข้อความสีเขียวแยกแล้ว) */
     igLinkedPrefix: "บัญชีนี้ผูกกับเพจ {page}",
     igNeedSecretTitle: "ใส่ Instagram app secret ก่อน",
     igNeedSecretAction: "ไปที่ช่อง app secret",
@@ -233,7 +233,7 @@ export const settingsMessages = defineMessages({
     igStatusOk: "พร้อมใช้งาน",
     igProblemInvalid:
       "token ของบัญชีนี้ใช้ไม่ได้แล้ว — กด Generate token ใหม่ในหน้า API setup with Instagram login แล้ววางในช่องด้านล่าง",
-    /** {error} = สาเหตุที่ต่ออายุไม่สำเร็จ (libIgRefreshFailed) */
+    /** {error} = สาเหตุที่ต่ออายุไม่สำเร็จ (system.igRefreshFailed ที่แปลแล้ว) */
     igProblemRetry: "{error} — ระบบจะลองต่ออายุใหม่เองทุก 6 ชั่วโมง ตอนนี้ยังตอบลูกค้าได้ตามปกติ",
     igEmptyTitle: "ยังไม่ได้เชื่อมบัญชี Instagram",
     igEmptyAction: "ดูวิธีในคู่มือ ขั้นที่ 5",
@@ -255,7 +255,7 @@ export const settingsMessages = defineMessages({
     // ---- ข้อผิดพลาดจาก Server Action (actions.ts) ----
     errPasteUserToken: "กรุณาวาง User Access Token",
     errNoPages: "ไม่พบเพจที่บัญชีนี้เป็นแอดมิน — ตอนสร้าง token ต้องติ๊กเลือกเพจด้วย",
-    /** {detail} = ข้อความ error จาก Meta (ภาษาอังกฤษ) — lib/instagram/connect.ts ใช้ข้อความเดียวกัน */
+    /** {detail} = ข้อความ error จาก Meta หรือข้อความของระบบที่แปลแล้ว (หมวด system) */
     errConnectFailed: "เชื่อมต่อไม่สำเร็จ: {detail}",
     errPickOnePage: "เลือกอย่างน้อย 1 เพจ",
     pagesConnected: "เชื่อมต่อ {count} เพจเรียบร้อย",
@@ -275,27 +275,6 @@ export const settingsMessages = defineMessages({
     errIgMetaSecretFormat: "App secret ไม่ถูกต้อง (ควรเป็นตัวอักษรและตัวเลขติดกัน — กด Show ก่อนคัดลอก)",
     errIgSecretIsFacebook:
       "นี่คือ App Secret ของ Facebook (App settings → Basic) — ต้องใช้ Instagram app secret จากหน้า API setup with Instagram login",
-
-    // ---- ข้อความจาก lib/instagram/* (error / ข้อความแจ้ง / lastError ที่เก็บในฐานข้อมูล) ----
-    // ภาษาไทยต้องตรงกับต้นฉบับในไฟล์นั้นทุกตัวอักษร: ใช้เทียบหาข้อความ แล้วแสดงภาษาอังกฤษแทน (ดู settings/setup-errors.ts)
-    libIgTokenInvalid: "token ใช้ไม่ได้หรือหมดอายุ — กด Generate token ใหม่แล้ววางอีกครั้ง",
-    libIgTokenWrongKind: "token นี้ใช้กับ Instagram Login ไม่ได้ — ต้องสร้างจากหน้า API setup with Instagram login",
-    libIgTokenMissing: "วาง access token ของ Instagram ก่อน",
-    libIgTokenFacebook:
-      "token นี้เป็นของ Facebook (ขึ้นต้นด้วย EAA) — ต้องกด Generate token ในหน้า API setup with Instagram login แล้วคัดลอก token ที่ขึ้นต้นด้วย IG",
-    libIgSecretMissing: "ใส่ Instagram app secret ในหัวข้อ Instagram App ก่อน",
-    libIgTokenNotIg: "token ไม่ได้ขึ้นต้นด้วย IG — ถ้าเชื่อมไม่สำเร็จ ให้สร้าง token ใหม่จากหน้า API setup with Instagram login",
-    libIgSubscribeFailed: "subscribe webhook ไม่สำเร็จ ({detail})",
-    libIgLinkedNotice: "บัญชีนี้ผูกกับเพจ {page} ด้วย — ระบบจะใช้ Instagram Login กับบัญชีนี้แทน",
-    libIgIdMismatch:
-      "ID ของ @{username} จาก Instagram Login ({id}) ไม่ตรงกับที่ผูกกับเพจ ({pageIgId}) — ระบบยังทำงานได้ แต่อาจตอบซ้ำ แจ้งผู้พัฒนา",
-    libIgAccountNotFound: "ไม่พบบัญชี Instagram นี้ อาจถูกยกเลิกการเชื่อมต่อไปแล้ว",
-    libIgTokenDecrypt: "token ถอดรหัสไม่ได้ — วาง token ใหม่",
-    libIgTokenTooNew: "token เพิ่งสร้างไม่ถึง 24 ชั่วโมง ยังต่ออายุไม่ได้ (ระบบจะต่ออายุให้เองอัตโนมัติ)",
-    libIgTokenRejected: "token ของ Instagram ใช้ไม่ได้ — ไปที่ ตั้งค่า → บัญชี Instagram แล้ววาง token ใหม่",
-    libIgTokenExpired:
-      "token Instagram หมดอายุหรือถูกยกเลิก — สร้าง token ใหม่ในหน้า API setup with Instagram login แล้ววางใน ตั้งค่า → บัญชี Instagram",
-    libIgRefreshFailed: "ต่ออายุ token ไม่สำเร็จ: {detail}",
   },
   en: {
     // ---- page header ----
@@ -554,25 +533,5 @@ export const settingsMessages = defineMessages({
     errIgMetaSecretFormat: "That App secret doesn't look right (it should be letters and numbers with no spaces). Click Show before copying.",
     errIgSecretIsFacebook:
       "This is your Facebook App Secret (App settings → Basic). Use the Instagram app secret from the API setup with Instagram login page instead.",
-
-    // ---- messages from lib/instagram/* (shown in English instead of the Thai original) ----
-    libIgTokenInvalid: "This token doesn't work or has expired — click Generate token again and paste the new one.",
-    libIgTokenWrongKind: "This token can't be used with Instagram Login — create it on the API setup with Instagram login page.",
-    libIgTokenMissing: "Paste your Instagram access token first.",
-    libIgTokenFacebook:
-      "This is a Facebook token (it starts with EAA). Click Generate token on the API setup with Instagram login page and copy the token that starts with IG.",
-    libIgSecretMissing: "Enter your Instagram app secret in the Instagram App section first.",
-    libIgTokenNotIg: "This token doesn't start with IG — if connecting fails, create a new token on the API setup with Instagram login page.",
-    libIgSubscribeFailed: "Couldn't subscribe to the webhook ({detail})",
-    libIgLinkedNotice: "This account is also linked to your Page {page} — we'll use Instagram Login for it instead.",
-    libIgIdMismatch:
-      "The ID of @{username} from Instagram Login ({id}) doesn't match the one linked to your Page ({pageIgId}). Things still work, but replies may be sent twice — please tell your developer.",
-    libIgAccountNotFound: "Can't find this Instagram account. It may have been disconnected already.",
-    libIgTokenDecrypt: "Can't read the saved token — paste a new token.",
-    libIgTokenTooNew: "This token is less than 24 hours old, so it can't be renewed yet (we'll renew it automatically).",
-    libIgTokenRejected: "Your Instagram token doesn't work — go to Settings → Instagram accounts and paste a new token.",
-    libIgTokenExpired:
-      "Your Instagram token expired or was revoked — create a new one on the API setup with Instagram login page and paste it in Settings → Instagram accounts.",
-    libIgRefreshFailed: "Couldn't renew the token: {detail}",
   },
 });

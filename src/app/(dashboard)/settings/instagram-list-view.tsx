@@ -6,9 +6,9 @@ import { Avatar, Badge, buttonStyle, cx, EmptyState, PlatformIcon } from "@/comp
 import { useFormat, useT } from "@/lib/i18n/client";
 import type { MessageKey } from "@/lib/i18n/core";
 import { settingsMessages } from "@/lib/i18n/messages/settings";
+import { localizeSystemMessage } from "@/lib/i18n/system";
 import type { InstagramAccountHealth } from "@/lib/instagram/accounts";
 import { DisconnectInstagramButton, RefreshInstagramTokenButton, ResubscribeInstagramButton } from "./instagram-actions";
-import { localizeSetupMessage } from "./setup-errors";
 
 /*
  * หน้าตาของรายการบัญชี Instagram (Client Component เพื่อแสดงตามภาษาที่เลือก)
@@ -113,7 +113,7 @@ export function InstagramAccountsView({ rows, inset }: { rows: InstagramAccountR
 
   function problemText(problem: InstagramProblem): string {
     if (problem.kind === "invalid") return t("igProblemInvalid");
-    const error = localizeSetupMessage(problem.error, t);
+    const error = localizeSystemMessage(problem.error, t.locale);
     return problem.kind === "retrying" ? t("igProblemRetry", { error }) : error;
   }
 

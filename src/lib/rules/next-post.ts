@@ -1,6 +1,7 @@
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { events, rules, type GraphApi, type Platform, type Rule } from "@/db/schema";
+import { systemMessage } from "@/lib/i18n/system";
 import {
   errorInfo,
   getPostInfo,
@@ -71,7 +72,7 @@ async function lookupPost(platform: Platform, postId: string, token: string, api
   if (hit) return hit;
   const info = await getPostInfo(platform, postId, token, api);
   const createdMs = parseGraphTime(info.createdAt);
-  if (createdMs === null) throw new Error("Meta ไม่ได้บอกเวลาที่ลงโพสต์นี้");
+  if (createdMs === null) throw new Error(systemMessage("postTimeMissing"));
   // เก็บด้วย id ที่ได้จาก webhook เพื่อให้คอมเมนต์ถัดไปเจอในแคช
   const post: KnownPost = { id: postId, createdMs, caption: info.caption, permalink: info.permalink, fromId: info.fromId };
   remember(platform, post);
@@ -161,11 +162,7 @@ export async function checkNextPost(
   let target: KnownPost;
   try {
     if (!page.token) {
-      throw new Error(
-        page.api === "instagram"
-          ? "token ของ Instagram ใช้ไม่ได้ — ไปที่ ตั้งค่า → บัญชี Instagram แล้ววาง token ใหม่"
-          : "token ของเพจใช้ไม่ได้ — ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่",
-      );
+      throw new Error(systemMessage(page.api === "instagram" ? "igTokenRejected" : "pageTokenRejected"));
     }
     const commented = await lookupPost(platform, postId, page.token, page.api);
     if (commented.createdMs < sinceFloor(since)) return "no_match"; // โพสต์เก่า ลงก่อนเริ่มรอ

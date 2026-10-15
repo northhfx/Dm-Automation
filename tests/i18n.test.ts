@@ -304,12 +304,27 @@ describe("แถบเมนูสองภาษา", () => {
   });
 });
 
-describe("หน้าที่ยังเป็นภาษาไทยเสมอ", () => {
-  it("หน้าเอกสาร (นโยบาย / การลบข้อมูล) บอกโปรแกรมอ่านหน้าจอว่าเป็นภาษาไทย แม้ <html lang> เป็น en จากคุกกี้", () => {
-    const page = createElement(LegalPage, { title: "นโยบายความเป็นส่วนตัว", subtitle: "Privacy Policy" } as ComponentProps<typeof LegalPage>, "เนื้อหา");
-    const html = render(page, { locale: "en" });
+describe("หน้าเอกสาร (นโยบาย / การลบข้อมูล) ตามภาษา — ทั้งหน้าตรวจละเอียดใน legal-i18n.test.ts", () => {
+  const page = (locale?: Locale) =>
+    render(
+      createElement(LegalPage, { title: "Privacy Policy", subtitle: "Privacy Policy", locale } as ComponentProps<typeof LegalPage>, "Content"),
+      { locale },
+    );
+
+  it("ไม่ส่งภาษา = ไทย พร้อมชื่ออังกฤษเหนือหัวข้อ (lang=en ให้โปรแกรมอ่านหน้าจออ่านถูกสำเนียง)", () => {
+    const html = page();
     expect(html).toMatch(/^<div lang="th"/);
     expect(html).toContain('<p lang="en"');
+    expect(textOf(html)).toContain("กลับหน้าหลัก");
+  });
+
+  it("ภาษาอังกฤษ: lang=en ไม่มีชื่อซ้ำเหนือหัวข้อ และเมนูเอกสารเป็นภาษาอังกฤษ", () => {
+    const html = page("en");
+    expect(html).toMatch(/^<div lang="en"/);
+    expect(html).not.toContain('<p lang="en"');
+    expect(textOf(html)).toContain("Back to home");
+    expect(textOf(html)).toContain("Data Deletion");
+    expect(html).toContain('aria-label="Related documents"');
   });
 });
 

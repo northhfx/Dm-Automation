@@ -8,6 +8,7 @@ import { contacts, events, jobs, links, messages, webhookLogs } from "@/db/schem
 import { I18nProvider } from "@/lib/i18n/client";
 import type { Locale } from "@/lib/i18n/locale";
 import { activityMessages } from "@/lib/i18n/messages/activity";
+import { systemMessage } from "@/lib/i18n/system";
 import { INSTAGRAM_MESSAGE_ACCESS_MENU } from "@/lib/meta/setup-info";
 import { createRule, resetDatabase, singleStep } from "./helpers";
 
@@ -256,6 +257,24 @@ describe("รายการกิจกรรม (timeline) ภาษาอั�
     expect(textOf(compact(event({ type: "dm_failed", error: { message: null, code: null } }), "en"))).toContain("Unknown reason");
   });
 
+  it("ข้อความของระบบ (สาเหตุ / แจ้งชะลอการส่ง) แปลตามภาษา — ข้อความของลูกค้า/ร้านไม่แปล", () => {
+    const stored = systemMessage("stepMissing");
+    const failed = event({ type: "dm_failed", error: { message: stored, code: null } });
+    expect(textOf(full(failed, "en"))).toContain("Reason: This message is no longer in the automation");
+    expect(textOf(compact(failed, "en"))).toContain("This message is no longer in the automation");
+    expect(thaiIn(full(failed, "en"))).toEqual([]);
+    expect(textOf(full(failed))).toContain(`สาเหตุ: ${stored}`);
+
+    const notice = systemMessage("rateLimitNotice", { code: "613", minutes: "4" });
+    const limited = event({ type: "dm_rate_limited", text: notice, person: "@mali.shop", ruleId: null, ruleName: null });
+    expect(textOf(full(limited, "en"))).toContain("(first try in 4 min)");
+    expect(textOf(compact(limited, "en"))).toContain("Meta says this account is sending messages too often for now (code 613).");
+    expect(textOf(full(limited))).toContain(notice);
+
+    // DM ที่ร้านเขียนเอง (บังเอิญตรงกับแม่แบบ) แสดงตามที่ส่งจริง
+    expect(textOf(full(event({ type: "dm_sent", text: stored }), "en"))).toContain(stored);
+  });
+
   it("เหตุผลที่ข้าม + ข้อความยาว (ดูทั้งหมด / ย่อ)", () => {
     const html = full(event({ type: "skipped", skipReason: "once_per_user", text: "x".repeat(200) }), "en");
     expect(textOf(html)).toContain("This person already got it from this automation (set to send once per person)");
@@ -414,6 +433,55 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
       "Page message",
     ]) {
       expect(text, s).toContain(s);
+    }
+  });
+
+  it("กิจกรรม: ข้อความของระบบที่เก็บเป็นภาษาไทย (สาเหตุ / แจ้งชะลอการส่ง / งานที่ล้มเหลว) แสดงเป็นภาษาอังกฤษ", async () => {
+    const fb = { platform: "facebook" as const, pageId: "PAGE1" };
+    const ig = { platform: "instagram" as const, pageId: "IG1" };
+    const failure = (message: string) => ({ error: { message } });
+    const network = systemMessage("graphUnreachable", { detail: "fetch failed" });
+    const rateLimit = systemMessage("rateLimitNotice", { code: "613", minutes: "1" });
+    // ข้อความเดียวกับที่ lib สร้างจริง (แถวเก่าในฐานข้อมูลก็เป็นข้อความชุดนี้)
+    await db.insert(events).values([
+      { ...fb, type: "dm_failed", meta: failure(systemMessage("pageTokenRejected")) },
+      { ...fb, type: "dm_failed", meta: failure(systemMessage("stepMissing")) },
+      { ...fb, type: "public_reply_failed", meta: failure(systemMessage("graphHttpStatus", { status: "502" })) },
+      { ...fb, type: "skipped", meta: { reason: "next_post_lookup_failed", ...failure(network) } },
+      { ...ig, type: "dm_failed", meta: { error: { message: systemMessage("igTokenRejected"), code: 190 } } },
+      { ...ig, type: "token_refresh_failed", meta: { username: "mali.shop", ...failure(systemMessage("igTokenDecrypt")) } },
+      { ...ig, type: "dm_rate_limited", text: rateLimit, meta: { accountName: "@mali.shop" } },
+    ]);
+    await db.insert(jobs).values([
+      { type: "mystery", payload: {}, status: "failed", attempts: 5, lastError: systemMessage("unknownJobType", { type: "mystery" }) },
+      { type: "send_dm", payload: {}, status: "failed", attempts: 5, lastError: network },
+    ]);
+
+    const html = await renderPage(ActivityPage, "/activity", {}, "en");
+    expect(thaiIn(html)).toEqual([]);
+    const text = textOf(html);
+    for (const s of [
+      "Reason: Your Page token doesn't work — go to Settings and reconnect the Page.",
+      "Reason: This message is no longer in the automation (it may have been deleted while waiting to be sent).",
+      "Reason: The Graph API responded with status 502",
+      "Reason: Couldn't reach the Graph API: fetch failed",
+      "Reason: Your Instagram token doesn't work — go to Settings → Instagram accounts and paste a new token.",
+      "Reason: Can't read the saved token — paste a new token.",
+      "Meta says this account is sending messages too often for now (code 613). DMs are paused",
+      "Unknown task type: mystery",
+    ]) {
+      expect(text, s).toContain(s);
+    }
+
+    // การ์ด "กิจกรรมล่าสุด" ในหน้าภาพรวม (แบบย่อ)
+    const overview = await renderPage(OverviewPage, "/", {}, "en");
+    expect(thaiIn(overview)).toEqual([]);
+    expect(textOf(overview)).toContain("Meta says this account is sending messages too often for now");
+
+    // ไม่มีคุกกี้ → ข้อความไทยต้นฉบับเหมือนเดิม
+    const th = textOf(await renderPage(ActivityPage, "/activity"));
+    for (const s of [systemMessage("pageTokenRejected"), rateLimit, network, systemMessage("unknownJobType", { type: "mystery" })]) {
+      expect(th, s).toContain(s);
     }
   });
 

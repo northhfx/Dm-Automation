@@ -18,6 +18,7 @@ import { getPublicBaseUrl } from "@/lib/config";
 import { findConnection, getConnection, type Connection, type LoginKind } from "@/lib/connections";
 import { randomCode } from "@/lib/crypto";
 import { env } from "@/lib/env";
+import { systemMessage } from "@/lib/i18n/system";
 import { fitText, FLOW_LIMITS, flowPayload, parseFlowPayload } from "@/lib/flows/types";
 import { captureInboxItem } from "@/lib/inbox/capture";
 import { INSTAGRAM_ERRORS, markInstagramLoginDelivery, updateInstagramAccountStatus } from "@/lib/instagram/accounts";
@@ -72,7 +73,7 @@ const INSTAGRAM_TEXT_MAX_BYTES = 1000;
 
 /** token ใช้ไม่ได้ → บอกวิธีแก้ให้ตรงกับช่องทางที่เชื่อมไว้ */
 const TOKEN_PROBLEM_MESSAGE: Record<GraphApi, string> = {
-  facebook: "token ของเพจใช้ไม่ได้ — ไปที่หน้าตั้งค่าแล้วเชื่อมต่อเพจใหม่",
+  facebook: systemMessage("pageTokenRejected"),
   instagram: INSTAGRAM_ERRORS.tokenRejected,
 };
 
@@ -639,7 +640,7 @@ function hourlyCaps(data: SendDmJob): HourlyCap[] {
   // ลิมิตต้องเป็นจำนวนเต็ม (ค่าใน env อาจมีทศนิยม) และ 0 หรือติดลบ = ไม่จำกัด
   const all = Math.floor(instagram ? env.instagramDmPerHour : env.facebookDmPerHour);
   if (all > 0) {
-    caps.push({ limit: all, privateRepliesOnly: false, note: `ส่ง DM ครบ ${all} ข้อความใน 1 ชั่วโมงแล้ว` });
+    caps.push({ limit: all, privateRepliesOnly: false, note: systemMessage("capDm", { limit: String(all) }) });
   }
   if (isPrivateReply(data)) {
     const privateReplies = Math.floor(instagram ? env.instagramPrivateReplyPerHour : env.facebookPrivateReplyPerHour);
@@ -647,7 +648,7 @@ function hourlyCaps(data: SendDmJob): HourlyCap[] {
       caps.push({
         limit: privateReplies,
         privateRepliesOnly: true,
-        note: `ตอบคอมเมนต์ทาง DM ครบ ${privateReplies} ครั้งใน 1 ชั่วโมงแล้ว`,
+        note: systemMessage("capPrivateReply", { limit: String(privateReplies) }),
       });
     }
   }
@@ -719,14 +720,19 @@ async function pauseForRateLimit(db: Db, job: Job, next: SendDmJob, conn: Connec
   const runAt = new Date(Date.now() + delayMs);
   const code = errorCodeText(err);
   const minutes = Math.round(delayMs / 60_000);
-  const note = `Meta ขอให้ชะลอการส่ง (รหัส ${code}) รอบที่ ${hits}/${RATE_LIMIT_MAX_WAITS} — ลองส่งใหม่ในอีก ${minutes} นาที`;
+  const note = systemMessage("rateLimitWait", {
+    code,
+    hits: String(hits),
+    max: String(RATE_LIMIT_MAX_WAITS),
+    minutes: String(minutes),
+  });
   await rescheduleJob(db, job, runAt, note, { ...next });
   await postponePendingJobs(
     db,
     "send_dm",
     { platform: next.platform, pageId: [...new Set([conn.id, next.pageId])] },
     runAt,
-    `${note} (พักทั้งบัญชี)`,
+    systemMessage("rateLimitWaitAccount", { note }),
   );
   if (hits !== 1 || !(await claimOnce(db, `rate_limited:${next.platform}:${conn.id}:${Math.floor(Date.now() / HOUR_MS)}`))) {
     return;
@@ -735,9 +741,7 @@ async function pauseForRateLimit(db: Db, job: Job, next: SendDmJob, conn: Connec
     type: "dm_rate_limited",
     platform: next.platform,
     pageId: conn.id,
-    text:
-      `Meta แจ้งว่าบัญชีนี้ส่งข้อความถี่เกินกำหนดชั่วคราว (รหัส ${code}) — ระบบพักการส่ง DM ไว้ก่อน ` +
-      `แล้วจะลองส่งใหม่เองเป็นระยะ (ครั้งแรกในอีก ${minutes} นาที) ข้อความไม่หาย ไม่ต้องทำอะไร`,
+    text: systemMessage("rateLimitNotice", { code, minutes: String(minutes) }),
     meta: {
       api: conn.api,
       // ชื่อเพจหรือ "@username" ของบัญชีร้าน (หน้ากิจกรรมแสดงว่าบัญชีไหนโดนชะลอ)
@@ -770,7 +774,7 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
       meta: {
         api: conn.api,
         stepId: data.stepId,
-        error: { message: "ไม่พบข้อความนี้ในกฎแล้ว (อาจถูกลบระหว่างรอส่ง)" },
+        error: { message: systemMessage("stepMissing") },
       },
     });
     return;
@@ -783,7 +787,7 @@ export async function handleSendDm(db: Db, job: Job): Promise<void> {
 
   const wait = await nextAllowedSendTime(db, conn.id, data);
   if (wait) {
-    await rescheduleJob(db, job, wait.at, `${wait.note} — รอคิวส่งต่อเมื่อพ้นช่วง 1 ชั่วโมง (ข้อความไม่หาย)`);
+    await rescheduleJob(db, job, wait.at, systemMessage("capWait", { note: wait.note }));
     throw new RescheduledError();
   }
 

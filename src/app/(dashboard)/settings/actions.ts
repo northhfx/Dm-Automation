@@ -18,11 +18,11 @@ import {
 import { createT, type MessageKey, type TFunction } from "@/lib/i18n/core";
 import { settingsMessages } from "@/lib/i18n/messages/settings";
 import { getT } from "@/lib/i18n/server";
+import { localizeSystemMessage } from "@/lib/i18n/system";
 import { connectInstagramWithToken, disconnectInstagram, InstagramConnectError, resubscribeInstagram } from "@/lib/instagram/connect";
 import { refreshInstagramAccountToken } from "@/lib/instagram/token";
 import { exchangeForLongLivedUserToken, listManagedPages, subscribePageToApp } from "@/lib/meta/graph";
 import { getPageById, savePage } from "@/lib/pages";
-import { localizeSetupMessage } from "./setup-errors";
 
 type SettingsT = TFunction<MessageKey<typeof settingsMessages>>;
 
@@ -36,6 +36,11 @@ async function settingsT(): Promise<SettingsT> {
   } catch {
     return createT(settingsMessages);
   }
+}
+
+/** ข้อความ error จาก lib (ภาษาไทยต้นฉบับ หรือข้อความจาก Meta) → ภาษาของ t */
+function libError(err: unknown, t: SettingsT): string {
+  return localizeSystemMessage((err as Error)?.message ?? String(err), t.locale);
 }
 
 export interface ConnectState {
@@ -69,7 +74,7 @@ export async function connectAction(prev: ConnectState, formData: FormData): Pro
         pages: managed.map((p) => ({ id: p.id, name: p.name, igUsername: p.instagram_business_account?.username ?? null })),
       };
     } catch (err) {
-      return { step: "token", error: t("errConnectFailed", { detail: (err as Error).message }) };
+      return { step: "token", error: t("errConnectFailed", { detail: libError(err, t) }) };
     }
   }
 
@@ -99,7 +104,7 @@ export async function connectAction(prev: ConnectState, formData: FormData): Pro
         error: problems.length ? problems.join(" · ") : undefined,
       };
     } catch (err) {
-      return { ...prev, error: t("errSaveFailed", { detail: (err as Error).message }) };
+      return { ...prev, error: t("errSaveFailed", { detail: libError(err, t) }) };
     }
   }
 
@@ -117,9 +122,10 @@ async function subscribe(pageId: string, t: SettingsT): Promise<string[]> {
     await db.update(pages).set({ subscribed: true, lastError: null }).where(eq(pages.id, page.id));
     return [];
   } catch (err) {
+    // เก็บข้อความต้นฉบับ (หน้าเว็บแปลตอนแสดง) — ส่วนที่คืนไปแสดงทันทีแปลตามภาษาเลย
     const message = (err as Error).message;
     await db.update(pages).set({ subscribed: false, lastError: message }).where(eq(pages.id, page.id));
-    return [t("errPageSubscribeFailed", { page: page.name, detail: message })];
+    return [t("errPageSubscribeFailed", { page: page.name, detail: localizeSystemMessage(message, t.locale) })];
   }
 }
 
@@ -226,14 +232,14 @@ export async function connectInstagramAction(_prev: InstagramConnectState, formD
     return {
       ok: true,
       message: t("igConnected", { username: result.username }),
-      notices: result.notices.map((n) => localizeSetupMessage(n, t)),
+      notices: result.notices.map((n) => localizeSystemMessage(n, t.locale)),
       subscribed: result.subscribed,
       linkedPage: linked?.name,
     };
   } catch (err) {
-    if (err instanceof InstagramConnectError) return { error: localizeSetupMessage(err.message, t), field: err.field ?? undefined };
+    if (err instanceof InstagramConnectError) return { error: libError(err, t), field: err.field ?? undefined };
     console.error("[instagram] เชื่อมต่อไม่สำเร็จ:", err);
-    return { error: t("errConnectFailed", { detail: (err as Error)?.message ?? String(err) }) };
+    return { error: t("errConnectFailed", { detail: libError(err, t) }) };
   }
 }
 
@@ -271,7 +277,7 @@ export async function resubscribeInstagramAction(formData: FormData): Promise<Fo
   await requireAuth();
   const result = await resubscribeInstagram(getDb(), String(formData.get("accountId") ?? ""));
   revalidateSetup();
-  return result.ok ? { ok: true } : { error: localizeSetupMessage(result.error, await settingsT()) };
+  return result.ok ? { ok: true } : { error: localizeSystemMessage(result.error, (await settingsT()).locale) };
 }
 
 /** ปุ่ม "ต่ออายุ token" (ปกติระบบต่ออายุให้เอง — ปุ่มนี้ไว้ลองทันที) */
@@ -279,7 +285,7 @@ export async function refreshInstagramTokenAction(formData: FormData): Promise<F
   await requireAuth();
   const result = await refreshInstagramAccountToken(getDb(), String(formData.get("accountId") ?? ""), { manual: true });
   revalidateSetup();
-  return result.ok ? { ok: true } : { error: localizeSetupMessage(result.error, await settingsT()) };
+  return result.ok ? { ok: true } : { error: localizeSystemMessage(result.error, (await settingsT()).locale) };
 }
 
 export async function disconnectInstagramAction(formData: FormData): Promise<void> {

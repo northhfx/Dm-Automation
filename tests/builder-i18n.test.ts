@@ -7,6 +7,7 @@ import { rules } from "@/db/schema";
 import { I18nProvider } from "@/lib/i18n/client";
 import type { Locale } from "@/lib/i18n/locale";
 import type { FlowStep } from "@/lib/flows/types";
+import { systemMessage } from "@/lib/i18n/system";
 import type { StepStats } from "@/lib/stats";
 import { createRule, resetDatabase } from "./helpers";
 
@@ -28,6 +29,7 @@ vi.mock("next/cache", () => ({ refresh: () => {}, revalidatePath: () => {} }));
 const model = await import("@/app/(dashboard)/rules/builder/model");
 const { TriggerNode, MessageNode } = await import("@/app/(dashboard)/rules/builder/nodes");
 const { MessagePanel } = await import("@/app/(dashboard)/rules/builder/message-panel");
+const { TriggerPanel } = await import("@/app/(dashboard)/rules/builder/trigger-panel");
 const { FlowCanvas } = await import("@/app/(dashboard)/rules/builder/canvas");
 type CanvasApi = import("@/app/(dashboard)/rules/builder/canvas").CanvasApi;
 const { ChipInput } = await import("@/app/(dashboard)/rules/builder/widgets");
@@ -464,6 +466,18 @@ describe("หน้าตัวสร้างกฎทั้งหน้า", (
   it("ภาษาไทยเหมือนเดิม", () => {
     expectAll(textOf(page({ ...base, id: 7 })), ["ภาพรวม", "ภาพรวมและสิ่งที่ต้องแก้", "เหลืออีก 2 ขั้นก่อนบันทึก"]);
     expect(textOf(page({ ...ok, id: undefined }))).toContain("ครบแล้ว พร้อมบันทึก");
+  });
+});
+
+describe("แผงเงื่อนไข (เลือกการ์ด “เมื่อ…”)", () => {
+  it("ดึงโพสต์ล่าสุดไม่สำเร็จ: สาเหตุที่เป็นข้อความของระบบแสดงตามภาษา", () => {
+    const postsError = systemMessage("graphUnreachable", { detail: "fetch failed" });
+    const panel = (locale?: Locale) =>
+      render(createElement(TriggerPanel, { doc: docOf(), dispatch: noop, problems: [], recentPosts: [], postsError }), locale);
+    const en = panel("en");
+    expectNoThai(en);
+    expect(textOf(en)).toContain("Couldn't reach the Graph API: fetch failed");
+    expect(textOf(panel())).toContain(postsError);
   });
 });
 

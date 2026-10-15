@@ -4,6 +4,7 @@ import { CircleAlert, CircleCheck, CircleX, Plug } from "lucide-react";
 import { Avatar, Badge, buttonStyle, cx, EmptyState, PlatformIcon } from "@/components/ui";
 import { useFormat, useT } from "@/lib/i18n/client";
 import { settingsMessages } from "@/lib/i18n/messages/settings";
+import { localizeSystemMessage } from "@/lib/i18n/system";
 import { DisconnectButton, ResubscribeButton } from "./page-actions";
 
 /*
@@ -20,6 +21,7 @@ export interface PageRow {
   igUsername: string | null;
   /** บัญชี Instagram ของเพจนี้เชื่อมผ่าน Instagram Login อยู่ (ระบบใช้ Instagram Login แทน) */
   igLogin: boolean;
+  /** ข้อความที่เก็บไว้ตอน subscribe webhook ไม่สำเร็จ (ภาษาไทยต้นฉบับหรือข้อความจาก Meta — แปลตอนแสดง) */
   lastError: string | null;
   connectedAt: Date;
 }
@@ -73,7 +75,7 @@ export function PagesListView({ rows, inset }: { rows: PageRow[]; inset?: boolea
   return (
     <ul className={cx("divide-y divide-line", inset && "rounded-lg border border-line bg-surface")}>
       {rows.map((p) => {
-        const problem = !p.tokenOk ? t("pageTokenProblem") : p.lastError;
+        const problem = !p.tokenOk ? t("pageTokenProblem") : p.lastError && localizeSystemMessage(p.lastError, t.locale);
         return (
           <li key={p.id} className={cx("flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4", inset ? "p-4" : "px-5 py-4")}>
             <div className="flex min-w-0 flex-1 items-start gap-3">

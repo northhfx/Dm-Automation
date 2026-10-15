@@ -2,6 +2,7 @@ import { and, eq, lt } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { dedupKeys, inboxItems, jobs, webhookLogs, type Job } from "@/db/schema";
 import { handleComment, handleDm, handlePagePost, handleRead, handleSendDm, RescheduledError } from "@/lib/automation/handlers";
+import { systemMessage } from "@/lib/i18n/system";
 import { inboxCutoff } from "@/lib/inbox/retention";
 import { refreshDueInstagramTokens } from "@/lib/instagram/token";
 import type { CommentJob, DmJob, PagePostJob, ReadJob } from "@/lib/meta/webhook";
@@ -18,7 +19,7 @@ const HANDLERS: Record<string, (db: Db, job: Job) => Promise<void>> = {
 export async function processJob(db: Db, job: Job): Promise<void> {
   const handler = HANDLERS[job.type];
   if (!handler) {
-    await failJob(db, { ...job, attempts: job.maxAttempts }, `ไม่รู้จักงานประเภท ${job.type}`);
+    await failJob(db, { ...job, attempts: job.maxAttempts }, systemMessage("unknownJobType", { type: job.type }));
     return;
   }
   try {

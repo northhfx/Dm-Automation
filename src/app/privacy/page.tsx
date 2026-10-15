@@ -1,55 +1,53 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
+import { legalMessages } from "@/lib/i18n/messages/legal";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "นโยบายความเป็นส่วนตัว" };
 export const dynamic = "force-dynamic";
 
-/** หน้านโยบายความเป็นส่วนตัว — Meta บังคับให้มีตอนส่ง App Review */
-export default function PrivacyPage() {
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getT("legal"))("privacyTitle") };
+}
+
+/** หน้านโยบายความเป็นส่วนตัว — Meta บังคับให้มีตอนส่ง App Review (ภาษาตามคุกกี้ lang ไม่มีคุกกี้ = ไทย) */
+export default async function PrivacyPage() {
+  const t = await getT("legal");
   const businessName = process.env.BUSINESS_NAME;
-  const business = businessName || "ผู้ให้บริการเพจ";
+  const business = businessName || t("privacyBusinessFallback");
   const email = process.env.CONTACT_EMAIL;
   return (
     <LegalPage
-      title="นโยบายความเป็นส่วนตัว"
-      subtitle="Privacy Policy"
+      title={t("privacyTitle")}
+      subtitle={legalMessages.en.privacyTitle}
       current="/privacy"
       brand={businessName || undefined}
+      locale={t.locale}
     >
-      <p>
-        {business} (&quot;เรา&quot;) ใช้ระบบนี้เพื่อตอบคอมเมนต์และข้อความบน Facebook และ Instagram ของเราโดยอัตโนมัติ
-        นโยบายนี้อธิบายว่าเราเก็บและใช้ข้อมูลของคุณอย่างไร
-      </p>
+      <p>{t("privacyIntro", { business })}</p>
 
-      <h2>ข้อมูลที่เราเก็บ</h2>
+      <h2>{t("privacyCollectHeading")}</h2>
       <ul>
-        <li>ชื่อ, ชื่อผู้ใช้ และรหัสผู้ใช้ที่ Facebook/Instagram ส่งให้เรา เมื่อคุณคอมเมนต์หรือส่งข้อความถึงเพจ</li>
-        <li>ข้อความในคอมเมนต์หรือแชทที่คุณส่งถึงเพจ</li>
-        <li>ข้อมูลการกดลิงก์ที่เราส่งให้ (จำนวนครั้งและเวลา)</li>
+        <li>{t("privacyCollectProfile")}</li>
+        <li>{t("privacyCollectMessages")}</li>
+        <li>{t("privacyCollectClicks")}</li>
       </ul>
 
-      <h2>เราใช้ข้อมูลเพื่อ</h2>
+      <h2>{t("privacyUseHeading")}</h2>
       <ul>
-        <li>ตอบคอมเมนต์และส่งข้อมูลที่คุณขอทางข้อความ</li>
-        <li>ดูสถิติภาพรวม เช่น จำนวนข้อความที่ส่งและอัตราการคลิก เพื่อปรับปรุงการบริการ</li>
+        <li>{t("privacyUseReply")}</li>
+        <li>{t("privacyUseStats")}</li>
       </ul>
-      <p>เราไม่ขายหรือเปิดเผยข้อมูลของคุณให้บุคคลภายนอก นอกจากผู้ให้บริการที่จำเป็นต่อการทำงานของระบบ (เช่น ผู้ให้บริการเซิร์ฟเวอร์)</p>
+      <p>{t("privacySharing")}</p>
 
-      <h2>การเก็บรักษาและการลบข้อมูล</h2>
-      <p>
-        ข้อมูลจะถูกเก็บไว้ตราบเท่าที่จำเป็นต่อการให้บริการ คุณสามารถขอลบข้อมูลได้ตามขั้นตอนใน{" "}
-        <Link href="/data-deletion">หน้าการลบข้อมูล</Link>
-      </p>
+      <h2>{t("privacyRetentionHeading")}</h2>
+      <p>{t.rich("privacyRetention", { link: <Link href="/data-deletion">{t("privacyRetentionLink")}</Link> })}</p>
 
-      <h2>ติดต่อเรา</h2>
+      <h2>{t("privacyContactHeading")}</h2>
       <p>
-        ส่งข้อความหาเพจของเราโดยตรง
-        {email && (
-          <>
-            {" "}หรืออีเมล <a href={`mailto:${email}`}>{email}</a>
-          </>
-        )}
+        {email
+          ? t.rich("privacyContactEmail", { email: <a href={`mailto:${email}`}>{email}</a> })
+          : t("privacyContact")}
       </p>
     </LegalPage>
   );

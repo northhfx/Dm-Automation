@@ -4,6 +4,7 @@ import { instagramAccounts, type InstagramAccountRow } from "@/db/schema";
 import { decrypt, encrypt } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import type { LoginKind } from "@/lib/connections";
+import { systemMessage } from "@/lib/i18n/system";
 
 /**
  * บัญชี Instagram ที่เชื่อมผ่าน Instagram Login (ตาราง instagram_accounts)
@@ -37,13 +38,14 @@ export const INSTAGRAM_TOKEN_WARN_MS = 7 * 24 * 60 * 60_000;
 /**
  * ข้อความ lastError ของบัญชี — ตัวที่บันทึก (handlers, token.ts, connect.ts) กับหน้าที่แสดงสถานะใช้ชุดเดียวกัน
  * หน้าเว็บจึงแยกได้ว่า "ต้องวาง token ใหม่" หรือ "ปัญหาชั่วคราว ระบบลองใหม่เอง"
+ * ข้อความเต็มอยู่ในหมวด system (แสดงเป็นภาษาอังกฤษได้ด้วย localizeSystemMessage) — prefix คือส่วนต้นของ
+ * system.igRefreshFailed / system.igSubscribeFailed (เทสตรวจว่าตรงกัน)
  */
 export const INSTAGRAM_ERRORS = {
   /** Meta ไม่รับ token แล้ว (code 190) ตอนส่งข้อความ/ดึงข้อมูล */
-  tokenRejected: "token ของ Instagram ใช้ไม่ได้ — ไปที่ ตั้งค่า → บัญชี Instagram แล้ววาง token ใหม่",
+  tokenRejected: systemMessage("igTokenRejected"),
   /** ต่ออายุไม่ได้เพราะ token หมดอายุหรือถูกยกเลิก */
-  tokenExpired:
-    "token Instagram หมดอายุหรือถูกยกเลิก — สร้าง token ใหม่ในหน้า API setup with Instagram login แล้ววางใน ตั้งค่า → บัญชี Instagram",
+  tokenExpired: systemMessage("igTokenExpired"),
   /** ขึ้นต้นข้อความเมื่อต่ออายุไม่สำเร็จชั่วคราว (ระบบลองใหม่เองทุก 6 ชั่วโมง) */
   refreshPrefix: "ต่ออายุ token ไม่สำเร็จ",
   /** ขึ้นต้นข้อความเมื่อ subscribe webhook ไม่สำเร็จ */
