@@ -384,8 +384,10 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
       "How your automations did over the last 7 days",
       "Daily",
       // พิมพ์ keyword 3 คน (Contact ใหม่ทั้งหมด) · คลิกลิงก์ 1 คน
-      "New contacts 3",
-      "Returning contacts 0",
+      // การ์ด Contact: 3 คน (นับคนละ 1) ใหม่ทั้งหมด
+      "Contacts 3",
+      "New 3",
+      "Returning 0",
       "33%",
       "No data for the previous period",
       "Show as a table",

@@ -89,9 +89,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
               hint: tPage("statTypedHint"),
               value: f.number(typedAll),
               split: counts(typed),
-              people: { newCount: f.number(funnel.totals.newPeople), returning: f.number(funnel.totals.returningPeople) },
               change: change(typedAll, previousTyped),
-              href: "/contacts",
             },
             {
               label: tPage("statClicked"),
@@ -113,6 +111,15 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
               change: pointsChange(clickRate, rate(sum(previous.clicked), previousTyped)),
               changeNote: previousTyped > 0 && typedAll === 0 ? tPage("noTypedYet") : undefined,
               changeKind: "points",
+            },
+            {
+              label: tPage("statContacts"),
+              hint: tPage("statContactsHint"),
+              value: f.number(sum(funnel.totals.contacts)),
+              split: counts(funnel.totals.contacts),
+              people: { newCount: f.number(funnel.totals.newContacts), returning: f.number(funnel.totals.returningContacts) },
+              change: change(sum(funnel.totals.contacts), sum(previous.contacts)),
+              href: "/contacts",
             },
           ]}
         />

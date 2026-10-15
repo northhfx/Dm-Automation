@@ -151,13 +151,13 @@ function PeopleLine({ people, t }: { people: { newCount: string; returning: stri
   );
 }
 
-/** การ์ดตัวเลขสรุป 3 ใบ: มือถือ 1 + 2 · จอกว้าง 3 ใบเรียงกัน */
+/** การ์ดตัวเลขสรุป 4 ใบ: มือถือ/แท็บเล็ต 2 × 2 · จอกว้าง 4 ใบเรียงกัน */
 export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; locale: Locale }) {
   const t = tOf(locale);
   const f = formatters(locale);
   return (
-    <section aria-label={t("kpiAria")} className="grid grid-cols-2 gap-3 md:grid-cols-3">
-      {items.map((k, i) => {
+    <section aria-label={t("kpiAria")} className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {items.map((k) => {
         const body = (
           <>
             <p className="truncate text-sm leading-6 text-fg-2" title={k.hint}>
@@ -173,7 +173,7 @@ export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; 
             </p>
           </>
         );
-        const cls = cx("flex min-w-0 flex-col rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5", i === 0 && "col-span-2 md:col-span-1");
+        const cls = "flex min-w-0 flex-col rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5";
         return k.href ? (
           <Link key={k.label} href={k.href} className={cx(cls, "transition hover:border-line-strong hover:shadow-sm")}>
             {body}

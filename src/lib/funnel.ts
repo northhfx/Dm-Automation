@@ -14,7 +14,8 @@ import type { PlatformCounts } from "@/lib/stats";
  *   หรือส่งข้อความแรกไม่สำเร็จ (dm_failed จากคอมเมนต์/แชท — รวมตอน token ใช้ไม่ได้ ที่ไม่มี rule_triggered) — คนเดียวกันรวมเป็น 1
  * - คนคลิกลิงก์ = คนที่พิมพ์ keyword ในช่วงนั้น แล้วคลิกลิงก์ของกฎเดียวกันในช่วงเดียวกันอย่างน้อย 1 ครั้ง
  *   (นับจาก link_clicked — ไม่นับการกดปุ่มไปข้อความถัดไป) → อัตราคลิก = คนคลิกลิงก์ ÷ คนพิมพ์ keyword ไม่เกิน 100%
- * - Contact ใหม่ = ระบบเพิ่งรู้จักในช่วงนี้ (contacts.first_seen_at อยู่ในช่วง หรือยังไม่มี contact) · Contact เดิม = รู้จักก่อนช่วงนี้
+ * - Contact = คนในหน้ารายชื่อลูกค้าที่พิมพ์ keyword ในช่วงนี้ นับคนละ 1 (พิมพ์กี่กฎก็ 1) — คนที่ยังไม่มี contact (DM ส่งไม่สำเร็จ) ไม่นับ
+ *   Contact ใหม่ = ระบบเพิ่งรู้จักในช่วงนี้ (contacts.first_seen_at อยู่ในช่วง) · Contact เดิม = รู้จักก่อนช่วงนี้
  * ระบุตัวคน: contact_id ของกิจกรรม → ถ้าไม่มี (คอมเมนต์ที่ DM ยังไม่ส่ง / ส่งไม่สำเร็จ / ข้อมูลก่อนมีการผูก contact)
  * หาจากกิจกรรมอื่นของคนเดียวกัน (actor_id เดียวกันที่รู้ contact แล้ว) หรือ contact ที่มี id ตรงกัน (Instagram / แชท)
  * (ไม่เทียบ page_id: id ของคนไม่ซ้ำกันอยู่แล้วในแพลตฟอร์มเดียวกัน และ page_id ของ IG เปลี่ยนได้เมื่อสลับวิธีเชื่อมต่อ)
@@ -22,11 +23,28 @@ import type { PlatformCounts } from "@/lib/stats";
  */
 
 export interface FunnelTotals {
+  /** คน × กฎ */
   typed: PlatformCounts;
   clicked: PlatformCounts;
-  /** ใหม่ + เดิม = typed ทั้งหมด */
-  newPeople: number;
-  returningPeople: number;
+  /** Contact ที่พิมพ์ keyword ในช่วงนี้ (คนละ 1) — ใหม่ + เดิม = รวมทั้งสองแพลตฟอร์ม */
+  contacts: PlatformCounts;
+  newContacts: number;
+  returningContacts: number;
+}
+
+function emptyTotals(): FunnelTotals {
+  return { typed: empty(), clicked: empty(), contacts: empty(), newContacts: 0, returningContacts: 0 };
+}
+
+/** นับ Contact ไม่ซ้ำคน (แถวของ funnelRows เป็น คน × กฎ) */
+function addContact(totals: FunnelTotals, seen: Set<number>, r: Row, platform: Platform) {
+  if (r.contact_id == null) return;
+  const id = num(r.contact_id);
+  if (seen.has(id)) return;
+  seen.add(id);
+  totals.contacts[platform]++;
+  if (r.returning) totals.returningContacts++;
+  else totals.newContacts++;
 }
 
 export interface FunnelDay {
@@ -114,7 +132,7 @@ async function funnelRows(db: Db, start: SQL, end: SQL) {
         AND created_at >= ${start} AND created_at < ${end}
       GROUP BY 1, 2
     )
-    SELECT p.rule_id, p.platform,
+    SELECT p.rule_id, p.platform, p.contact_id,
       to_char(p.first_at AT TIME ZONE ${tz}, 'YYYY-MM-DD') AS typed_day,
       to_char(c.clicked_at AT TIME ZONE ${tz}, 'YYYY-MM-DD') AS clicked_day,
       c.clicked_at IS NOT NULL AS clicked,
@@ -129,7 +147,8 @@ async function funnelRows(db: Db, start: SQL, end: SQL) {
 export async function getFunnel(db: Db, days: number, dates: string[]): Promise<Funnel> {
   const { start, end } = rangeOf(days, false);
   const rows = await funnelRows(db, start, end);
-  const totals: FunnelTotals = { typed: empty(), clicked: empty(), newPeople: 0, returningPeople: 0 };
+  const totals = emptyTotals();
+  const seen = new Set<number>();
   const daily = new Map(dates.map((date) => [date, { date, typed: empty(), clicked: empty() } as FunnelDay]));
   const byRule = new Map<number, RuleFunnel>();
   for (const r of rows.rows) {
@@ -139,8 +158,7 @@ export async function getFunnel(db: Db, days: number, dates: string[]): Promise<
     byRule.set(ruleId, rule);
     totals.typed[r.platform]++;
     rule.typed++;
-    if (r.returning) totals.returningPeople++;
-    else totals.newPeople++;
+    addContact(totals, seen, r, r.platform);
     const typedDay = daily.get(String(r.typed_day));
     if (typedDay) typedDay.typed[r.platform]++;
     if (r.clicked) {
@@ -157,13 +175,13 @@ export async function getFunnel(db: Db, days: number, dates: string[]): Promise<
 export async function getPreviousFunnel(db: Db, days: number): Promise<FunnelTotals> {
   const { start, end } = rangeOf(days, true);
   const rows = await funnelRows(db, start, end);
-  const totals: FunnelTotals = { typed: empty(), clicked: empty(), newPeople: 0, returningPeople: 0 };
+  const totals = emptyTotals();
+  const seen = new Set<number>();
   for (const r of rows.rows) {
     if (!isPlatform(r.platform)) continue;
     totals.typed[r.platform]++;
     if (r.clicked) totals.clicked[r.platform]++;
-    if (r.returning) totals.returningPeople++;
-    else totals.newPeople++;
+    addContact(totals, seen, r, r.platform);
   }
   return totals;
 }

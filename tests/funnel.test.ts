@@ -80,9 +80,10 @@ describe("getFunnel (นับเป็นคน)", () => {
 
     expect(f.totals.typed).toEqual({ facebook: 3, instagram: 1 });
     expect(f.totals.clicked).toEqual({ facebook: 1, instagram: 0 });
-    // c1 (2 กฎ) เป็น Contact เดิม · c2 กับคนที่ไม่มี contact เป็นคนใหม่
-    expect(f.totals.returningPeople).toBe(2);
-    expect(f.totals.newPeople).toBe(2);
+    // Contact นับคนละ 1: c1 พิมพ์ 2 กฎ = 1 คน (Contact เดิม) · c2 = Contact ใหม่ · คนที่ไม่มี contact (U9) ไม่นับ
+    expect(f.totals.contacts).toEqual({ facebook: 1, instagram: 1 });
+    expect(f.totals.returningContacts).toBe(1);
+    expect(f.totals.newContacts).toBe(1);
     expect(f.byRule.get(a.id)).toEqual({ typed: 3, clicked: 1 });
     expect(f.byRule.get(b.id)).toEqual({ typed: 1, clicked: 0 });
 
@@ -97,8 +98,9 @@ describe("getFunnel (นับเป็นคน)", () => {
     expect(await getPreviousFunnel(db, 7)).toEqual({
       typed: { facebook: 1, instagram: 0 },
       clicked: { facebook: 1, instagram: 0 },
-      newPeople: 1,
-      returningPeople: 0,
+      contacts: { facebook: 1, instagram: 0 },
+      newContacts: 1,
+      returningContacts: 0,
     });
   });
 
@@ -113,8 +115,9 @@ describe("getFunnel (นับเป็นคน)", () => {
     expect((await getPreviousFunnel(db, 7)).clicked).toEqual({ facebook: 0, instagram: 0 });
     const f = await getFunnel(db, 7, []);
     expect(f.byRule.get(a.id)).toEqual({ typed: 4, clicked: 1 });
-    // c3 รู้จักก่อนช่วงนี้ → Contact เดิม
-    expect(f.totals.returningPeople).toBe(3);
+    // c3 รู้จักก่อนช่วงนี้ → Contact เดิม (c1 เดิม, c2 ใหม่)
+    expect(f.totals.returningContacts).toBe(2);
+    expect(f.totals.newContacts).toBe(1);
   });
 
   it("คอมเมนต์ที่ยังไม่มี contact: หาคนเดียวกันจากกิจกรรมอื่น (ไม่นับซ้ำ + คลิกนับได้)", async () => {
@@ -134,7 +137,7 @@ describe("getFunnel (นับเป็นคน)", () => {
     const f = await getFunnel(db, 7, []);
     expect(f.totals.typed).toEqual({ facebook: 1, instagram: 0 });
     expect(f.totals.clicked).toEqual({ facebook: 1, instagram: 0 });
-    expect(f.totals.returningPeople).toBe(1);
+    expect(f.totals.returningContacts).toBe(1);
   });
 
   it("Instagram: id คนคอมเมนต์ตรงกับ contact เลย + กฎตอบคนละครั้งนับเป็นคนกลับมา", async () => {
@@ -150,7 +153,12 @@ describe("getFunnel (นับเป็นคน)", () => {
       createdAt: at(1),
     });
     const f = await getFunnel(db, 7, []);
-    expect(f.totals).toMatchObject({ typed: { facebook: 0, instagram: 1 }, newPeople: 0, returningPeople: 1 });
+    expect(f.totals).toMatchObject({
+      typed: { facebook: 0, instagram: 1 },
+      contacts: { facebook: 0, instagram: 1 },
+      newContacts: 0,
+      returningContacts: 1,
+    });
   });
 
   it("ส่งข้อความแรกไม่สำเร็จ (token ใช้ไม่ได้ — ไม่มี rule_triggered) ก็นับว่าพิมพ์ keyword · IG ที่สลับวิธีเชื่อมต่อยังเป็นคนเดิม", async () => {
@@ -167,7 +175,9 @@ describe("getFunnel (นับเป็นคน)", () => {
     ]);
     const f = await getFunnel(db, 7, []);
     expect(f.totals.typed).toEqual({ facebook: 1, instagram: 1 });
-    expect(f.totals.returningPeople).toBe(1);
+    // คนที่ DM ไม่สำเร็จ (ASID_T) ยังไม่มี contact → ไม่อยู่ในการ์ด Contact
+    expect(f.totals.contacts).toEqual({ facebook: 0, instagram: 1 });
+    expect(f.totals.returningContacts).toBe(1);
   });
 
   it("กฎที่มีปุ่มลิงก์", async () => {
