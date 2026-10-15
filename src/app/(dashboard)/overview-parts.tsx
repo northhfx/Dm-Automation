@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, CircleAlert, CircleCheck, MessageCircle, MessagesSquare, Rocket, TriangleAlert } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, CircleAlert, CircleCheck, MessageCircle, MessagesSquare, Rocket, TriangleAlert, UserCheck, UserPlus } from "lucide-react";
 import type { Platform } from "@/db/schema";
 import { Badge, ButtonLink, cx, PlatformIcon, ProgressBar, tableClass } from "@/components/ui";
 import type { SetupStatus } from "@/lib/config";
@@ -82,8 +82,8 @@ export interface Kpi {
   value: string;
   /** แยก Facebook / Instagram ใต้ตัวเลข (จัดรูปแบบแล้ว เช่น "68" หรือ "20%") */
   split?: { facebook: string; instagram: string };
-  /** บรรทัดเล็กใต้ split เช่น "Contact ใหม่ 85 · เดิม 35" */
-  extra?: string;
+  /** Contact ใหม่ / เดิม ใต้ split (จัดรูปแบบแล้ว) */
+  people?: { newCount: string; returning: string };
   /** เปลี่ยนแปลงเทียบช่วงก่อน — null = ช่วงก่อนเป็น 0 / ไม่มีข้อมูล */
   change: number | null;
   /** percent = "+12%" (ตัวเลข), points = "+4.5 จุด" (อัตรา) */
@@ -125,6 +125,29 @@ function SplitLine({ split }: { split: { facebook: string; instagram: string } }
   );
 }
 
+/** "[+] Contact ใหม่ 11  [✓] Contact เดิม 3" — ป้ายชัดๆ ใต้ตัวเลขคนพิมพ์ keyword */
+function PeopleLine({ people, t }: { people: { newCount: string; returning: string }; t: T }) {
+  const items = [
+    { icon: <UserPlus aria-hidden />, label: t("statNewContacts"), hint: t("statNewContactsHint"), value: people.newCount },
+    { icon: <UserCheck aria-hidden />, label: t("statReturningContacts"), hint: t("statReturningContactsHint"), value: people.returning },
+  ];
+  return (
+    <ul className="mt-2.5 flex flex-wrap gap-1.5">
+      {items.map((i) => (
+        <li
+          key={i.label}
+          title={i.hint}
+          className="inline-flex items-center gap-1.5 rounded-md bg-surface-2 px-2 py-1 text-xs leading-4 text-fg-2 [&_svg]:size-3.5 [&_svg]:text-fg-3"
+        >
+          {i.icon}
+          {i.label}
+          <span className="font-semibold text-fg tabular">{i.value}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** การ์ดตัวเลขสรุป 3 ใบ: มือถือ 1 + 2 · จอกว้าง 3 ใบเรียงกัน */
 export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; locale: Locale }) {
   const t = tOf(locale);
@@ -140,7 +163,7 @@ export function KpiCards({ items, days, locale }: { items: Kpi[]; days: number; 
             </p>
             <p className="mt-1 text-[30px] leading-9 font-semibold tracking-tight text-fg">{k.value}</p>
             <div className="mt-1.5 min-h-5 text-xs leading-5">{k.split && <SplitLine split={k.split} />}</div>
-            {k.extra && <p className="text-xs leading-5 text-fg-3">{k.extra}</p>}
+            {k.people && <PeopleLine people={k.people} t={t} />}
             {/* ล่างสุดของการ์ด: เทียบช่วงก่อน — เส้นคั่นของทุกการ์ดอยู่ระดับเดียวกัน */}
             <div className="min-h-3 flex-1" aria-hidden />
             <p className="flex flex-wrap items-center gap-x-1.5 border-t border-line pt-2.5 text-xs leading-5">

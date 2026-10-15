@@ -368,6 +368,8 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
     expect(th).toContain("ภาพรวม");
     expect(th).toContain("ยังไม่มีกฎอัตโนมัติ");
     expect(th).toContain("ไม่พบปัญหาในช่วงนี้");
+    expect(th).toContain("Contact ใหม่ 0");
+    expect(th).toContain("Contact เดิม 0");
     expect(th).not.toContain("Best-performing automations");
   });
 
@@ -380,7 +382,8 @@ describe("ทั้งหน้าเป็นภาษาอังกฤษเ�
       "How your automations did over the last 7 days",
       "Daily",
       // พิมพ์ keyword 3 คน (Contact ใหม่ทั้งหมด) · คลิกลิงก์ 1 คน
-      "New 3 · Returning 0",
+      "New contacts 3",
+      "Returning contacts 0",
       "33%",
       "No data for the previous period",
       "Show as a table",

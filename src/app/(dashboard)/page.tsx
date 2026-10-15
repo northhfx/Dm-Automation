@@ -83,10 +83,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
               hint: tPage("statTypedHint"),
               value: f.number(typedAll),
               split: counts(typed),
-              extra:
-                typedAll > 0
-                  ? tPage("statNewReturning", { new: f.number(funnel.totals.newPeople), returning: f.number(funnel.totals.returningPeople) })
-                  : undefined,
+              people: { newCount: f.number(funnel.totals.newPeople), returning: f.number(funnel.totals.returningPeople) },
               change: change(typedAll, sum(previous.typed)),
               href: "/contacts",
             },
