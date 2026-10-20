@@ -67,11 +67,16 @@ export const instagramAccounts = pgTable(
 export type InstagramAccountRow = typeof instagramAccounts.$inferSelect;
 
 /** โฟลเดอร์ (โปรเจกต์) สำหรับจัดกลุ่มกฎในหน้ากฎอัตโนมัติ — ชั้นเดียว กฎหนึ่งอยู่ได้โฟลเดอร์เดียว (ไม่มีผลกับการตอบ) */
-export const ruleFolders = pgTable("rule_folders", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const ruleFolders = pgTable(
+  "rule_folders",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // ชื่อไม่ซ้ำ (ไม่สนตัวพิมพ์เล็ก/ใหญ่) — กันกรณีสร้างพร้อมกันสองที่
+  (t) => [uniqueIndex("rule_folders_name_idx").on(sql`lower(${t.name})`)],
+);
 
 /** กฎอัตโนมัติ: เมื่อเจอ keyword → ตอบคอมเมนต์ / ส่ง DM */
 export const rules = pgTable("rules", {

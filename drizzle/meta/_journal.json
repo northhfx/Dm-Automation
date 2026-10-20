@@ -99,6 +99,13 @@
       "when": 1792514067355,
       "tag": "0013_rule_folders",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792516003802,
+      "tag": "0014_rule_folders_unique_name",
+      "breakpoints": true
     }
   ]
 }

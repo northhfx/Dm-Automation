@@ -97,11 +97,13 @@ export function Menu({
     if (!btn || !pop) return;
     const r = btn.getBoundingClientRect();
     const w = pop.offsetWidth;
-    const h = pop.offsetHeight;
+    // สูงไม่เกินจอ (max-h) — เมนูยาวเลื่อนในตัวได้
+    const h = Math.min(pop.offsetHeight, window.innerHeight - 16);
     let left = align === "end" ? r.right - w : r.left;
     left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
     let top = r.bottom + 6;
-    if (top + h > window.innerHeight - 8 && r.top - h - 6 > 8) top = r.top - h - 6;
+    // ด้านล่างไม่พอ → ขึ้นด้านบนถ้าพอ ไม่งั้นชิดขอบล่างของจอ (ไม่ให้รายการท้ายๆ ตกขอบจอ)
+    if (top + h > window.innerHeight - 8) top = r.top - h - 6 > 8 ? r.top - h - 6 : Math.max(8, window.innerHeight - h - 8);
     pop.style.left = `${Math.round(left)}px`;
     pop.style.top = `${Math.round(top)}px`;
   }, [align]);
@@ -200,7 +202,7 @@ export function Menu({
           aria-label={label}
           onKeyDown={onMenuKeyDown}
           className={cx(
-            "ui-popover fixed inset-auto m-0 min-w-48 max-w-[calc(100vw-16px)] overflow-hidden rounded-xl border border-line bg-surface p-1 text-sm text-fg shadow-lg",
+            "ui-popover fixed inset-auto m-0 max-h-[calc(100dvh-16px)] min-w-48 max-w-[calc(100vw-16px)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-1 text-sm text-fg shadow-lg",
             menuClassName,
           )}
         >

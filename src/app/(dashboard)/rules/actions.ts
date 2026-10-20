@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, ne, not, sql } from "drizzle-orm";
+import { and, eq, ne, not, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect, RedirectType } from "next/navigation";
 import { getDb } from "@/db/client";
@@ -11,7 +11,7 @@ import { DEFAULT_LOCALE, type Locale } from "@/lib/i18n/locale";
 import { builderMessages } from "@/lib/i18n/messages/builder";
 import { rulesMessages } from "@/lib/i18n/messages/rules";
 import { getLocale } from "@/lib/i18n/server";
-import { cleanFolderName, FOLDER_NAME_MAX, folderHref, inFolder, parseFolderFilter } from "@/lib/rules/folders";
+import { cleanFolderName, FOLDER_NAME_MAX, folderHref, inFolder, isFolderId, parseFolderFilter } from "@/lib/rules/folders";
 import { movedPriorities } from "@/lib/rules/order";
 import { nextPostState } from "@/lib/rules/post-scope";
 import { formDataToValues, validateRule, type RuleFormState } from "./form-values";
@@ -64,10 +64,7 @@ export async function saveRule(prev: RuleFormState, formData: FormData): Promise
   const scope = nextPostState(null, result.data.postScope, false, now);
   // สร้างจากในโฟลเดอร์ → อยู่ในโฟลเดอร์นั้นเลย (โฟลเดอร์ถูกลบไประหว่างนั้น → ไม่อยู่ในโฟลเดอร์ไหน)
   const folderId = await existingFolderId(formData.get("folderId"));
-  const [created] = await db
-    .insert(rules)
-    .values({ ...result.data, ...scope, folderId })
-    .returning({ id: rules.id });
+  const [created] = await insertRule({ ...result.data, ...scope, folderId });
   revalidatePath("/rules");
   // แทนที่ /rules/new ในประวัติ → กดย้อนกลับแล้วไม่วนกลับมาหน้ากฎเปล่า
   redirect(`/rules/${created.id}?saved=1`, RedirectType.replace);
@@ -96,10 +93,7 @@ export async function duplicateRule(formData: FormData): Promise<void> {
   const scope = nextPostState(null, rule.postScope, true, new Date());
   // ชื่อสำเนาตามภาษาที่ใช้อยู่ตอนกดทำสำเนา (เป็นชื่อกฎที่เจ้าของร้านเห็น แก้ทีหลังได้)
   const name = createT(builderMessages, await requestLocale())("copyName", { rule: rule.name });
-  const [created] = await db
-    .insert(rules)
-    .values({ ...copy, ...scope, name: name.slice(0, 100), active: false })
-    .returning({ id: rules.id });
+  const [created] = await insertRule({ ...copy, ...scope, name: name.slice(0, 100), active: false });
   revalidatePath("/rules");
   redirect(`/rules/${created.id}`);
 }
@@ -117,12 +111,17 @@ export async function moveRule(formData: FormData): Promise<void> {
   await db.transaction(async (tx) => {
     const rule = Number.isInteger(id) ? await tx.query.rules.findFirst({ where: eq(rules.id, id), columns: { trigger: true } }) : undefined;
     if (!rule) return;
-    const group = await tx
+    // โฟลเดอร์ที่ดูอยู่ถูกลบไปแล้ว (เช่น จากอีกแท็บ) → แจ้งว่าไม่สำเร็จ แทนที่จะขึ้นว่าย้ายแล้ว
+    if (typeof filter === "number" && !(await tx.query.ruleFolders.findFirst({ where: eq(ruleFolders.id, filter), columns: { id: true } }))) {
+      throw new Error("folder not found");
+    }
+    const locked = await tx
       .select({ id: rules.id, priority: rules.priority, folderId: rules.folderId })
       .from(rules)
       .where(eq(rules.trigger, rule.trigger))
-      .orderBy(asc(rules.priority), asc(rules.id))
       .for("update");
+    // เรียงหลังล็อกแล้ว (ORDER BY ใน SELECT … FOR UPDATE เรียงก่อนรอล็อก → ถ้ามีคนย้ายพร้อมกันจะได้ลำดับเก่า)
+    const group = locked.sort((a, b) => a.priority - b.priority || a.id - b.id);
     const visible = filter === "all" ? undefined : new Set(group.filter((r) => inFolder(r.folderId, filter)).map((r) => r.id));
     const next = movedPriorities(
       group.map((r) => r.id),
@@ -158,10 +157,27 @@ export interface FolderFormState {
   done?: number;
 }
 
+/** รหัส error ของ Postgres (drizzle ห่อไว้ใน cause) เช่น 23505 = ซ้ำ, 23503 = อ้างถึงแถวที่ไม่มีแล้ว */
+function pgCode(err: unknown): string | undefined {
+  const e = err as { code?: string; cause?: { code?: string } };
+  return e.cause?.code ?? e.code;
+}
+
+/** เพิ่มกฎ — โฟลเดอร์ถูกลบไประหว่างนั้นพอดี (FK ไม่ผ่าน) → เพิ่มแบบไม่อยู่ในโฟลเดอร์แทน */
+async function insertRule(values: typeof rules.$inferInsert): Promise<{ id: number }[]> {
+  const db = getDb();
+  try {
+    return await db.insert(rules).values(values).returning({ id: rules.id });
+  } catch (err) {
+    if (values.folderId == null || pgCode(err) !== "23503") throw err;
+    return db.insert(rules).values({ ...values, folderId: null }).returning({ id: rules.id });
+  }
+}
+
 /** id โฟลเดอร์ที่มีอยู่จริง (ค่าว่าง / ไม่พบ → null) */
 async function existingFolderId(raw: FormDataEntryValue | null): Promise<number | null> {
   const id = Number(raw);
-  if (!Number.isInteger(id) || id <= 0) return null;
+  if (!isFolderId(id)) return null;
   const folder = await getDb().query.ruleFolders.findFirst({ where: eq(ruleFolders.id, id), columns: { id: true } });
   return folder?.id ?? null;
 }
@@ -186,7 +202,14 @@ export async function createFolder(prev: FolderFormState, formData: FormData): P
   const checked = await checkFolderName(formData.get("name"), null);
   if ("error" in checked) return { error: checked.error, attempt };
   const db = getDb();
-  const [created] = await db.insert(ruleFolders).values({ name: checked.name }).returning({ id: ruleFolders.id });
+  let created: { id: number };
+  try {
+    [created] = await db.insert(ruleFolders).values({ name: checked.name }).returning({ id: ruleFolders.id });
+  } catch (err) {
+    // สร้างชื่อเดียวกันพร้อมกันสองที่ → ฐานข้อมูลกันไว้ (unique lower(name))
+    if (pgCode(err) === "23505") return { error: createT(rulesMessages, await requestLocale())("folderNameTaken"), attempt };
+    throw err;
+  }
   const ruleId = Number(formData.get("ruleId"));
   if (Number.isInteger(ruleId) && ruleId > 0) await db.update(rules).set({ folderId: created.id }).where(eq(rules.id, ruleId));
   revalidatePath("/rules");
@@ -201,7 +224,12 @@ export async function renameFolder(prev: FolderFormState, formData: FormData): P
   if (!id) redirect("/rules");
   const checked = await checkFolderName(formData.get("name"), id);
   if ("error" in checked) return { error: checked.error, attempt };
-  await getDb().update(ruleFolders).set({ name: checked.name }).where(eq(ruleFolders.id, id));
+  try {
+    await getDb().update(ruleFolders).set({ name: checked.name }).where(eq(ruleFolders.id, id));
+  } catch (err) {
+    if (pgCode(err) === "23505") return { error: createT(rulesMessages, await requestLocale())("folderNameTaken"), attempt };
+    throw err;
+  }
   revalidatePath("/rules");
   return { attempt, done: attempt };
 }

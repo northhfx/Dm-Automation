@@ -297,6 +297,8 @@ function RuleMenu({ rule, href, folders, filter, canUp, canDown, movable }: { ru
             hint={f.id === rule.folderId ? t("folderCurrent") : undefined}
             successMessage={t("movedToFolder", { rule: rule.name, folder: f.name })}
           >
+            {/* โปรแกรมอ่านหน้าจออ่านแค่รายการในเมนู (ไม่อ่านหัวข้อ) → บอกด้วยว่าเป็นการย้าย */}
+            <span className="sr-only">{t("moveToFolder")}: </span>
             {f.name}
           </MenuItem>
         ))}

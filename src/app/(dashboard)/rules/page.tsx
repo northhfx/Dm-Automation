@@ -105,6 +105,8 @@ export default async function RulesPage({ searchParams }: PageProps<"/rules">) {
           {folders.length > 0 && <FolderTabs folders={folders} filter={filter} total={items.length} noneCount={items.filter((r) => r.folderId === null).length} />}
           {shown.length > 0 ? (
             <RuleList rules={shown} folders={folders} filter={filter} />
+          ) : filter === "all" ? (
+            <RulesEmptyState />
           ) : filter === "none" ? (
             <EmptyState icon={<FolderOpen />} title={t("folderNoneEmptyTitle")}>
               {t("folderNoneEmptyBody")}

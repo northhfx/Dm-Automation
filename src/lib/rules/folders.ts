@@ -5,13 +5,20 @@
 
 export const FOLDER_NAME_MAX = 60;
 
+/** id ที่เก็บในคอลัมน์ integer ได้ (เลขที่ใหญ่กว่านี้จาก URL ที่พิมพ์เอง → ถือว่าไม่มี ไม่ให้ query พัง) */
+const INT4_MAX = 2_147_483_647;
+
+export function isFolderId(id: number): boolean {
+  return Number.isInteger(id) && id > 0 && id <= INT4_MAX;
+}
+
 export type FolderFilter = "all" | "none" | number;
 
 export function parseFolderFilter(value: string | string[] | undefined): FolderFilter {
   const v = Array.isArray(value) ? value[0] : value;
   if (v === "none") return "none";
   const id = Number(v);
-  return Number.isInteger(id) && id > 0 ? id : "all";
+  return isFolderId(id) ? id : "all";
 }
 
 /** ลิงก์หน้ารายการกฎตามตัวกรอง */

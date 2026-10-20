@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { Folder, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { Dialog } from "@/components/dialog";
 import { Menu, MenuItem, MenuSeparator } from "@/components/menu";
@@ -37,7 +37,7 @@ export function FolderDialog(props: DialogProps) {
   const tCommon = useT(commonMessages);
   const inputId = useId();
   const rename = props.mode === "rename";
-  const [state, formAction] = useActionState<FolderFormState, FormData>(rename ? renameFolder : createFolder, {});
+  const [state, formAction, pending] = useActionState<FolderFormState, FormData>(rename ? renameFolder : createFolder, {});
   // ซ่อน error เดิมเมื่อเปิดหน้าต่างใหม่ (state ของ action ค้างอยู่จนกว่าจะส่งครั้งถัดไป)
   const [shownFrom, setShownFrom] = useState(0);
   const error = state.error && (state.attempt ?? 0) > shownFrom ? state.error : undefined;
@@ -61,7 +61,8 @@ export function FolderDialog(props: DialogProps) {
   }, [state.done]);
 
   function close() {
-    setShownFrom(state.attempt ?? 0);
+    // ปิดระหว่างกำลังบันทึก → ผลของครั้งนั้นก็ไม่ต้องแสดงตอนเปิดใหม่
+    setShownFrom((state.attempt ?? 0) + (pending ? 1 : 0));
     onClose();
   }
 
@@ -134,11 +135,23 @@ export function FolderTabs({
   const [renaming, setRenaming] = useState(false);
   const selected = typeof filter === "number" ? folders.find((f) => f.id === filter) : undefined;
   const value = typeof filter === "number" ? String(filter) : filter;
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // จอแคบ: แถบเลื่อนได้ → เลื่อนให้เห็นโฟลเดอร์ที่เลือกอยู่ (เช่น เพิ่งสร้าง หรือกดป้ายโฟลเดอร์จากการ์ด)
+  useEffect(() => {
+    const strip = stripRef.current?.querySelector<HTMLElement>('[role="group"]');
+    const active = strip?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!strip || !active) return;
+    const left = active.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft || left + active.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollTo({ left: Math.max(0, left - 16) });
+    }
+  }, [value]);
 
   return (
     <div className="flex items-center gap-2">
       {/* ไม่ยืดเต็มแถว → ปุ่ม ⋮ ของโฟลเดอร์อยู่ติดแถบ */}
-      <div className="min-w-0">
+      <div ref={stripRef} className="min-w-0">
         <SegmentedControl
           label={t("folderTabsLabel")}
           value={value}

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, type ComponentProps, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
-import { asc, eq } from "drizzle-orm";
+import { readFileSync } from "node:fs";
+import { asc, eq, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { ruleFolders, rules } from "@/db/schema";
 import { I18nProvider } from "@/lib/i18n/client";
@@ -60,6 +61,8 @@ describe("ตัวช่วย", () => {
     expect(parseFolderFilter(["4", "5"])).toBe(4);
     expect(parseFolderFilter("abc")).toBe("all");
     expect(parseFolderFilter("-1")).toBe("all");
+    // เกินขนาดคอลัมน์ integer (URL ที่พิมพ์เอง) → ไม่ให้ query พัง
+    expect(parseFolderFilter("3000000000")).toBe("all");
     expect(inFolder(null, "none")).toBe(true);
     expect(inFolder(2, "none")).toBe(false);
     expect(inFolder(2, 2)).toBe(true);
@@ -116,6 +119,51 @@ describe("สร้าง / เปลี่ยนชื่อ / ลบโฟล�
     expect(await redirectOf(() => actions.deleteFolder(fd({ id: folder.id })))).toBe("/rules");
     const row = await db.query.rules.findFirst({ where: eq(rules.id, rule.id) });
     expect(row).toMatchObject({ folderId: null, active: true });
+  });
+});
+
+describe("กันกรณีทำพร้อมกัน / ข้อมูลเก่า", () => {
+  it("สร้างชื่อเดียวกันพร้อมกันสองที่ → ได้โฟลเดอร์เดียว อีกที่ขึ้นว่าชื่อซ้ำ", async () => {
+    const results = await Promise.allSettled([
+      actions.createFolder({}, fd({ name: "Promo" })),
+      actions.createFolder({}, fd({ name: "promo" })),
+    ]);
+    expect(await db.select().from(ruleFolders)).toHaveLength(1);
+    const errors = results.flatMap((r) => (r.status === "fulfilled" && r.value.error ? [r.value.error] : []));
+    expect(errors).toEqual(["มีโฟลเดอร์ชื่อนี้แล้ว"]);
+  });
+
+  it("ย้ายพร้อมกันสองกฎ → ไม่ทับกัน (ผลเหมือนทำทีละอัน)", async () => {
+    const [a, b, c, d] = [await createRule({ name: "A", priority: 10 }), await createRule({ name: "B", priority: 20 }), await createRule({ name: "C", priority: 30 }), await createRule({ name: "D", priority: 40 })];
+    await Promise.all([actions.moveRule(fd({ id: d.id, dir: "up" })), actions.moveRule(fd({ id: a.id, dir: "down" }))]);
+    const order = (await db.select({ id: rules.id }).from(rules).orderBy(asc(rules.priority), asc(rules.id))).map((r) => r.id);
+    expect(order).toEqual([b.id, a.id, d.id, c.id]);
+  });
+
+  it("ย้ายลำดับจากโฟลเดอร์ที่ถูกลบไปแล้ว (แท็บเก่า) → แจ้งไม่สำเร็จ ไม่ขึ้นว่าย้ายแล้ว", async () => {
+    const [folder] = await db.insert(ruleFolders).values({ name: "Gone" }).returning();
+    await createRule({ name: "A", priority: 10, folderId: folder.id });
+    const c = await createRule({ name: "C", priority: 30, folderId: folder.id });
+    await db.delete(ruleFolders).where(eq(ruleFolders.id, folder.id));
+    await expect(actions.moveRule(fd({ id: c.id, dir: "up", folder: folder.id }))).rejects.toThrow();
+  });
+
+  it("id เกินขนาด integer ไม่ทำให้ฐานข้อมูล error", async () => {
+    const rule = await createRule();
+    await expect(actions.setRuleFolder(fd({ id: rule.id, folder: "3000000000" }))).rejects.toThrow("folder not found");
+    const { default: NewRulePage } = await import("@/app/(dashboard)/rules/new/page");
+    await expect(NewRulePage({ searchParams: Promise.resolve({ folder: "3000000000" }) } as never)).resolves.toBeTruthy();
+  });
+
+  it("migration: ชื่อซ้ำที่มีอยู่ก่อนถูกต่อท้ายด้วย id แล้วจึงสร้าง unique index ได้", async () => {
+    const file = readFileSync("drizzle/0014_rule_folders_unique_name.sql", "utf8");
+    const [dedupe, createIndex] = file.split("--> statement-breakpoint");
+    await db.execute(sql`DROP INDEX rule_folders_name_idx`);
+    await db.insert(ruleFolders).values([{ name: "Promo" }, { name: "PROMO" }, { name: "Other" }]);
+    await db.execute(sql.raw(dedupe));
+    await db.execute(sql.raw(createIndex));
+    const names = (await db.select().from(ruleFolders).orderBy(asc(ruleFolders.id))).map((f) => f.name);
+    expect(names).toEqual(["Promo", "PROMO (2)", "Other"]);
   });
 });
 
@@ -216,6 +264,14 @@ describe("หน้า /rules กรองตามโฟลเดอร์", ()
     expect(text).toContain("ยังไม่มีกฎในโฟลเดอร์นี้");
     expect(text).toContain("สร้างกฎในโฟลเดอร์นี้");
     expect(text).not.toContain("อื่น");
+  });
+
+  it("มีโฟลเดอร์แต่ยังไม่มีกฎเลย (ดูทั้งหมด): หน้าเริ่มต้นปกติ ไม่ใช่ 'โฟลเดอร์นี้ว่าง'", async () => {
+    await db.insert(ruleFolders).values({ name: "ว่าง" });
+    const text = textOf(await page(undefined));
+    expect(text).not.toContain("ยังไม่มีกฎในโฟลเดอร์นี้");
+    expect(text).not.toContain("สร้างกฎในโฟลเดอร์นี้");
+    expect(text).toContain("ว่าง"); // แถบโฟลเดอร์ยังอยู่ (เปลี่ยนชื่อ/ลบได้)
   });
 
   it("ยังไม่มีโฟลเดอร์: ไม่มีแถบโฟลเดอร์ (มีแค่ปุ่มโฟลเดอร์ใหม่)", async () => {
