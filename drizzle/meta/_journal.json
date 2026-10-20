@@ -92,6 +92,13 @@
       "when": 1792070749944,
       "tag": "0012_events_actor_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792514067355,
+      "tag": "0013_rule_folders",
+      "breakpoints": true
     }
   ]
 }

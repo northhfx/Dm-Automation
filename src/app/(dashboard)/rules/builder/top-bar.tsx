@@ -9,11 +9,14 @@ import { Button, cx } from "@/components/ui";
 import { useFormat, useT } from "@/lib/i18n/client";
 import { commonMessages } from "@/lib/i18n/messages/common";
 import { rulesMessages } from "@/lib/i18n/messages/rules";
+import { folderHref } from "@/lib/rules/folders";
 import { deleteRule, duplicateRule } from "../actions";
 import type { RuleSummaryStats } from "./overview-panel";
 
 interface Props {
   ruleId?: number;
+  /** กฎอยู่ในโฟลเดอร์ → ปุ่มย้อนกลับไปหน้าโฟลเดอร์นั้น */
+  folder?: { id: number; name: string };
   name: string;
   nameRef: Ref<HTMLInputElement>;
   nameInvalid: boolean;
@@ -26,16 +29,16 @@ interface Props {
   onSave: () => void;
 }
 
-export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pending, stats, onName, onActive, onSave }: Props) {
+export function TopBar({ ruleId, folder, name, nameRef, nameInvalid, active, dirty, pending, stats, onName, onActive, onSave }: Props) {
   const t = useT(rulesMessages);
   const tCommon = useT(commonMessages);
   const f = useFormat();
   return (
     <header className="relative z-20 flex h-16 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 sm:gap-3 sm:px-4">
       <Link
-        href="/rules"
-        aria-label={t("backAria")}
-        title={t("backTitle")}
+        href={folderHref(folder ? folder.id : "all")}
+        aria-label={folder ? t("backFolderAria", { folder: folder.name }) : t("backAria")}
+        title={folder ? folder.name : t("backTitle")}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-fg-2 transition-colors hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
       >
         <ArrowLeft size={20} aria-hidden="true" />
@@ -117,7 +120,7 @@ export function TopBar({ ruleId, name, nameRef, nameInvalid, active, dirty, pend
             <MenuSeparator />
             <MenuItem
               action={deleteRule}
-              fields={{ id: ruleId }}
+              fields={{ id: ruleId, folder: folder?.id }}
               icon={<Trash2 />}
               tone="danger"
               confirm={{ title: t("deleteThisTitle"), description: t("deleteThisBody"), confirmLabel: t("deleteConfirm") }}

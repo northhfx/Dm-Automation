@@ -60,6 +60,8 @@ interface Props {
   postsError: string | null;
   stepStats?: Record<string, StepStats>;
   ruleStats?: RuleSummaryStats;
+  /** โฟลเดอร์ของกฎ (กฎใหม่ที่สร้างจากในโฟลเดอร์ → บันทึกเข้าโฟลเดอร์นี้) — ปุ่มย้อนกลับไปหน้าโฟลเดอร์นั้น */
+  folder?: { id: number; name: string } | null;
 }
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -94,7 +96,7 @@ const sameMeasure = (a: MeasuredNode | undefined, b: MeasuredNode) =>
  * หน้าสร้าง/แก้กฎแบบแผนผัง (ManyChat-style): การ์ด "เมื่อ…" → การ์ดข้อความ → ปุ่ม → การ์ดถัดไป
  * ทุกอย่างอยู่ใน reducer (ฟอร์มของ React 19 รีเซ็ตเองหลังส่งก็ไม่ทำให้ข้อมูลหาย)
  */
-export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleStats }: Props) {
+export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleStats, folder }: Props) {
   const router = useRouter();
   const locale = useLocale();
   const t = useT(builderMessages);
@@ -363,8 +365,9 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     submitted.current = doc;
     setClearedAttempt(saveState.attempt);
     const data = toFormData(doc, ruleId);
+    if (!ruleId && folder) data.append("folderId", String(folder.id));
     startTransition(() => formAction(data));
-  }, [pending, problems, goTo, doc, ruleId, formAction, saveState.attempt, t]);
+  }, [pending, problems, goTo, doc, ruleId, folder, formAction, saveState.attempt, t]);
 
   const handled = useRef(saveState);
   useEffect(() => {
@@ -526,6 +529,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     <div className="relative flex h-[calc(100dvh-var(--app-topbar-h,0px))] min-h-0 flex-col overflow-clip bg-bg">
       <TopBar
         ruleId={ruleId}
+        folder={folder ?? undefined}
         name={doc.name}
         nameRef={nameRef}
         nameInvalid={showErrors && problems.some((p) => p.key === "name")}

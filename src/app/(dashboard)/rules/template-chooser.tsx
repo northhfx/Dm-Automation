@@ -82,7 +82,8 @@ const TEMPLATES: TemplateOption[] = [
   },
 ];
 
-const hrefOf = (id: TemplateOption["id"]) => `/rules/new?template=${id}`;
+/** folderId = สร้างจากในโฟลเดอร์ → กฎใหม่อยู่ในโฟลเดอร์นั้น */
+const hrefOf = (id: TemplateOption["id"], folderId?: number) => `/rules/new?template=${id}${folderId ? `&folder=${folderId}` : ""}`;
 
 /**
  * ภาพลำดับการทำงานย่อส่วน: [ไอคอน]—[ไอคอน]—[ไอคอน]
@@ -156,7 +157,15 @@ const optionBase =
  * รายการแบบเริ่มต้น
  * layout="list": แถวเรียงลงมา (ในหน้าต่าง) · layout="grid": การ์ด 3 ใบเรียงกัน (ในหน้าว่าง)
  */
-export function TemplateOptions({ layout = "list", className }: { layout?: "list" | "grid"; className?: string }) {
+export function TemplateOptions({
+  layout = "list",
+  folderId,
+  className,
+}: {
+  layout?: "list" | "grid";
+  folderId?: number;
+  className?: string;
+}) {
   const t = useT(rulesMessages);
   if (layout === "grid") {
     return (
@@ -164,7 +173,7 @@ export function TemplateOptions({ layout = "list", className }: { layout?: "list
         {TEMPLATES.map((tpl) => (
           <li key={tpl.id} className="flex">
             <Link
-              href={hrefOf(tpl.id)}
+              href={hrefOf(tpl.id, folderId)}
               className={cx(
                 optionBase,
                 "w-full flex-col overflow-hidden",
@@ -203,7 +212,7 @@ export function TemplateOptions({ layout = "list", className }: { layout?: "list
       {TEMPLATES.map((tpl) => (
         <li key={tpl.id}>
           <Link
-            href={hrefOf(tpl.id)}
+            href={hrefOf(tpl.id, folderId)}
             className={cx(
               optionBase,
               "items-center gap-3.5 p-3.5 sm:gap-4 sm:p-4",
@@ -241,11 +250,14 @@ export function NewRuleButton({
   children,
   size = "md",
   block,
+  folderId,
   className,
 }: {
   children?: ReactNode;
   size?: ButtonSize;
   block?: boolean;
+  /** กฎใหม่อยู่ในโฟลเดอร์นี้ */
+  folderId?: number;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -263,7 +275,7 @@ export function NewRuleButton({
         icon={<Zap aria-hidden />}
         iconTone="accent"
       >
-        <TemplateOptions />
+        <TemplateOptions folderId={folderId} />
       </Dialog>
     </>
   );

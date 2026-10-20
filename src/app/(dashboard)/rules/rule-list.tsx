@@ -1,13 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useOptimistic, useTransition, type ReactNode } from "react";
+import { Fragment, useOptimistic, useState, useTransition, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
   CalendarClock,
   ChevronRight,
   Copy,
+  Folder,
+  FolderInput,
+  FolderMinus,
+  FolderPlus,
   Info,
   Layers,
   ListChecks,
@@ -24,13 +28,15 @@ import {
 import type { MatchType, Platform, PostScope, TriggerType } from "@/db/schema";
 import { Badge, cx, PlatformIcon } from "@/components/ui";
 import { Switch } from "@/components/switch";
-import { Menu, MenuItem, MenuSeparator } from "@/components/menu";
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/menu";
 import { runAction, toFormData } from "@/components/action";
 import { toast } from "@/components/toast";
 import { useFormat, useT } from "@/lib/i18n/client";
 import type { MessageKey, TFunction } from "@/lib/i18n/core";
 import { rulesMessages } from "@/lib/i18n/messages/rules";
-import { deleteRule, duplicateRule, moveRule, toggleRule } from "./actions";
+import { folderHref, type FolderFilter } from "@/lib/rules/folders";
+import { deleteRule, duplicateRule, moveRule, setRuleFolder, toggleRule } from "./actions";
+import { FolderDialog, type FolderSummary } from "./folder-controls";
 import { TemplateOptions } from "./template-chooser";
 
 /*
@@ -42,6 +48,10 @@ import { TemplateOptions } from "./template-chooser";
 export interface RuleListItem {
   id: number;
   name: string;
+  /** ลำดับในกลุ่ม (คอมเมนต์ / แชท) นับรวมทุกโฟลเดอร์ — ระบบตรวจตามลำดับนี้ */
+  rank: number;
+  folderId: number | null;
+  folderName: string | null;
   active: boolean;
   trigger: TriggerType;
   platforms: Platform[];
@@ -74,9 +84,11 @@ const GROUPS: { trigger: TriggerType; title: RulesKey; icon: ReactNode }[] = [
   { trigger: "dm", title: "groupDm", icon: <MessagesSquare /> },
 ];
 
-export function RuleList({ rules }: { rules: RuleListItem[] }) {
+/** rules = กฎที่เห็นตามโฟลเดอร์ที่เลือก (เรียงตามลำดับแล้ว) */
+export function RuleList({ rules, folders = [], filter = "all" }: { rules: RuleListItem[]; folders?: FolderSummary[]; filter?: FolderFilter }) {
   const t = useT(rulesMessages);
   const groups = GROUPS.map((g) => ({ ...g, rules: rules.filter((r) => r.trigger === g.trigger) })).filter((g) => g.rules.length > 0);
+  const notes = [t("statsSince"), t("ctrHint"), t("moveHint"), ...(filter === "all" ? [] : [t("folderRankNote")])];
   return (
     <div className="space-y-8">
       {groups.map((g) => (
@@ -98,7 +110,15 @@ export function RuleList({ rules }: { rules: RuleListItem[] }) {
           </div>
           <ol className="space-y-3">
             {g.rules.map((r, i) => (
-              <RuleCard key={r.id} rule={r} rank={i + 1} total={g.rules.length} />
+              <RuleCard
+                key={r.id}
+                rule={r}
+                folders={folders}
+                filter={filter}
+                canUp={i > 0}
+                canDown={i < g.rules.length - 1}
+                movable={g.rules.length > 1}
+              />
             ))}
           </ol>
         </section>
@@ -106,13 +126,23 @@ export function RuleList({ rules }: { rules: RuleListItem[] }) {
 
       <p className="flex items-start gap-2 text-xs leading-5 text-fg-3">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        <span>{[t("statsSince"), t("ctrHint"), t("moveHint")].join(" · ")}</span>
+        <span>{notes.join(" · ")}</span>
       </p>
     </div>
   );
 }
 
-function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; total: number }) {
+interface CardPlace {
+  folders: FolderSummary[];
+  filter: FolderFilter;
+  /** ย้ายขึ้น/ลงได้ (เทียบกับกฎที่เห็นอยู่ในกลุ่มเดียวกัน) */
+  canUp: boolean;
+  canDown: boolean;
+  movable: boolean;
+}
+
+function RuleCard({ rule, ...place }: { rule: RuleListItem } & CardPlace) {
+  const rank = rule.rank;
   const t = useT(rulesMessages);
   const [active, setActive] = useOptimistic(rule.active);
   const [pending, startTransition] = useTransition();
@@ -169,6 +199,20 @@ function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; tot
                   {rule.name}
                 </Link>
               </h3>
+              {/* ดูทั้งหมด → บอกว่าอยู่โฟลเดอร์ไหน (กดไปที่โฟลเดอร์นั้นได้) */}
+              {place.filter === "all" && rule.folderId !== null && rule.folderName && (
+                <Link
+                  href={folderHref(rule.folderId)}
+                  title={t("folderChipTitle", { folder: rule.folderName })}
+                  className={cx(
+                    "relative z-10 inline-flex h-6 max-w-[14rem] items-center gap-1 rounded-md border border-line bg-surface-2 px-1.5 text-xs font-medium text-fg-2 transition-colors hover:border-line-strong hover:text-fg [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-fg-3",
+                    muted,
+                  )}
+                >
+                  <Folder aria-hidden />
+                  <span className="truncate">{rule.folderName}</span>
+                </Link>
+              )}
               {/* จอใหญ่มีคำว่า "ปิดอยู่" ข้างสวิตช์แล้ว */}
               {!active && (
                 <Badge tone="neutral" dot className="sm:hidden">
@@ -184,7 +228,7 @@ function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; tot
               {active ? t("statusOn") : t("statusOff")}
             </span>
             <Switch checked={active} onChange={toggle} busy={pending} label={t("toggleLabel", { rule: rule.name })} hideLabel />
-            <RuleMenu rule={rule} href={href} rank={rank} total={total} />
+            <RuleMenu rule={rule} href={href} {...place} />
           </div>
         </div>
 
@@ -204,56 +248,89 @@ function RuleCard({ rule, rank, total }: { rule: RuleListItem; rank: number; tot
   );
 }
 
-function RuleMenu({ rule, href, rank, total }: { rule: RuleListItem; href: string; rank: number; total: number }) {
+function RuleMenu({ rule, href, folders, filter, canUp, canDown, movable }: { rule: RuleListItem; href: string } & CardPlace) {
   const t = useT(rulesMessages);
+  const [newFolder, setNewFolder] = useState(false);
+  const view = typeof filter === "number" ? String(filter) : filter;
   return (
-    <Menu label={t("menuLabel", { rule: rule.name })}>
-      <MenuItem href={href} icon={<Pencil />}>
-        {t("edit")}
-      </MenuItem>
-      <MenuItem action={duplicateRule} fields={{ id: rule.id }} icon={<Copy />} successMessage={t("duplicated")}>
-        {t("duplicate")}
-      </MenuItem>
-      {total > 1 && (
-        <>
-          <MenuSeparator />
-          {/* ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนกว่า → ย้ายแทนการพิมพ์ "ลำดับความสำคัญ" เอง */}
+    <>
+      <Menu label={t("menuLabel", { rule: rule.name })}>
+        <MenuItem href={href} icon={<Pencil />}>
+          {t("edit")}
+        </MenuItem>
+        <MenuItem action={duplicateRule} fields={{ id: rule.id }} icon={<Copy />} successMessage={t("duplicated")}>
+          {t("duplicate")}
+        </MenuItem>
+        {movable && (
+          <>
+            <MenuSeparator />
+            {/* ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนกว่า → ย้ายแทนการพิมพ์ "ลำดับความสำคัญ" เอง */}
+            <MenuItem
+              action={moveRule}
+              fields={{ id: rule.id, dir: "up", folder: view }}
+              icon={<ArrowUp />}
+              disabled={!canUp}
+              successMessage={t("movedUp", { rule: rule.name })}
+            >
+              {t("moveUp")}
+            </MenuItem>
+            <MenuItem
+              action={moveRule}
+              fields={{ id: rule.id, dir: "down", folder: view }}
+              icon={<ArrowDown />}
+              disabled={!canDown}
+              successMessage={t("movedDown", { rule: rule.name })}
+            >
+              {t("moveDown")}
+            </MenuItem>
+          </>
+        )}
+        <MenuSeparator />
+        <MenuLabel>{t("moveToFolder")}</MenuLabel>
+        {folders.map((f) => (
           <MenuItem
-            action={moveRule}
-            fields={{ id: rule.id, dir: "up" }}
-            icon={<ArrowUp />}
-            disabled={rank === 1}
-            successMessage={t("movedUp", { rule: rule.name })}
+            key={f.id}
+            action={setRuleFolder}
+            fields={{ id: rule.id, folder: f.id }}
+            icon={<FolderInput />}
+            disabled={f.id === rule.folderId}
+            hint={f.id === rule.folderId ? t("folderCurrent") : undefined}
+            successMessage={t("movedToFolder", { rule: rule.name, folder: f.name })}
           >
-            {t("moveUp")}
+            {f.name}
           </MenuItem>
+        ))}
+        {rule.folderId !== null && (
           <MenuItem
-            action={moveRule}
-            fields={{ id: rule.id, dir: "down" }}
-            icon={<ArrowDown />}
-            disabled={rank === total}
-            successMessage={t("movedDown", { rule: rule.name })}
+            action={setRuleFolder}
+            fields={{ id: rule.id, folder: "none" }}
+            icon={<FolderMinus />}
+            successMessage={t("removedFromFolder", { rule: rule.name })}
           >
-            {t("moveDown")}
+            {t("removeFromFolder")}
           </MenuItem>
-        </>
-      )}
-      <MenuSeparator />
-      <MenuItem
-        action={deleteRule}
-        fields={{ id: rule.id }}
-        icon={<Trash2 />}
-        tone="danger"
-        successMessage={t("deleted")}
-        confirm={{
-          title: t("deleteTitle", { rule: rule.name }),
-          description: t("deleteBody"),
-          confirmLabel: t("deleteConfirm"),
-        }}
-      >
-        {t("delete")}
-      </MenuItem>
-    </Menu>
+        )}
+        <MenuItem icon={<FolderPlus />} onSelect={() => setNewFolder(true)}>
+          {t("moveToNewFolder")}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem
+          action={deleteRule}
+          fields={{ id: rule.id, folder: view }}
+          icon={<Trash2 />}
+          tone="danger"
+          successMessage={t("deleted")}
+          confirm={{
+            title: t("deleteTitle", { rule: rule.name }),
+            description: t("deleteBody"),
+            confirmLabel: t("deleteConfirm"),
+          }}
+        >
+          {t("delete")}
+        </MenuItem>
+      </Menu>
+      <FolderDialog mode="create" open={newFolder} onClose={() => setNewFolder(false)} rule={{ id: rule.id, name: rule.name }} />
+    </>
   );
 }
 

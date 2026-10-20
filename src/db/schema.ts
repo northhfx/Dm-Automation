@@ -66,6 +66,13 @@ export const instagramAccounts = pgTable(
 );
 export type InstagramAccountRow = typeof instagramAccounts.$inferSelect;
 
+/** โฟลเดอร์ (โปรเจกต์) สำหรับจัดกลุ่มกฎในหน้ากฎอัตโนมัติ — ชั้นเดียว กฎหนึ่งอยู่ได้โฟลเดอร์เดียว (ไม่มีผลกับการตอบ) */
+export const ruleFolders = pgTable("rule_folders", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** กฎอัตโนมัติ: เมื่อเจอ keyword → ตอบคอมเมนต์ / ส่ง DM */
 export const rules = pgTable("rules", {
   id: serial("id").primaryKey(),
@@ -87,6 +94,8 @@ export const rules = pgTable("rules", {
   canvas: jsonb("canvas").$type<FlowCanvas>(),
   oncePerUser: boolean("once_per_user").notNull().default(true),
   priority: integer("priority").notNull().default(100),
+  /** โฟลเดอร์ (null = ไม่อยู่ในโฟลเดอร์) — ลบโฟลเดอร์แล้วกฎยังอยู่ */
+  folderId: integer("folder_id").references(() => ruleFolders.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -305,6 +314,7 @@ export const settings = pgTable("settings", {
 
 export type Page = typeof pages.$inferSelect;
 export type Rule = typeof rules.$inferSelect;
+export type RuleFolder = typeof ruleFolders.$inferSelect;
 export type NewRule = typeof rules.$inferInsert;
 export type Contact = typeof contacts.$inferSelect;
 export type Job = typeof jobs.$inferSelect;

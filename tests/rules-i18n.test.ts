@@ -35,6 +35,7 @@ const RULE_ROWS = [
     boundPosts: {},
     publicReplies: ["Sent!"],
     steps: [{ id: "s1", text: "Hi {name}", buttons: [{ id: "b1", title: "Open", type: "link", url: "https://example.com" }] }],
+    folderId: null,
   },
   {
     id: 2,
@@ -49,10 +50,14 @@ const RULE_ROWS = [
     boundPosts: {},
     publicReplies: [],
     steps: [{ id: "s1", text: "Hello", buttons: [] }],
+    folderId: null,
   },
 ];
 vi.mock("@/db/client", () => ({
-  getDb: () => ({ select: () => ({ from: () => ({ orderBy: async () => RULE_ROWS }) }) }),
+  // โฟลเดอร์ (select { id, name }) → ยังไม่มี · กฎ → RULE_ROWS
+  getDb: () => ({
+    select: (fields: Record<string, unknown>) => ({ from: () => ({ orderBy: async () => ("active" in fields ? RULE_ROWS : []) }) }),
+  }),
 }));
 vi.mock("@/lib/stats", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/stats")>()),
@@ -109,6 +114,9 @@ function expectNoThai(html: string) {
 const base: RuleListItem = {
   id: 1,
   name: "Price comment",
+  rank: 1,
+  folderId: null,
+  folderName: null,
   active: true,
   trigger: "comment",
   platforms: ["facebook", "instagram"],
@@ -163,7 +171,7 @@ const noop = () => {};
 describe("หน้ารายการกฎ (/rules) สองภาษา", () => {
   async function page(locale: Locale | undefined): Promise<string> {
     lang.value = locale;
-    return render(await RulesPage(), locale);
+    return render(await RulesPage({ searchParams: Promise.resolve({}) } as never), locale);
   }
 
   it("ภาษาอังกฤษ: หัวหน้า ป้าย ปุ่ม และการ์ด", async () => {

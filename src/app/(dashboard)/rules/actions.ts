@@ -1,15 +1,17 @@
 "use server";
 
-import { asc, eq, not } from "drizzle-orm";
+import { and, asc, eq, ne, not, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect, RedirectType } from "next/navigation";
 import { getDb } from "@/db/client";
-import { rules } from "@/db/schema";
+import { ruleFolders, rules } from "@/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { createT } from "@/lib/i18n/core";
 import { DEFAULT_LOCALE, type Locale } from "@/lib/i18n/locale";
 import { builderMessages } from "@/lib/i18n/messages/builder";
+import { rulesMessages } from "@/lib/i18n/messages/rules";
 import { getLocale } from "@/lib/i18n/server";
+import { cleanFolderName, FOLDER_NAME_MAX, folderHref, inFolder, parseFolderFilter } from "@/lib/rules/folders";
 import { movedPriorities } from "@/lib/rules/order";
 import { nextPostState } from "@/lib/rules/post-scope";
 import { formDataToValues, validateRule, type RuleFormState } from "./form-values";
@@ -60,9 +62,11 @@ export async function saveRule(prev: RuleFormState, formData: FormData): Promise
   }
   // กฎใหม่: ไปหน้าแก้ไขของกฎนั้น (มี URL ของตัวเอง แก้ต่อได้ทันที)
   const scope = nextPostState(null, result.data.postScope, false, now);
+  // สร้างจากในโฟลเดอร์ → อยู่ในโฟลเดอร์นั้นเลย (โฟลเดอร์ถูกลบไประหว่างนั้น → ไม่อยู่ในโฟลเดอร์ไหน)
+  const folderId = await existingFolderId(formData.get("folderId"));
   const [created] = await db
     .insert(rules)
-    .values({ ...result.data, ...scope })
+    .values({ ...result.data, ...scope, folderId })
     .returning({ id: rules.id });
   revalidatePath("/rules");
   // แทนที่ /rules/new ในประวัติ → กดย้อนกลับแล้วไม่วนกลับมาหน้ากฎเปล่า
@@ -100,25 +104,31 @@ export async function duplicateRule(formData: FormData): Promise<void> {
   redirect(`/rules/${created.id}`);
 }
 
-/** ย้ายกฎขึ้น/ลงหนึ่งลำดับในกลุ่มเดียวกัน (คอมเมนต์ / แชท) — ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนกว่า */
+/**
+ * ย้ายกฎขึ้น/ลงหนึ่งลำดับในกลุ่มเดียวกัน (คอมเมนต์ / แชท) — ถ้าตรงหลายกฎ ระบบใช้กฎที่อยู่บนกว่า
+ * folder = ตัวกรองที่ดูอยู่ (ดูในโฟลเดอร์ → ย้ายเทียบกับกฎที่เห็นในโฟลเดอร์นั้น)
+ */
 export async function moveRule(formData: FormData): Promise<void> {
   await requireAuth();
   const id = Number(formData.get("id"));
   const dir = formData.get("dir") === "up" ? "up" : "down";
+  const filter = parseFolderFilter(String(formData.get("folder") ?? ""));
   const db = getDb();
   await db.transaction(async (tx) => {
     const rule = Number.isInteger(id) ? await tx.query.rules.findFirst({ where: eq(rules.id, id), columns: { trigger: true } }) : undefined;
     if (!rule) return;
     const group = await tx
-      .select({ id: rules.id, priority: rules.priority })
+      .select({ id: rules.id, priority: rules.priority, folderId: rules.folderId })
       .from(rules)
       .where(eq(rules.trigger, rule.trigger))
       .orderBy(asc(rules.priority), asc(rules.id))
       .for("update");
+    const visible = filter === "all" ? undefined : new Set(group.filter((r) => inFolder(r.folderId, filter)).map((r) => r.id));
     const next = movedPriorities(
       group.map((r) => r.id),
       id,
       dir,
+      visible,
     );
     if (!next) return;
     const now = new Date();
@@ -130,10 +140,90 @@ export async function moveRule(formData: FormData): Promise<void> {
   revalidatePath("/rules");
 }
 
+/** folder = ตัวกรองที่จะกลับไปหลังลบ (ลบจากในโฟลเดอร์ → กลับไปโฟลเดอร์นั้น) */
 export async function deleteRule(formData: FormData): Promise<void> {
   await requireAuth();
   const id = Number(formData.get("id"));
   await getDb().delete(rules).where(eq(rules.id, id));
   revalidatePath("/rules");
+  redirect(folderHref(parseFolderFilter(String(formData.get("folder") ?? ""))));
+}
+
+// ---------------- โฟลเดอร์ (โปรเจกต์) ----------------
+
+/** ผลของหน้าต่างสร้าง/เปลี่ยนชื่อโฟลเดอร์ — done = เลข attempt ที่สำเร็จ (ใช้ปิดหน้าต่าง) */
+export interface FolderFormState {
+  error?: string;
+  attempt?: number;
+  done?: number;
+}
+
+/** id โฟลเดอร์ที่มีอยู่จริง (ค่าว่าง / ไม่พบ → null) */
+async function existingFolderId(raw: FormDataEntryValue | null): Promise<number | null> {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const folder = await getDb().query.ruleFolders.findFirst({ where: eq(ruleFolders.id, id), columns: { id: true } });
+  return folder?.id ?? null;
+}
+
+/** ตรวจชื่อ: ว่าง/ยาวเกิน หรือซ้ำกับโฟลเดอร์อื่น (ไม่สนตัวพิมพ์เล็ก/ใหญ่) — คืน error หรือชื่อที่ใช้ได้ */
+async function checkFolderName(raw: unknown, exceptId: number | null): Promise<{ name: string } | { error: string }> {
+  const t = createT(rulesMessages, await requestLocale());
+  const name = cleanFolderName(raw);
+  if (!name) return { error: t("folderNameInvalid", { max: FOLDER_NAME_MAX }) };
+  const sameName = sql`lower(${ruleFolders.name}) = lower(${name})`;
+  const taken = await getDb().query.ruleFolders.findFirst({
+    where: exceptId ? and(sameName, ne(ruleFolders.id, exceptId)) : sameName,
+    columns: { id: true },
+  });
+  return taken ? { error: t("folderNameTaken") } : { name };
+}
+
+/** สร้างโฟลเดอร์ แล้วไปหน้าโฟลเดอร์นั้น — ส่ง ruleId มาด้วย = ย้ายกฎนั้นเข้าโฟลเดอร์ใหม่ทันที */
+export async function createFolder(prev: FolderFormState, formData: FormData): Promise<FolderFormState> {
+  await requireAuth();
+  const attempt = (prev.attempt ?? 0) + 1;
+  const checked = await checkFolderName(formData.get("name"), null);
+  if ("error" in checked) return { error: checked.error, attempt };
+  const db = getDb();
+  const [created] = await db.insert(ruleFolders).values({ name: checked.name }).returning({ id: ruleFolders.id });
+  const ruleId = Number(formData.get("ruleId"));
+  if (Number.isInteger(ruleId) && ruleId > 0) await db.update(rules).set({ folderId: created.id }).where(eq(rules.id, ruleId));
+  revalidatePath("/rules");
+  redirect(folderHref(created.id));
+}
+
+export async function renameFolder(prev: FolderFormState, formData: FormData): Promise<FolderFormState> {
+  await requireAuth();
+  const attempt = (prev.attempt ?? 0) + 1;
+  const id = await existingFolderId(formData.get("id"));
+  // โฟลเดอร์ถูกลบไปแล้ว (เช่น จากอีกแท็บ) → กลับไปหน้ากฎทั้งหมด
+  if (!id) redirect("/rules");
+  const checked = await checkFolderName(formData.get("name"), id);
+  if ("error" in checked) return { error: checked.error, attempt };
+  await getDb().update(ruleFolders).set({ name: checked.name }).where(eq(ruleFolders.id, id));
+  revalidatePath("/rules");
+  return { attempt, done: attempt };
+}
+
+/** ลบโฟลเดอร์ — กฎข้างในไม่ถูกลบ (ย้ายไป "ไม่มีโฟลเดอร์" อัตโนมัติด้วย ON DELETE SET NULL) */
+export async function deleteFolder(formData: FormData): Promise<void> {
+  await requireAuth();
+  const id = Number(formData.get("id"));
+  if (Number.isInteger(id) && id > 0) await getDb().delete(ruleFolders).where(eq(ruleFolders.id, id));
+  revalidatePath("/rules");
   redirect("/rules");
+}
+
+/** ย้ายกฎเข้าโฟลเดอร์ (folder = id) หรือเอาออกจากโฟลเดอร์ (folder = "none") — ไม่เปลี่ยนลำดับหรือการตอบ */
+export async function setRuleFolder(formData: FormData): Promise<void> {
+  await requireAuth();
+  const id = Number(formData.get("id"));
+  if (!Number.isInteger(id) || id <= 0) return;
+  const raw = formData.get("folder");
+  const folderId = raw === "none" ? null : await existingFolderId(raw);
+  // โฟลเดอร์ถูกลบไประหว่างนั้น → ไม่ย้าย (ไม่เอากฎออกจากโฟลเดอร์เดิมโดยไม่ได้ตั้งใจ)
+  if (raw !== "none" && folderId === null) throw new Error("folder not found");
+  await getDb().update(rules).set({ folderId }).where(eq(rules.id, id));
+  revalidatePath("/rules");
 }
