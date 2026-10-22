@@ -6,6 +6,7 @@ import {
   events,
   links,
   messages,
+  ruleFolders,
   rules,
   type GraphApi,
   type Job,
@@ -39,6 +40,7 @@ import { enqueue, postponePendingJobs, rescheduleJob, updateJobPayload } from "@
 import { findMatchingRule } from "@/lib/rules/match";
 import { bindPublishedFacebookPost, checkNextPost } from "@/lib/rules/next-post";
 import { postScopeMatches } from "@/lib/rules/post-scope";
+import { closedReplyOf, effectiveSchedule, scheduleState, type ScheduleState } from "@/lib/rules/schedule";
 import { firstName, pickRandom, renderTemplate } from "@/lib/rules/template";
 
 export interface SendDmJob {
@@ -164,8 +166,49 @@ async function claimOnce(db: Db, key: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+/**
+ * กฎที่เปิดสวิตช์อยู่ พร้อมสถานะตั้งเวลา (ของกฎ + โฟลเดอร์): open = ตอบตามปกติ, upcoming = ยังไม่ถึงเวลา,
+ * ended = หมดเวลาแล้ว (ตอบได้แค่ข้อความปิดรับ closedText ถ้าตั้งไว้)
+ */
 async function loadActiveRules(db: Db, trigger: TriggerType) {
-  return db.query.rules.findMany({ where: and(eq(rules.active, true), eq(rules.trigger, trigger)) });
+  const [list, folders] = await Promise.all([
+    db.query.rules.findMany({ where: and(eq(rules.active, true), eq(rules.trigger, trigger)) }),
+    db.select().from(ruleFolders),
+  ]);
+  const folderOf = new Map(folders.map((f) => [f.id, f]));
+  const now = new Date();
+  return list.map((rule) => {
+    const folder = rule.folderId !== null ? folderOf.get(rule.folderId) : undefined;
+    const schedule: ScheduleState = scheduleState(effectiveSchedule(rule, folder), now);
+    return { ...rule, schedule, closedText: closedReplyOf(rule, folder) };
+  });
+}
+
+type LoadedRule = Awaited<ReturnType<typeof loadActiveRules>>[number];
+
+/** หมดเวลาแล้ว แต่ keyword ตรง และมีข้อความปิดรับ → คืนกฎนั้น (ใช้เมื่อไม่มีกฎที่เปิดอยู่ตรงเลย) */
+function findEndedRule(list: LoadedRule[], incoming: Parameters<typeof findMatchingRule>[1]): (LoadedRule & { closedText: string }) | null {
+  const ended = list.filter((r): r is LoadedRule & { closedText: string } => r.schedule === "ended" && !!r.closedText);
+  return findMatchingRule(ended, incoming);
+}
+
+/** บันทึกการตอบ "ปิดรับแล้ว" (กิจกรรม "ข้าม" เหตุผล rule_ended) */
+async function logClosedReply(
+  db: Db,
+  data: { platform: Platform; pageId: string; ruleId: number; actorId: string; postId?: string | null; contactId?: number | null; text: string },
+  meta: Record<string, unknown>,
+) {
+  await logEvent(db, {
+    type: "skipped",
+    platform: data.platform,
+    pageId: data.pageId,
+    ruleId: data.ruleId,
+    contactId: data.contactId ?? null,
+    actorId: data.actorId,
+    postId: data.postId ?? null,
+    text: data.text,
+    meta: { reason: "rule_ended", ...meta },
+  });
 }
 
 async function upsertContact(
@@ -222,14 +265,18 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
     .values(anonymousReceived("comment_received", job.platform, conn.id, via, job.postId))
     .returning({ id: events.id });
 
-  const { rule, lookupFailed } = await findCommentRule(db, conn, job);
+  const { rule, lookupFailed, ended } = await findCommentRule(db, conn, job);
   // ตรงกฎ หรือตรง keyword ของกฎ "โพสต์ถัดไป" แต่ถาม Meta ไม่สำเร็จ (คนนี้พิมพ์คำที่ตั้งไว้ และกิจกรรม "ข้าม"
   // ที่บันทึกไว้มีชื่อ/ข้อความของเขา ให้เจ้าของร้านตามตอบเองได้) → เก็บว่าใครคอมเมนต์ / พิมพ์อะไร
-  if (rule || lookupFailed) {
+  if (rule || lookupFailed || ended) {
     await db
       .update(events)
       .set({ actorId: job.fromId, text: job.text, meta: { commentId: job.commentId, fromName: job.fromName, via } })
       .where(eq(events.id, received.id));
+  }
+  if (!rule && ended) {
+    await replyClosed(db, conn, job, ended);
+    return;
   }
   if (!rule) {
     // ไม่มีกฎไหนตอบคอมเมนต์นี้ (ไม่ตรง keyword หรือเช็คโพสต์ถัดไปกับ Meta ไม่สำเร็จ) → ให้เจ้าของร้านตามตอบเองในหน้า "ข้อความรอตอบ"
@@ -345,7 +392,8 @@ export async function handleComment(db: Db, job: CommentJob): Promise<void> {
  */
 async function findCommentRule(db: Db, conn: Connection, job: CommentJob) {
   const incoming = { trigger: "comment" as const, platform: job.platform, text: job.text, postId: job.postId };
-  const sorted = (await loadActiveRules(db, "comment")).sort((a, b) => a.priority - b.priority || a.id - b.id);
+  const loaded = await loadActiveRules(db, "comment");
+  const sorted = loaded.filter((r) => r.schedule === "open").sort((a, b) => a.priority - b.priority || a.id - b.id);
   let lookupFailed = false;
   for (const rule of sorted) {
     if (findMatchingRule([rule], incoming)) return { rule, lookupFailed };
@@ -361,7 +409,34 @@ async function findCommentRule(db: Db, conn: Connection, job: CommentJob) {
     if (check === "match") return { rule, lookupFailed };
     if (check === "lookup_failed") lookupFailed = true;
   }
-  return { rule: null, lookupFailed };
+  return { rule: null, lookupFailed, ended: lookupFailed ? null : findEndedRule(loaded, incoming) };
+}
+
+/** คอมเมนต์ keyword ของกฎที่หมดเวลาแล้ว → ตอบใต้คอมเมนต์ด้วยข้อความปิดรับ (คนเดิมโพสต์เดิมตอบครั้งเดียว) */
+async function replyClosed(db: Db, conn: Connection, job: CommentJob, rule: LoadedRule & { closedText: string }) {
+  const base = { platform: job.platform, pageId: conn.id, ruleId: rule.id, actorId: job.fromId, postId: job.postId, text: job.text };
+  const already = await db.query.events.findFirst({
+    where: and(
+      eq(events.type, "skipped"),
+      eq(events.ruleId, rule.id),
+      eq(events.actorId, job.fromId),
+      job.postId ? eq(events.postId, job.postId) : isNull(events.postId),
+      sql`${events.meta}->>'reason' = 'rule_ended'`,
+    ),
+    columns: { id: true },
+  });
+  if (already || !conn.token) {
+    await logClosedReply(db, base, { commentId: job.commentId, replied: false });
+    return;
+  }
+  const message = renderTemplate(rule.closedText, { name: job.platform === "facebook" ? firstName(job.fromName) : job.fromName });
+  try {
+    const res = await replyToComment(job.platform, job.commentId, conn.token, message, conn.api);
+    await logClosedReply(db, base, { commentId: job.commentId, replied: true, reply: message, replyId: res.id });
+  } catch (err) {
+    await logClosedReply(db, base, { commentId: job.commentId, replied: false, reply: message, error: errorInfo(err) });
+    await noteRejectedToken(db, conn, err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -448,11 +523,31 @@ export async function handleDm(db: Db, job: DmJob): Promise<void> {
     return;
   }
 
-  const rule = findMatchingRule(await loadActiveRules(db, "dm"), {
-    trigger: "dm",
-    platform: job.platform,
-    text: job.text || job.payload || "",
-  });
+  const dmRules = await loadActiveRules(db, "dm");
+  const incoming = { trigger: "dm" as const, platform: job.platform, text: job.text || job.payload || "" };
+  const rule = findMatchingRule(
+    dmRules.filter((r) => r.schedule === "open"),
+    incoming,
+  );
+  const ended = rule ? null : findEndedRule(dmRules, incoming);
+  if (ended) {
+    // keyword ของกฎที่หมดเวลาแล้ว → ตอบในแชทด้วยข้อความปิดรับ (เขาเพิ่งทักมา อยู่ในช่วง 24 ชม.)
+    const contact = await saveKeywordContact(db, conn, job);
+    const base = { platform: job.platform, pageId: conn.id, ruleId: ended.id, actorId: job.senderId, contactId: contact.id, text: job.text };
+    if (!conn.token) {
+      await logClosedReply(db, base, { mid: job.mid, replied: false });
+      return;
+    }
+    const message = renderTemplate(ended.closedText, { name: contact.actorName });
+    try {
+      const res = await sendMessage(conn.messagingId, conn.token, { id: job.senderId }, { text: message }, conn.api);
+      await logClosedReply(db, base, { mid: job.mid, replied: true, reply: message, replyMid: res.message_id });
+    } catch (err) {
+      await logClosedReply(db, base, { mid: job.mid, replied: false, reply: message, error: errorInfo(err) });
+      await noteRejectedToken(db, conn, err);
+    }
+    return;
+  }
   if (!rule) {
     // ไม่ตรง keyword → ไม่สร้าง contact และไม่เก็บว่าใครทัก/ทักว่าอะไร
     // (ถ้าเป็นลูกค้าที่เคยพิมพ์ keyword อยู่แล้ว แค่อัปเดตเวลา "ทักมาล่าสุด")

@@ -35,6 +35,7 @@ import { localizeSystemMessage } from "@/lib/i18n/system";
 import type { RecentPost } from "@/lib/meta/graph";
 import { nextPostStatus, postIdsOf, splitKeywords, type BuilderAction, type BuilderDoc, type Problem } from "./model";
 import { ChipInput } from "./widgets";
+import { ScheduleFields } from "../schedule-fields";
 
 type DocPatch = Extract<BuilderAction, { type: "patch" }>["patch"];
 type PatchFn = (patch: DocPatch, key?: string) => void;
@@ -252,6 +253,15 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
           <Switch checked={doc.oncePerUser} onChange={(v) => patch({ oncePerUser: v })} label={t("onceLabel")} description={t("onceHint")} />
         </PanelSection>
       )}
+
+      <PanelSection title={t("scheduleTitle")}>
+        <ScheduleFields
+          value={{ startsAt: doc.startsAt, endsAt: doc.endsAt, closedReply: doc.closedReply }}
+          // พิมพ์ข้อความปิดรับต่อเนื่อง → ย้อนกลับ (undo) ทีเดียวทั้งก้อน
+          onChange={(p) => patch(p, "closedReply" in p && Object.keys(p).length === 1 ? "closedReply" : undefined)}
+          channel={isComment ? "comment" : "dm"}
+        />
+      </PanelSection>
 
       <details className="group border-b border-line last:border-b-0">
         <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-semibold hover:bg-surface-2/60 [&::-webkit-details-marker]:hidden">

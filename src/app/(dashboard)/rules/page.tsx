@@ -6,17 +6,39 @@ import { NavTitle } from "@/components/localized";
 import { Badge, EmptyState, PageHeader } from "@/components/ui";
 import { getT } from "@/lib/i18n/server";
 import { inFolder, parseFolderFilter } from "@/lib/rules/folders";
+import { effectiveSchedule, scheduleState } from "@/lib/rules/schedule";
 import { getAllTimeRuleStats, rate } from "@/lib/stats";
 import { FolderTabs, NewFolderButton, type FolderSummary } from "./folder-controls";
 import { RuleList, RulesEmptyState, type RuleListItem } from "./rule-list";
 import { NewRuleButton } from "./template-chooser";
+
+/** ป้ายตั้งเวลาบนการ์ด (รวมเวลาของโฟลเดอร์): สถานะ + วันเวลาที่จะแสดง */
+function scheduleOf(
+  rule: { startsAt: Date | null; endsAt: Date | null },
+  folder: { startsAt: Date | null; endsAt: Date | null } | undefined,
+  now: Date,
+): Pick<RuleListItem, "scheduleState" | "scheduleAt"> {
+  const s = effectiveSchedule({ startsAt: rule.startsAt ?? null, endsAt: rule.endsAt ?? null }, folder);
+  const state = scheduleState(s, now);
+  const at = state === "upcoming" ? s.startsAt : s.endsAt;
+  return { scheduleState: state, scheduleAt: at ? at.toISOString() : null };
+}
 
 export default async function RulesPage({ searchParams }: PageProps<"/rules">) {
   const db = getDb();
   const [params, t, folderRows, list, stats] = await Promise.all([
     searchParams,
     getT("rules"),
-    db.select({ id: ruleFolders.id, name: ruleFolders.name }).from(ruleFolders).orderBy(asc(ruleFolders.name), asc(ruleFolders.id)),
+    db
+      .select({
+        id: ruleFolders.id,
+        name: ruleFolders.name,
+        startsAt: ruleFolders.startsAt,
+        endsAt: ruleFolders.endsAt,
+        closedReply: ruleFolders.closedReply,
+      })
+      .from(ruleFolders)
+      .orderBy(asc(ruleFolders.name), asc(ruleFolders.id)),
     db
       .select({
         id: rules.id,
@@ -32,13 +54,17 @@ export default async function RulesPage({ searchParams }: PageProps<"/rules">) {
         publicReplies: rules.publicReplies,
         steps: rules.steps,
         folderId: rules.folderId,
+        startsAt: rules.startsAt,
+        endsAt: rules.endsAt,
       })
       .from(rules)
       .orderBy(asc(rules.priority), asc(rules.id)),
     getAllTimeRuleStats(db),
   ]);
 
+  const folderById = new Map(folderRows.map((f) => [f.id, f]));
   const folderName = new Map(folderRows.map((f) => [f.id, f.name]));
+  const now = new Date();
   // โฟลเดอร์ที่ไม่มีแล้ว (เช่น ลิงก์เก่า) → ดูทั้งหมด
   const parsed = parseFolderFilter(params.folder);
   const filter = typeof parsed === "number" && !folderName.has(parsed) ? "all" : parsed;
@@ -55,6 +81,7 @@ export default async function RulesPage({ searchParams }: PageProps<"/rules">) {
       rank: ++rankIn[rule.trigger],
       folderId: rule.folderId,
       folderName: rule.folderId !== null ? (folderName.get(rule.folderId) ?? null) : null,
+      ...scheduleOf(rule, rule.folderId !== null ? folderById.get(rule.folderId) : undefined, now),
       active: rule.active,
       trigger: rule.trigger,
       platforms: rule.platforms,
@@ -74,7 +101,12 @@ export default async function RulesPage({ searchParams }: PageProps<"/rules">) {
     };
   });
   const activeCount = items.filter((r) => r.active).length;
-  const folders: FolderSummary[] = folderRows.map((f) => ({ ...f, count: items.filter((r) => r.folderId === f.id).length }));
+  const folders: FolderSummary[] = folderRows.map((f) => ({
+    ...f,
+    startsAt: f.startsAt?.toISOString() ?? null,
+    endsAt: f.endsAt?.toISOString() ?? null,
+    count: items.filter((r) => r.folderId === f.id).length,
+  }));
   const shown = items.filter((r) => inFolder(r.folderId, filter));
   const folderId = typeof filter === "number" ? filter : undefined;
 

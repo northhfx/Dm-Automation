@@ -13,6 +13,7 @@ import { rulesMessages } from "@/lib/i18n/messages/rules";
 import { getLocale } from "@/lib/i18n/server";
 import { cleanFolderName, FOLDER_NAME_MAX, folderHref, inFolder, isFolderId, parseFolderFilter } from "@/lib/rules/folders";
 import { movedPriorities } from "@/lib/rules/order";
+import { CLOSED_REPLY_MAX } from "@/lib/rules/schedule";
 import { nextPostState } from "@/lib/rules/post-scope";
 import { formDataToValues, validateRule, type RuleFormState } from "./form-values";
 
@@ -224,14 +225,40 @@ export async function renameFolder(prev: FolderFormState, formData: FormData): P
   if (!id) redirect("/rules");
   const checked = await checkFolderName(formData.get("name"), id);
   if ("error" in checked) return { error: checked.error, attempt };
+  // ตั้งเวลาทั้งโฟลเดอร์ (ส่งมาจากหน้าต่างแก้ไขโฟลเดอร์) — ไม่ส่งมา = ไม่เปลี่ยน
+  const schedule = formData.has("endsAt") ? await folderSchedule(formData) : null;
+  if (schedule && "error" in schedule) return { error: schedule.error, attempt };
   try {
-    await getDb().update(ruleFolders).set({ name: checked.name }).where(eq(ruleFolders.id, id));
+    await getDb()
+      .update(ruleFolders)
+      .set({ name: checked.name, ...(schedule ?? {}) })
+      .where(eq(ruleFolders.id, id));
   } catch (err) {
     if (pgCode(err) === "23505") return { error: createT(rulesMessages, await requestLocale())("folderNameTaken"), attempt };
     throw err;
   }
   revalidatePath("/rules");
   return { attempt, done: attempt };
+}
+
+/** อ่านค่าตั้งเวลาของโฟลเดอร์จากฟอร์ม (ISO ว่าง = ไม่จำกัด) */
+async function folderSchedule(
+  formData: FormData,
+): Promise<{ startsAt: Date | null; endsAt: Date | null; closedReply: string | null } | { error: string }> {
+  const t = createT(builderMessages, await requestLocale());
+  const date = (key: string) => {
+    const raw = String(formData.get(key) ?? "");
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  };
+  const startsAt = date("startsAt");
+  const endsAt = date("endsAt");
+  if (startsAt === undefined || endsAt === undefined) return { error: t("scheduleInvalid") };
+  if (startsAt && endsAt && endsAt <= startsAt) return { error: t("scheduleEndBeforeStart") };
+  const closedReply = String(formData.get("closedReply") ?? "").trim();
+  if (closedReply.length > CLOSED_REPLY_MAX) return { error: t("closedReplyTooLong", { max: CLOSED_REPLY_MAX }) };
+  return { startsAt, endsAt, closedReply: closedReply || null };
 }
 
 /** ลบโฟลเดอร์ — กฎข้างในไม่ถูกลบ (ย้ายไป "ไม่มีโฟลเดอร์" อัตโนมัติด้วย ON DELETE SET NULL) */

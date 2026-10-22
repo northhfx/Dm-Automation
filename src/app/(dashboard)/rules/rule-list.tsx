@@ -35,8 +35,10 @@ import { useFormat, useT } from "@/lib/i18n/client";
 import type { MessageKey, TFunction } from "@/lib/i18n/core";
 import { rulesMessages } from "@/lib/i18n/messages/rules";
 import { folderHref, type FolderFilter } from "@/lib/rules/folders";
+import type { ScheduleState } from "@/lib/rules/schedule";
 import { deleteRule, duplicateRule, moveRule, setRuleFolder, toggleRule } from "./actions";
 import { FolderDialog, type FolderSummary } from "./folder-controls";
+import { ScheduleBadge } from "./schedule-fields";
 import { TemplateOptions } from "./template-chooser";
 
 /*
@@ -52,6 +54,9 @@ export interface RuleListItem {
   rank: number;
   folderId: number | null;
   folderName: string | null;
+  /** ตั้งเวลา (รวมของโฟลเดอร์): open + at = ปิดเองเมื่อไหร่, upcoming = เริ่มเมื่อไหร่, ended = หมดเวลาแล้ว */
+  scheduleState: ScheduleState;
+  scheduleAt: string | null;
   active: boolean;
   trigger: TriggerType;
   platforms: Platform[];
@@ -213,6 +218,7 @@ function RuleCard({ rule, ...place }: { rule: RuleListItem } & CardPlace) {
                   <span className="truncate">{rule.folderName}</span>
                 </Link>
               )}
+              <ScheduleBadge state={rule.scheduleState} at={rule.scheduleAt} className={cx("relative z-10", muted)} />
               {/* จอใหญ่มีคำว่า "ปิดอยู่" ข้างสวิตช์แล้ว */}
               {!active && (
                 <Badge tone="neutral" dot className="sm:hidden">

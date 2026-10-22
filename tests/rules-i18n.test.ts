@@ -117,6 +117,8 @@ const base: RuleListItem = {
   rank: 1,
   folderId: null,
   folderName: null,
+  scheduleState: "open",
+  scheduleAt: null,
   active: true,
   trigger: "comment",
   platforms: ["facebook", "instagram"],

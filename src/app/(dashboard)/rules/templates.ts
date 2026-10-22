@@ -37,6 +37,9 @@ export const DEFAULT_RULE: RuleFormValues = {
   oncePerUser: true,
   priority: 100,
   active: true,
+  startsAt: null,
+  endsAt: null,
+  closedReply: "",
 };
 
 const DM_RULE: RuleFormValues = {

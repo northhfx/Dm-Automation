@@ -49,6 +49,11 @@ export interface BuilderDoc {
   oncePerUser: boolean;
   priority: number;
   active: boolean;
+  /** ตั้งเวลาเปิด–ปิด (ISO, null = ไม่จำกัด) */
+  startsAt: string | null;
+  endsAt: string | null;
+  /** ข้อความตอบคนที่พิมพ์ keyword หลังหมดเวลา ("" = ไม่ตอบ) */
+  closedReply: string;
   /** ข้อความทั้งหมดตามลำดับที่สร้าง (เลขการ์ดอิงลำดับนี้) */
   steps: FlowStep[];
   /** ข้อความแรกที่การ์ด "เมื่อ…" เชื่อมไป (null = ยังไม่ได้เชื่อม) */
@@ -169,6 +174,9 @@ export function createInitialState(values: RuleFormValues, knownPostIds: Iterabl
     oncePerUser: values.oncePerUser,
     priority: values.priority,
     active: values.active,
+    startsAt: values.startsAt ?? null,
+    endsAt: values.endsAt ?? null,
+    closedReply: values.closedReply ?? "",
     steps,
     startStepId,
     triggerPos,
@@ -375,6 +383,7 @@ export function toFormEntries(doc: BuilderDoc, ruleId?: number): [string, string
   if (doc.oncePerUser) entries.push(["oncePerUser", "on"]);
   entries.push(["priority", String(doc.priority)]);
   if (doc.active) entries.push(["active", "on"]);
+  entries.push(["startsAt", doc.startsAt ?? ""], ["endsAt", doc.endsAt ?? ""], ["closedReply", doc.closedReply.trim()]);
   return entries;
 }
 
@@ -433,6 +442,9 @@ type ScalarKey =
   | "postIdsManual"
   | "publicReplies"
   | "oncePerUser"
+  | "startsAt"
+  | "endsAt"
+  | "closedReply"
   | "priority"
   | "active";
 

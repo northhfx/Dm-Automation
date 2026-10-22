@@ -104,6 +104,7 @@ export const activityMessages = defineMessages({
     skipOncePerUser: "คนนี้เคยได้รับจากกฎนี้แล้ว (ตั้งไว้ให้ส่งครั้งเดียวต่อคน)",
     skipRuleInactive: "กฎนี้ปิดอยู่ จึงไม่ส่งข้อความถัดไป",
     skipButtonTargetMissing: "ลูกค้ากดปุ่มในข้อความเก่าที่ถูกแก้หรือลบไปแล้ว จึงไม่มีข้อความถัดไปให้ส่ง",
+    skipRuleEnded: "กฎนี้หมดเวลาแล้ว — ตอบด้วยข้อความปิดรับแทน (คนเดิมโพสต์เดิมตอบครั้งเดียว)",
     skipNextPostLookupFailed: "เช็คกับ Meta ไม่ได้ว่าโพสต์นี้เป็นโพสต์ถัดไปของกฎหรือเปล่า จึงยังไม่ส่ง (คอมเมนต์ถัดไปจะลองเช็คใหม่)",
 
     // ---- คำอธิบายรหัสผิดพลาดที่พบบ่อยจาก Meta ----
@@ -223,6 +224,7 @@ export const activityMessages = defineMessages({
     skipOncePerUser: "This person already got it from this automation (set to send once per person)",
     skipRuleInactive: "This automation is off, so the next message wasn't sent",
     skipButtonTargetMissing: "The customer tapped a button in an old message that was edited or deleted, so there was no next message to send",
+    skipRuleEnded: "This automation's time is up, so the closed message was sent instead (once per person per post)",
     skipNextPostLookupFailed:
       "Couldn't check with Meta whether this is the automation's next post, so nothing was sent yet (it checks again on the next comment)",
 

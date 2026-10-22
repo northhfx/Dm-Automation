@@ -6,6 +6,7 @@ import { createT, type MessageKey, type TFunction } from "@/lib/i18n/core";
 import { DEFAULT_LOCALE, type Locale } from "@/lib/i18n/locale";
 import { builderMessages } from "@/lib/i18n/messages/builder";
 import { invalidPostIdMessage, isPostId, isPostScope } from "@/lib/rules/post-scope";
+import { CLOSED_REPLY_MAX } from "@/lib/rules/schedule";
 
 /** ค่าในฟอร์มตั้งกฎ (เก็บเป็นข้อความเพื่อคืนค่ากลับไปให้ฟอร์มเมื่อกรอกผิด) */
 export interface RuleFormValues {
@@ -37,6 +38,11 @@ export interface RuleFormValues {
   oncePerUser: boolean;
   priority: number;
   active: boolean;
+  /** ตั้งเวลา (ISO) — null = ไม่จำกัด */
+  startsAt: string | null;
+  endsAt: string | null;
+  /** ข้อความตอบคนที่พิมพ์ keyword หลังหมดเวลา ("" = ไม่ตอบ / ใช้ของโฟลเดอร์) */
+  closedReply: string;
 }
 
 export interface RuleFormState {
@@ -69,6 +75,9 @@ export function ruleToFormValues(rule: Rule): RuleFormValues {
     oncePerUser: rule.oncePerUser,
     priority: rule.priority,
     active: rule.active,
+    startsAt: rule.startsAt ? rule.startsAt.toISOString() : null,
+    endsAt: rule.endsAt ? rule.endsAt.toISOString() : null,
+    closedReply: rule.closedReply ?? "",
   };
 }
 
@@ -132,6 +141,9 @@ export function formDataToValues(formData: FormData): RuleFormValues {
     oncePerUser: formData.get("oncePerUser") === "on",
     priority: Number(formData.get("priority") ?? 100) || 100,
     active: formData.get("active") === "on",
+    startsAt: String(formData.get("startsAt") ?? "") || null,
+    endsAt: String(formData.get("endsAt") ?? "") || null,
+    closedReply: String(formData.get("closedReply") ?? ""),
   };
 }
 
@@ -163,7 +175,20 @@ function ruleSchema(locale: Locale): RuleSchema {
   return (ruleSchemas[locale] ??= buildRuleSchema(createT(builderMessages, locale)));
 }
 
-export type ValidRule = z.infer<RuleSchema> & { steps: FlowStep[]; canvas: FlowCanvas };
+export type ValidRule = z.infer<RuleSchema> & {
+  steps: FlowStep[];
+  canvas: FlowCanvas;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  closedReply: string | null;
+};
+
+/** ISO → Date (ว่าง = null, รูปแบบผิด = undefined) */
+function parseDate(value: string | null): Date | null | undefined {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
 
 /** ตรวจค่าก่อนบันทึก — ข้อความ error ตามภาษาของหน้าจัดการ (ไม่ส่ง = ไทย) */
 export function validateRule(
@@ -194,5 +219,11 @@ export function validateRule(
   const steps = validateSteps(values.steps, { locale });
   if (!steps.ok) return { ok: false, error: steps.error, stepId: steps.stepId };
   const canvas = sanitizeCanvas(values.canvas, steps.steps.map((s) => s.id));
-  return { ok: true, data: { ...data, steps: steps.steps, canvas } };
+  const startsAt = parseDate(values.startsAt);
+  const endsAt = parseDate(values.endsAt);
+  if (startsAt === undefined || endsAt === undefined) return { ok: false, error: t("scheduleInvalid") };
+  if (startsAt && endsAt && endsAt <= startsAt) return { ok: false, error: t("scheduleEndBeforeStart") };
+  const closedReply = values.closedReply.trim();
+  if (closedReply.length > CLOSED_REPLY_MAX) return { ok: false, error: t("closedReplyTooLong", { max: CLOSED_REPLY_MAX }) };
+  return { ok: true, data: { ...data, steps: steps.steps, canvas, startsAt, endsAt, closedReply: closedReply || null } };
 }

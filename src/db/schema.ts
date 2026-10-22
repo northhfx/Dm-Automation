@@ -72,6 +72,11 @@ export const ruleFolders = pgTable(
   {
     id: serial("id").primaryKey(),
     name: text("name").notNull(),
+    /** ตั้งเวลาทั้งโฟลเดอร์ (null = ไม่จำกัด) — กฎข้างในตอบเฉพาะช่วงนี้ (และช่วงของกฎเองถ้าตั้งไว้) */
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    /** ข้อความตอบคนที่พิมพ์ keyword หลังหมดเวลา (null = ไม่ตอบ) — กฎที่ตั้งข้อความเองใช้ของกฎ */
+    closedReply: text("closed_reply"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   // ชื่อไม่ซ้ำ (ไม่สนตัวพิมพ์เล็ก/ใหญ่) — กันกรณีสร้างพร้อมกันสองที่
@@ -99,6 +104,11 @@ export const rules = pgTable("rules", {
   canvas: jsonb("canvas").$type<FlowCanvas>(),
   oncePerUser: boolean("once_per_user").notNull().default(true),
   priority: integer("priority").notNull().default(100),
+  /** ตั้งเวลา: ตอบเฉพาะช่วง startsAt–endsAt (null = ไม่จำกัด) — ปุ่มในข้อความที่ส่งไปแล้วยังกดต่อได้หลังหมดเวลา */
+  startsAt: timestamp("starts_at", { withTimezone: true }),
+  endsAt: timestamp("ends_at", { withTimezone: true }),
+  /** ข้อความตอบคนที่พิมพ์ keyword หลังหมดเวลา (คอมเมนต์ = ตอบใต้คอมเมนต์, แชท = ตอบในแชท) — null = ใช้ของโฟลเดอร์ */
+  closedReply: text("closed_reply"),
   /** โฟลเดอร์ (null = ไม่อยู่ในโฟลเดอร์) — ลบโฟลเดอร์แล้วกฎยังอยู่ */
   folderId: integer("folder_id").references(() => ruleFolders.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

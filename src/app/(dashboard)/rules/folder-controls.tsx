@@ -13,6 +13,7 @@ import { commonMessages } from "@/lib/i18n/messages/common";
 import { rulesMessages } from "@/lib/i18n/messages/rules";
 import { FOLDER_NAME_MAX, folderHref, type FolderFilter } from "@/lib/rules/folders";
 import { createFolder, deleteFolder, renameFolder, type FolderFormState } from "./actions";
+import { ScheduleFields, ScheduleStatus, type ScheduleValue } from "./schedule-fields";
 
 /*
  * โฟลเดอร์ (โปรเจกต์) ในหน้ากฎอัตโนมัติ
@@ -24,13 +25,17 @@ import { createFolder, deleteFolder, renameFolder, type FolderFormState } from "
 export interface FolderSummary {
   id: number;
   name: string;
+  /** ตั้งเวลาทั้งโฟลเดอร์ (ISO, null = ไม่จำกัด) */
+  startsAt: string | null;
+  endsAt: string | null;
+  closedReply: string | null;
   /** จำนวนกฎในโฟลเดอร์ */
   count: number;
 }
 
 type DialogProps =
   | { mode: "create"; open: boolean; onClose: () => void; rule?: { id: number; name: string } }
-  | { mode: "rename"; open: boolean; onClose: () => void; folder: { id: number; name: string } };
+  | { mode: "rename"; open: boolean; onClose: () => void; folder: Omit<FolderSummary, "count"> };
 
 export function FolderDialog(props: DialogProps) {
   const t = useT(rulesMessages);
@@ -43,18 +48,26 @@ export function FolderDialog(props: DialogProps) {
   const error = state.error && (state.attempt ?? 0) > shownFrom ? state.error : undefined;
   const { open, onClose } = props;
   const initialName = props.mode === "rename" ? props.folder.name : "";
-  // ควบคุมค่าเอง: ฟอร์มที่ส่ง action จะถูกล้างหลังส่ง → ชื่อที่พิมพ์ไว้ต้องอยู่ต่อตอนขึ้น error (เช่น ชื่อซ้ำ)
+  const initialSchedule: ScheduleValue =
+    props.mode === "rename"
+      ? { startsAt: props.folder.startsAt, endsAt: props.folder.endsAt, closedReply: props.folder.closedReply ?? "" }
+      : { startsAt: null, endsAt: null, closedReply: "" };
+  // ควบคุมค่าเอง: ฟอร์มที่ส่ง action จะถูกล้างหลังส่ง → ค่าที่กรอกไว้ต้องอยู่ต่อตอนขึ้น error (เช่น ชื่อซ้ำ)
   const [name, setName] = useState(initialName);
+  const [schedule, setSchedule] = useState(initialSchedule);
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setName(initialName);
+    if (open) {
+      setName(initialName);
+      setSchedule(initialSchedule);
+    }
   }
 
   // เปลี่ยนชื่อสำเร็จ → ปิดหน้าต่าง + แจ้ง (สร้างใหม่สำเร็จจะย้ายไปหน้าโฟลเดอร์เอง)
   useEffect(() => {
     if (state.done && state.done === state.attempt) {
-      toast(t("folderRenamed"), { tone: "good" });
+      toast(t("folderSaved"), { tone: "good" });
       onClose();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ทำครั้งเดียวต่อการบันทึกที่สำเร็จ
@@ -70,10 +83,10 @@ export function FolderDialog(props: DialogProps) {
     <Dialog
       open={open}
       onClose={close}
-      size="sm"
+      size={rename ? "md" : "sm"}
       icon={rename ? <Pencil aria-hidden /> : <FolderPlus aria-hidden />}
       iconTone="accent"
-      title={rename ? t("folderRename") : t("newFolderTitle")}
+      title={rename ? t("folderEdit") : t("newFolderTitle")}
       description={props.mode === "create" ? (props.rule ? t("newFolderForRule", { rule: props.rule.name }) : t("newFolderBody")) : undefined}
       formAction={formAction}
       footer={
@@ -102,6 +115,15 @@ export function FolderDialog(props: DialogProps) {
           data-autofocus
         />
       </Field>
+      {props.mode === "rename" && (
+        <div className="mt-5 border-t border-line pt-5">
+          <h3 className="mb-3 text-sm font-semibold text-fg">{t("scheduleTitle")}</h3>
+          <input type="hidden" name="startsAt" value={schedule.startsAt ?? ""} />
+          <input type="hidden" name="endsAt" value={schedule.endsAt ?? ""} />
+          <input type="hidden" name="closedReply" value={schedule.closedReply} />
+          <ScheduleFields value={schedule} onChange={(p) => setSchedule((s) => ({ ...s, ...p }))} channel="folder" />
+        </div>
+      )}
     </Dialog>
   );
 }
@@ -149,6 +171,7 @@ export function FolderTabs({
   }, [value]);
 
   return (
+    <div className="space-y-2">
     <div className="flex items-center gap-2">
       {/* ไม่ยืดเต็มแถว → ปุ่ม ⋮ ของโฟลเดอร์อยู่ติดแถบ */}
       <div ref={stripRef} className="min-w-0">
@@ -177,7 +200,7 @@ export function FolderTabs({
         <>
           <Menu label={t("folderMenuLabel", { folder: selected.name })}>
             <MenuItem icon={<Pencil />} onSelect={() => setRenaming(true)}>
-              {t("folderRename")}
+              {t("folderEdit")}
             </MenuItem>
             <MenuSeparator />
             <MenuItem
@@ -198,6 +221,9 @@ export function FolderTabs({
           <FolderDialog mode="rename" open={renaming} onClose={() => setRenaming(false)} folder={selected} />
         </>
       )}
+    </div>
+    {/* โฟลเดอร์ที่ตั้งเวลาไว้: บอกสถานะของทั้งโฟลเดอร์ */}
+    {selected && <ScheduleStatus value={selected} />}
     </div>
   );
 }

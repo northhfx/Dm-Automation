@@ -141,6 +141,7 @@ const SKIP_REASONS: Record<string, ActivityKey> = {
   once_per_user: "skipOncePerUser",
   rule_inactive: "skipRuleInactive",
   button_target_missing: "skipButtonTargetMissing",
+  rule_ended: "skipRuleEnded",
   next_post_lookup_failed: "skipNextPostLookupFailed",
 };
 
