@@ -511,11 +511,14 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
 function ScheduleLine({ startsAt, endsAt }: { startsAt: string | null; endsAt: string | null }) {
   const t = useT(rulesMessages);
   const f = useFormat();
-  if (!startsAt && !endsAt) return null;
   return (
     <p className="mt-1.5 flex items-center gap-2 text-xs text-fg-2">
       <CalendarClock size={14} className="shrink-0 text-fg-3" aria-hidden="true" />
-      {endsAt ? t("scheduleBadgeEnds", { when: f.dateTime(endsAt) }) : t("scheduleBadgeStarts", { when: f.dateTime(startsAt) })}
+      {endsAt
+        ? t("scheduleBadgeEnds", { when: f.dateTime(endsAt) })
+        : startsAt
+          ? t("scheduleBadgeStarts", { when: f.dateTime(startsAt) })
+          : t("scheduleNone")}
     </p>
   );
 }

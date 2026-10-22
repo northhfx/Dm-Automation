@@ -345,6 +345,7 @@ describe("แผงภาพรวม", () => {
     stats: { triggers: 1234, sent: 1300, ctr: 12.5 },
     dispatch: noop,
     onGoTo: noop,
+    onSchedule: noop,
   };
 
   it("ภาษาอังกฤษ", () => {

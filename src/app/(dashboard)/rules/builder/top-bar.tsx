@@ -91,19 +91,22 @@ export function TopBar({
           onClick={onSchedule}
           title={t("scheduleTitle")}
           className={cx(
-            "inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium whitespace-nowrap transition-colors hover:bg-surface-2 sm:px-2.5",
-            schedule.startsAt || schedule.endsAt ? "text-accent" : "text-fg-2 hover:text-fg",
+            "inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-medium whitespace-nowrap shadow-xs transition-colors",
+            schedule.startsAt || schedule.endsAt
+              ? "border-accent/30 bg-accent-soft text-accent hover:border-accent/50"
+              : "border-line bg-surface text-fg hover:border-line-strong hover:bg-surface-2",
           )}
         >
           <CalendarClock size={17} aria-hidden="true" />
-          <span className="hidden xl:inline">
-            {schedule.endsAt
-              ? t("scheduleBadgeEnds", { when: f.dateTime(schedule.endsAt) })
-              : schedule.startsAt
-                ? t("scheduleBadgeStarts", { when: f.dateTime(schedule.startsAt) })
-                : t("scheduleTitle")}
-          </span>
-          <span className="sr-only xl:hidden">{t("scheduleTitle")}</span>
+          {/* มือถือ: คำสั้น "ตั้งเวลา" · จอกว้าง: บอกวันปิด/เริ่มถ้าตั้งไว้ */}
+          <span className={cx(schedule.startsAt || schedule.endsAt ? "lg:hidden" : "")}>{t("scheduleTitle")}</span>
+          {(schedule.startsAt || schedule.endsAt) && (
+            <span className="hidden lg:inline">
+              {schedule.endsAt
+                ? t("scheduleBadgeEnds", { when: f.dateTime(schedule.endsAt) })
+                : t("scheduleBadgeStarts", { when: f.dateTime(schedule.startsAt) })}
+            </span>
+          )}
         </button>
         <span className="hidden md:block">
           <Switch checked={active} onChange={onActive} label={t("activeSwitch")} size="sm" />

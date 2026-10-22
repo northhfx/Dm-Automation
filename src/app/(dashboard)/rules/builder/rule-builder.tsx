@@ -525,6 +525,7 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
         stats={ruleStats}
         dispatch={dispatch}
         onGoTo={goTo}
+        onSchedule={openSchedule}
       />
     );
   }

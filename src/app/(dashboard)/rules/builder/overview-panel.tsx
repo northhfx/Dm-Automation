@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, ReactNode } from "react";
-import { ChevronRight, CircleAlert, CircleCheck, Hand, MousePointerClick, Spline, TriangleAlert, Unlink, Zap } from "lucide-react";
+import { CalendarClock, ChevronRight, CircleAlert, CircleCheck, Hand, MousePointerClick, Spline, TriangleAlert, Unlink, Zap } from "lucide-react";
 import { Button, cx, Notice } from "@/components/ui";
 import { useFormat, useT } from "@/lib/i18n/client";
 import { rulesMessages } from "@/lib/i18n/messages/rules";
@@ -23,6 +23,8 @@ interface Props {
   stats?: RuleSummaryStats;
   dispatch: Dispatch<BuilderAction>;
   onGoTo: (target: ProblemTarget) => void;
+  /** เปิดหัวข้อตั้งเวลา (ท้ายแผง "ทำงานเมื่อ…") */
+  onSchedule: () => void;
 }
 
 function Tip({ icon, children }: { icon: ReactNode; children: ReactNode }) {
@@ -34,7 +36,7 @@ function Tip({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   );
 }
 
-export function OverviewPanel({ doc, selection, problems, numbers, serverError, stats, dispatch, onGoTo }: Props) {
+export function OverviewPanel({ doc, selection, problems, numbers, serverError, stats, dispatch, onGoTo, onSchedule }: Props) {
   const t = useT(rulesMessages);
   const f = useFormat();
   const bold = (text: string) => <b className="font-medium text-fg">{text}</b>;
@@ -136,9 +138,14 @@ export function OverviewPanel({ doc, selection, problems, numbers, serverError, 
           <Tip icon={<Spline />}>{t.rich("tipConnect", { action: bold(t("tipConnectAction")) })}</Tip>
           <Tip icon={<Hand />}>{t.rich("tipPan", { action: bold(t("tipPanAction")) })}</Tip>
         </ul>
-        <Button variant="secondary" size="sm" icon={<Zap />} onClick={() => dispatch({ type: "select", selection: { kind: "trigger" } })}>
-          {t("editTrigger")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" icon={<Zap />} onClick={() => dispatch({ type: "select", selection: { kind: "trigger" } })}>
+            {t("editTrigger")}
+          </Button>
+          <Button variant="secondary" size="sm" icon={<CalendarClock />} onClick={onSchedule}>
+            {t("scheduleLabel")}
+          </Button>
+        </div>
       </PanelSection>
     </div>
   );
