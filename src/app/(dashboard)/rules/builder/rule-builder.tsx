@@ -52,7 +52,7 @@ import {
 } from "./model";
 import { OverviewPanel, type RuleSummaryStats } from "./overview-panel";
 import { TopBar } from "./top-bar";
-import { TriggerPanel } from "./trigger-panel";
+import { TriggerPanel, SCHEDULE_SECTION_ID } from "./trigger-panel";
 
 interface Props {
   initial: RuleFormValues;
@@ -258,6 +258,13 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
     },
     [openPanel, reveal],
   );
+
+  /** ปุ่ม "ตั้งเวลา" ที่แถบบน → เปิดแผง "ทำงานเมื่อ…" แล้วเลื่อนไปหัวข้อตั้งเวลา */
+  const openSchedule = useCallback(() => {
+    goTo({ kind: "trigger" });
+    // รอแผงเปิด/เปลี่ยนเนื้อหาก่อน
+    window.setTimeout(() => document.getElementById(SCHEDULE_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+  }, [goTo]);
 
   const onNodeTap = useCallback(
     (node: string) => {
@@ -540,6 +547,8 @@ export function RuleBuilder({ initial, recentPosts, postsError, stepStats, ruleS
         onName={(name) => dispatch({ type: "patch", patch: { name }, key: "name", at: Date.now() })}
         onActive={(active) => dispatch({ type: "patch", patch: { active } })}
         onSave={requestSave}
+        schedule={{ startsAt: doc.startsAt, endsAt: doc.endsAt }}
+        onSchedule={openSchedule}
       />
 
       {/* มือถือ: แผงด้านล่างอ้างอิงความสูงกับทั้งหน้า (จึงไม่ใส่ relative ตรงนี้) */}

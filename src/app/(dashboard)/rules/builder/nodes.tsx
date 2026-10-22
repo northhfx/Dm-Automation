@@ -22,6 +22,7 @@ import { cx } from "@/components/ui";
 import type { FlowStep } from "@/lib/flows/types";
 import { useFormat, useT } from "@/lib/i18n/client";
 import { builderMessages } from "@/lib/i18n/messages/builder";
+import { rulesMessages } from "@/lib/i18n/messages/rules";
 import type { StepStats } from "@/lib/stats";
 import {
   CARD_WIDTH,
@@ -338,6 +339,7 @@ export const TriggerNode = memo(function TriggerNode({ doc, selected, problem, s
             </li>
           </ul>
         )}
+        <ScheduleLine startsAt={doc.startsAt} endsAt={doc.endsAt} />
       </div>
       <div className="relative flex h-11 items-center justify-end gap-2 border-t border-line px-3.5 text-xs">
         {!connected && <span className={cx("mr-auto font-medium", missingText(showErrors))}>{t("noFirstMessage")}</span>}
@@ -504,3 +506,16 @@ export const MessageNode = memo(function MessageNode(props: MessageNodeProps) {
     </div>
   );
 });
+
+/** การ์ด "เมื่อ…": บอกว่าตั้งเวลาไว้ (ปิดเอง… / เริ่ม…) */
+function ScheduleLine({ startsAt, endsAt }: { startsAt: string | null; endsAt: string | null }) {
+  const t = useT(rulesMessages);
+  const f = useFormat();
+  if (!startsAt && !endsAt) return null;
+  return (
+    <p className="mt-1.5 flex items-center gap-2 text-xs text-fg-2">
+      <CalendarClock size={14} className="shrink-0 text-fg-3" aria-hidden="true" />
+      {endsAt ? t("scheduleBadgeEnds", { when: f.dateTime(endsAt) }) : t("scheduleBadgeStarts", { when: f.dateTime(startsAt) })}
+    </p>
+  );
+}

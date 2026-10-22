@@ -37,6 +37,9 @@ import { nextPostStatus, postIdsOf, splitKeywords, type BuilderAction, type Buil
 import { ChipInput } from "./widgets";
 import { ScheduleFields } from "../schedule-fields";
 
+/** หัวข้อ "ตั้งเวลา" — ปุ่ม "ตั้งเวลา" ที่แถบบนเลื่อนมาที่นี่ */
+export const SCHEDULE_SECTION_ID = "rule-schedule";
+
 type DocPatch = Extract<BuilderAction, { type: "patch" }>["patch"];
 type PatchFn = (patch: DocPatch, key?: string) => void;
 
@@ -53,9 +56,9 @@ interface Props {
   postsError: string | null;
 }
 
-export function PanelSection({ title, description, children }: { title?: string; description?: ReactNode; children: ReactNode }) {
+export function PanelSection({ id, title, description, children }: { id?: string; title?: string; description?: ReactNode; children: ReactNode }) {
   return (
-    <section className="space-y-3 border-b border-line px-5 py-5 last:border-b-0">
+    <section id={id} className="scroll-mt-2 space-y-3 border-b border-line px-5 py-5 last:border-b-0">
       {title && (
         <div>
           <h3 className="text-sm font-semibold text-fg">{title}</h3>
@@ -254,7 +257,7 @@ export function TriggerPanel({ doc, dispatch, problems, recentPosts, postsError 
         </PanelSection>
       )}
 
-      <PanelSection title={t("scheduleTitle")}>
+      <PanelSection id={SCHEDULE_SECTION_ID} title={t("scheduleTitle")}>
         <ScheduleFields
           value={{ startsAt: doc.startsAt, endsAt: doc.endsAt, closedReply: doc.closedReply }}
           // พิมพ์ข้อความปิดรับต่อเนื่อง → ย้อนกลับ (undo) ทีเดียวทั้งก้อน

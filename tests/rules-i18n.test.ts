@@ -312,6 +312,8 @@ describe("แถบบนของตัวสร้างกฎ", () => {
     onName: noop,
     onActive: noop,
     onSave: noop,
+    schedule: { startsAt: null, endsAt: null },
+    onSchedule: noop,
   };
 
   it("ภาษาอังกฤษ", () => {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Ref } from "react";
-import { ArrowLeft, Check, Copy, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Copy, Save, Trash2 } from "lucide-react";
 import { Menu, MenuItem, MenuSeparator } from "@/components/menu";
 import { Switch } from "@/components/switch";
 import { Button, cx } from "@/components/ui";
@@ -27,9 +27,27 @@ interface Props {
   onName: (name: string) => void;
   onActive: (active: boolean) => void;
   onSave: () => void;
+  /** ตั้งเวลาของกฎ (ISO) — ปุ่ม "ตั้งเวลา" แสดงวันปิด/เริ่มถ้าตั้งไว้ */
+  schedule: { startsAt: string | null; endsAt: string | null };
+  onSchedule: () => void;
 }
 
-export function TopBar({ ruleId, folder, name, nameRef, nameInvalid, active, dirty, pending, stats, onName, onActive, onSave }: Props) {
+export function TopBar({
+  ruleId,
+  folder,
+  name,
+  nameRef,
+  nameInvalid,
+  active,
+  dirty,
+  pending,
+  stats,
+  onName,
+  onActive,
+  onSave,
+  schedule,
+  onSchedule,
+}: Props) {
   const t = useT(rulesMessages);
   const tCommon = useT(commonMessages);
   const f = useFormat();
@@ -67,6 +85,26 @@ export function TopBar({ ruleId, folder, name, nameRef, nameInvalid, active, dir
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+        {/* ตั้งเวลาเปิด–ปิด (อยู่ท้ายแผง "ทำงานเมื่อ…" — ปุ่มนี้พาไปเลย) */}
+        <button
+          type="button"
+          onClick={onSchedule}
+          title={t("scheduleTitle")}
+          className={cx(
+            "inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium whitespace-nowrap transition-colors hover:bg-surface-2 sm:px-2.5",
+            schedule.startsAt || schedule.endsAt ? "text-accent" : "text-fg-2 hover:text-fg",
+          )}
+        >
+          <CalendarClock size={17} aria-hidden="true" />
+          <span className="hidden xl:inline">
+            {schedule.endsAt
+              ? t("scheduleBadgeEnds", { when: f.dateTime(schedule.endsAt) })
+              : schedule.startsAt
+                ? t("scheduleBadgeStarts", { when: f.dateTime(schedule.startsAt) })
+                : t("scheduleTitle")}
+          </span>
+          <span className="sr-only xl:hidden">{t("scheduleTitle")}</span>
+        </button>
         <span className="hidden md:block">
           <Switch checked={active} onChange={onActive} label={t("activeSwitch")} size="sm" />
         </span>
